@@ -1,11 +1,36 @@
+--!strict
 local Mesh = require(script.Parent.Mesh)
 local U = require(script.Parent.Util)
 local Fields = require(script.Parent.Fields)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type RemeshOptions = {
+	maxCells: number?,
+	maxSourceTriangleSamples: number?,
+	maxVertices: number?,
+	maxFaces: number?,
+	yieldEvery: number?,
+	cancelled: (() -> boolean)?,
+	-- fromField reports { stage, layer, layers, vertices, faces }; projection forwards its own payload.
+	checkpoint: ((progress: any) -> ())?,
+	-- false skips attribute projection; a table supplies Attributes.project options.
+	transfer: (boolean | { [string]: any })?,
+	materialOffsetB: number?,
+	[string]: any,
+}
+-- Reports carry validation, transfer/projection results and source correspondence.
+export type RemeshReport = { [string]: any }
+export type ScalarField = (Vector3) -> number
 local R = {}
-function R.quads(mesh, targetLength, options)
+function R.quads(mesh: Mesh, targetLength: number, options: { [string]: any }?): (Mesh, any)
 	return require(script.Parent.QuadRetopology)(mesh, targetLength, options)
 end
-local function dimensions(lo, hi, cellSize, options)
+local function dimensions(
+	lo: Vector3,
+	hi: Vector3,
+	cellSize: number,
+	options: RemeshOptions
+): (number, number, number)
 	assert(
 		type(cellSize) == "number"
 			and U.finite(cellSize)
@@ -27,7 +52,13 @@ local function dimensions(lo, hi, cellSize, options)
 	)
 	return nx, ny, nz
 end
-local function samplingBudget(meshes, lo, hi, cellSize, options)
+local function samplingBudget(
+	meshes: { Mesh },
+	lo: Vector3,
+	hi: Vector3,
+	cellSize: number,
+	options: RemeshOptions
+): number
 	local nx, ny, nz = dimensions(lo, hi, cellSize, options)
 	local triangles = 0
 	for _, mesh in meshes do
@@ -43,7 +74,7 @@ local function samplingBudget(meshes, lo, hi, cellSize, options)
 	assert(not options.cancelled or not options.cancelled(), "Remesh cancelled")
 	return work
 end
-local function transfer(source, mesh, options, work)
+local function transfer(source: Mesh?, mesh: Mesh, options: RemeshOptions, work: number): (Mesh, RemeshReport)
 	local validation = mesh:validate()
 	if options.transfer == false then
 		return mesh,
@@ -58,10 +89,12 @@ local function transfer(source, mesh, options, work)
 		options.transfer == nil or options.transfer == true or type(options.transfer) == "table",
 		"Remesh transfer must be a table or boolean"
 	)
-	local config = type(options.transfer) == "table" and table.clone(options.transfer) or {}
+	local config: { [string]: any } = type(options.transfer) == "table"
+			and table.clone(options.transfer :: { [string]: any })
+		or {}
 	config.cancelled = config.cancelled or options.cancelled
 	config.checkpoint = config.checkpoint or options.checkpoint
-	local out, projection = require(script.Parent.Attributes).project(source, mesh, config)
+	local out, projection = require(script.Parent.Attributes).project(source :: Mesh, mesh, config)
 	return out,
 		{
 			complete = validation.valid and projection.complete,
@@ -71,8 +104,14 @@ local function transfer(source, mesh, options, work)
 			sourceTriangleSamples = work,
 		}
 end
-function R.fromField(field, lo, hi, cellSize, options)
-	options = options or {}
+function R.fromField(
+	field: ScalarField,
+	lo: Vector3,
+	hi: Vector3,
+	cellSize: number,
+	options: RemeshOptions?
+): Mesh
+	local options: RemeshOptions = options or {}
 	assert(type(field) == "function", "Remesh requires a scalar field function")
 	if options.yieldEvery ~= nil then
 		U.integer(options.yieldEvery, 1)
@@ -91,7 +130,7 @@ function R.fromField(field, lo, hi, cellSize, options)
 	local step = (hi - lo) / Vector3.new(nx, ny, nz)
 	local m = Mesh.new()
 	local samples, positions, edgeIds = {}, {}, {}
-	local function id(x, y, z)
+	local function id(x: number, y: number, z: number): number
 		return 1 + x + (nx + 1) * (y + (ny + 1) * z)
 	end
 	for z = 0, nz do
@@ -193,8 +232,8 @@ function R.fromField(field, lo, hi, cellSize, options)
 	checkpoint("finish", nz)
 	return m:removeUnused():recalculateNormals()
 end
-function R.voxel(mesh, cellSize, options)
-	options = options or {}
+function R.voxel(mesh: Mesh, cellSize: number, options: RemeshOptions?): (Mesh, RemeshReport)
+	local options: RemeshOptions = options or {}
 	assert(
 		type(cellSize) == "number" and U.finite(cellSize) and cellSize > 0,
 		"Positive finite remesh cell size required"
@@ -206,8 +245,14 @@ function R.voxel(mesh, cellSize, options)
 	local result = R.fromField(Fields.fromMesh(mesh), lo - pad, hi + pad, cellSize, options)
 	return transfer(mesh, result, options, work)
 end
-function R.boolean(a, b, operation, cellSize, options)
-	options = options or {}
+function R.boolean(
+	a: Mesh,
+	b: Mesh,
+	operation: string,
+	cellSize: number,
+	options: RemeshOptions?
+): (Mesh, RemeshReport)
+	local options: RemeshOptions = options or {}
 	assert(
 		type(cellSize) == "number" and U.finite(cellSize) and cellSize > 0,
 		"Positive finite remesh cell size required"

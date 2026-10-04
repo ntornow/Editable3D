@@ -1,9 +1,66 @@
+--!strict
 -- XPBD particles, distance constraints and tetrahedral volume constraints.
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type SimParticle = {
+	position: Vector3,
+	velocity: Vector3,
+	inverseMass: number,
+	-- Position at the start of the current substep; set by step().
+	previous: Vector3?,
+}
+export type DistanceConstraint = {
+	kind: "distance",
+	a: number,
+	b: number,
+	rest: number,
+	compliance: number,
+	lambda: number,
+}
+export type VolumeConstraint = {
+	kind: "volume",
+	ids: { number },
+	rest: number,
+	compliance: number,
+	lambda: number,
+}
+export type Constraint = DistanceConstraint | VolumeConstraint
+-- Signed distance field: negative inside the collider.
+export type Field = (Vector3) -> number
+export type Collider = { field: Field, clearance: number }
+export type SimOptions = {
+	gravity: Vector3?,
+	damping: number?,
+	mass: number?,
+	stretchCompliance: number?,
+	shearCompliance: number?,
+	bendCompliance: number?,
+}
+export type Simulation = {
+	particles: { [number]: SimParticle },
+	constraints: { Constraint },
+	colliders: { Collider },
+	gravity: Vector3,
+	damping: number,
+	nextId: number,
+	time: number,
+	-- Set by fromMesh: source vertex id -> particle id, and a copy of the source mesh.
+	vertexMap: { [number]: number }?,
+	source: Mesh?,
+	addParticle: (Simulation, Vector3, number?) -> number,
+	pin: (Simulation, number, Vector3?) -> (),
+	addDistance: (Simulation, number, number, number?, number?) -> DistanceConstraint,
+	addVolume: (Simulation, number, number, number, number, number?) -> VolumeConstraint,
+	addCollider: (Simulation, Field, number?) -> (),
+	step: (Simulation, number, number?, number?) -> Simulation,
+	toMesh: (Simulation) -> Mesh,
+}
+type Self = Simulation
 local Sim = {}
 Sim.__index = Sim
-function Sim.new(options)
-	options = options or {}
+function Sim.new(options: SimOptions?): Simulation
+	local options: SimOptions = options or {}
 	return setmetatable({
 		particles = {},
 		constraints = {},
@@ -12,9 +69,9 @@ function Sim.new(options)
 		damping = options.damping or 0.01,
 		nextId = 1,
 		time = 0,
-	}, Sim)
+	}, Sim) :: any
 end
-function Sim:addParticle(position, mass)
+function Sim.addParticle(self: Self, position: Vector3, mass: number?): number
 	assert(U.vector(position) and (mass == nil or mass >= 0))
 	local id = self.nextId
 	self.nextId += 1
@@ -22,39 +79,54 @@ function Sim:addParticle(position, mass)
 		{ position = position, velocity = Vector3.zero, inverseMass = mass == 0 and 0 or 1 / (mass or 1) }
 	return id
 end
-function Sim:pin(id, position)
+function Sim.pin(self: Self, id: number, position: Vector3?)
 	local p = assert(self.particles[id])
 	p.inverseMass = 0
 	p.position = position or p.position
 	p.velocity = Vector3.zero
 end
-function Sim:addDistance(a, b, compliance, restLength)
+function Sim.addDistance(
+	self: Self,
+	a: number,
+	b: number,
+	compliance: number?,
+	restLength: number?
+): DistanceConstraint
 	assert(a ~= b and self.particles[a] and self.particles[b])
 	local length = restLength or (self.particles[a].position - self.particles[b].position).Magnitude
 	assert(length > 0 and (compliance or 0) >= 0)
-	local c = { kind = "distance", a = a, b = b, rest = length, compliance = compliance or 0, lambda = 0 }
+	local c: DistanceConstraint =
+		{ kind = "distance", a = a, b = b, rest = length, compliance = compliance or 0, lambda = 0 }
 	table.insert(self.constraints, c)
 	return c
 end
-function Sim:addVolume(a, b, c, d, compliance)
+function Sim.addVolume(
+	self: Self,
+	a: number,
+	b: number,
+	c: number,
+	d: number,
+	compliance: number?
+): VolumeConstraint
 	local ids = { a, b, c, d }
-	local p = {}
+	local p: { Vector3 } = {}
 	for i, id in ids do
 		p[i] = assert(self.particles[id]).position
 	end
 	local volume = (p[2] - p[1]):Dot((p[3] - p[1]):Cross(p[4] - p[1])) / 6
 	assert(math.abs(volume) > 1e-12 and (compliance or 0) >= 0)
-	local constraint = { kind = "volume", ids = ids, rest = volume, compliance = compliance or 0, lambda = 0 }
+	local constraint: VolumeConstraint =
+		{ kind = "volume", ids = ids, rest = volume, compliance = compliance or 0, lambda = 0 }
 	table.insert(self.constraints, constraint)
 	return constraint
 end
-function Sim:addCollider(field, clearance)
+function Sim.addCollider(self: Self, field: Field, clearance: number?)
 	table.insert(self.colliders, { field = field, clearance = clearance or 0 })
 end
-function Sim:step(dt, substeps, iterations)
+function Sim.step(self: Self, dt: number, substeps: number?, iterations: number?): Simulation
 	assert(dt > 0 and U.finite(dt))
-	substeps = substeps or 4
-	iterations = iterations or 8
+	local substeps: number = substeps or 4
+	local iterations: number = iterations or 8
 	U.integer(substeps, 1)
 	U.integer(iterations, 1)
 	local h = dt / substeps
@@ -66,7 +138,7 @@ function Sim:step(dt, substeps, iterations)
 				p.position += p.velocity * h
 			end
 		end
-		for _, c in self.constraints do
+		for _, c: { lambda: number } in self.constraints do
 			c.lambda = 0
 		end
 		for _ = 1, iterations do
@@ -85,7 +157,7 @@ function Sim:step(dt, substeps, iterations)
 						b.position -= n * (dl * b.inverseMass)
 					end
 				else
-					local ps = {}
+					local ps: { Vector3 } = {}
 					for i, id in c.ids do
 						ps[i] = self.particles[id].position
 					end
@@ -128,26 +200,30 @@ function Sim:step(dt, substeps, iterations)
 			end
 		end
 		for _, p in self.particles do
-			p.velocity = (p.position - p.previous) / h * math.exp(-self.damping * h)
+			p.velocity = (p.position - p.previous :: Vector3) / h * math.exp(-self.damping * h)
 		end
 		self.time += h
 	end
 	return self
 end
-function Sim.fromMesh(mesh, options)
-	options = options or {}
+function Sim.fromMesh(mesh: Mesh, options: SimOptions?): Simulation
+	local options: SimOptions = options or {}
 	local s = Sim.new(options)
 	s.vertexMap = {}
 	s.source = mesh:clone()
 	for _, id in U.keys(mesh.vertices) do
-		s.vertexMap[id] = s:addParticle(mesh.vertices[id], options.mass or 1)
+		(s.vertexMap :: { [number]: number })[id] = s:addParticle(mesh.vertices[id], options.mass or 1)
 	end
-	local edges = {}
-	local function spring(a, b, compliance)
+	local edges: { [string]: boolean } = {}
+	local function spring(a: number, b: number, compliance: number?)
 		local key = U.edge(a, b)
 		if not edges[key] then
 			edges[key] = true
-			s:addDistance(s.vertexMap[a], s.vertexMap[b], compliance)
+			s:addDistance(
+				(s.vertexMap :: { [number]: number })[a],
+				(s.vertexMap :: { [number]: number })[b],
+				compliance
+			)
 		end
 	end
 	for _, e in mesh:topology().edges do
@@ -163,7 +239,7 @@ function Sim.fromMesh(mesh, options)
 		local triangles = require(script.Parent.Topology).triangulate(mesh)
 		for _, e in triangles:topology().edges do
 			if #e.faces == 2 then
-				local opposite = {}
+				local opposite: { [number]: number } = {}
 				for i, fid in e.faces do
 					for _, v in triangles.faces[fid].vertices do
 						if v ~= e.a and v ~= e.b then
@@ -179,10 +255,10 @@ function Sim.fromMesh(mesh, options)
 	end
 	return s
 end
-function Sim:toMesh()
+function Sim.toMesh(self: Self): Mesh
 	assert(self.source, "Simulation not created from mesh")
-	local m = self.source:clone()
-	for v, p in self.vertexMap do
+	local m = (self.source :: Mesh):clone()
+	for v, p in self.vertexMap :: { [number]: number } do
 		m.vertices[v] = self.particles[p].position
 	end
 	return m:recalculateNormals()

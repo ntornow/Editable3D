@@ -49,6 +49,10 @@ The gate runs:
 
 To run one suite: `.tools/lune/lune run tools/headless.luau --suite MeshEditTests`.
 
+### Typing-only changes
+
+Converting a module to strict should not change behavior. `python3 tools/type_erased_diff.py [--rev HEAD]` compares each changed `src` file with the revision after erasing annotations, casts and type aliases, and lists only the functions whose code still differs. Review those by hand. The tool is conservative: a cast on a call is kept (it truncates multiple returns), and `local p = p or d` counts as reassigning a parameter only before the function's first closure.
+
 Reports are under `.validation/`. Generated artifacts, installed tools and temporary reports are ignored by Git. Source, tests, docs, fixtures, lockfiles and build/CI definitions belong in version control. Do not commit credentials, live place files or generated archives.
 
 ## Release procedure
@@ -65,4 +69,4 @@ Reports are under `.validation/`. Generated artifacts, installed tools and tempo
 
 ## Remaining boundaries
 
-Strict typing covers the root, the contracts, the publishing pipeline and the core authoring modules (`STRICT_MODULES` in `tools/check_types.py`); the remaining numerical modules are type-checked in nonstrict mode with real Roblox types. This release does not migrate those to strict typing, establish whole-library coverage, provide hard memory/preemption guarantees, prove every graph-isomorphism case in native verification, or complete Blender feature parity. Large numerical operators retain their documented algorithmic bounds. Promote additional modules incrementally with contract tests and independently justified numerical fixtures, instead of using passing line coverage as a proof of correctness.
+Strict typing covers every public namespace, the contracts and the publishing pipeline (`STRICT_MODULES` in `tools/check_types.py`); about 240 internal helper modules are type-checked in nonstrict mode with real Roblox types. This release does not migrate those to strict typing, establish whole-library coverage, provide hard memory/preemption guarantees, prove every graph-isomorphism case in native verification, or complete Blender feature parity. Large numerical operators retain their documented algorithmic bounds. Promote additional modules incrementally with contract tests and independently justified numerical fixtures, instead of using passing line coverage as a proof of correctness.

@@ -1,6 +1,37 @@
+--!strict
+local Types = require(script.Parent.Types)
+export type Hit = {
+	position: Vector3,
+	distance: number,
+	barycentric: Vector3,
+	normal: Vector3,
+	triangle: Types.Triangle,
+	face: number,
+}
+type Tri = {
+	a: Vector3,
+	b: Vector3,
+	c: Vector3,
+	normal: Vector3,
+	source: Types.Triangle,
+	lo: Vector3,
+	hi: Vector3,
+	center: Vector3,
+}
+type Node = { lo: Vector3, hi: Vector3, leaves: { Tri }?, left: Node?, right: Node? }
+export type Index = {
+	mesh: Types.Mesh,
+	triangles: { Tri },
+	root: Node?,
+	closest: (Index, Vector3, number?) -> Hit?,
+	raycast: (Index, Vector3, Vector3, number?) -> Hit?,
+	contains: (Index, Vector3) -> boolean,
+	signedDistance: (Index, Vector3) -> number,
+}
+type Self = Index
 local Spatial = {}
 Spatial.__index = Spatial
-local function closestTriangle(p, a, b, c)
+local function closestTriangle(p: Vector3, a: Vector3, b: Vector3, c: Vector3): (Vector3, Vector3)
 	local ab, ac, ap = b - a, c - a, p - a
 	local d1, d2 = ab:Dot(ap), ac:Dot(ap)
 	if d1 <= 0 and d2 <= 0 then
@@ -36,7 +67,7 @@ local function closestTriangle(p, a, b, c)
 	return a + ab * v + ac * w, Vector3.new(1 - v - w, v, w)
 end
 Spatial.closestTriangle = closestTriangle
-local function rayTriangle(o, d, a, b, c)
+local function rayTriangle(o: Vector3, d: Vector3, a: Vector3, b: Vector3, c: Vector3): (number?, Vector3?)
 	local e1, e2 = b - a, c - a
 	local h = d:Cross(e2)
 	local determinant = e1:Dot(h)
@@ -59,12 +90,13 @@ local function rayTriangle(o, d, a, b, c)
 	end
 	return t, Vector3.new(1 - u - v, u, v)
 end
-local function boxDistance(p, lo, hi)
+local function boxDistance(p: Vector3, lo: Vector3, hi: Vector3): number
 	local q = p:Max(lo):Min(hi)
 	local d = p - q
 	return d:Dot(d)
 end
-local function rayBox(o, d, lo, hi, limit)
+-- Vectors are indexed by axis name, so they are untyped here.
+local function rayBox(o: any, d: any, lo: any, hi: any, limit: number): boolean
 	local near, far = 0, limit
 	for _, axis in { "X", "Y", "Z" } do
 		if math.abs(d[axis]) < 1e-15 then
@@ -85,8 +117,8 @@ local function rayBox(o, d, lo, hi, limit)
 	end
 	return true
 end
-function Spatial.new(mesh)
-	local self = setmetatable({ mesh = mesh:clone(), triangles = {} }, Spatial)
+function Spatial.new(mesh: Types.Mesh): Index
+	local self: Index = setmetatable({ mesh = mesh:clone(), triangles = {} }, Spatial) :: any
 	for _, t in mesh:triangles() do
 		local a, b, c = mesh.vertices[t[1]], mesh.vertices[t[2]], mesh.vertices[t[3]]
 		if (b - a):Cross(c - a).Magnitude > 1e-12 then
@@ -102,7 +134,7 @@ function Spatial.new(mesh)
 			})
 		end
 	end
-	local function build(list)
+	local function build(list: { Tri }): Node?
 		if #list == 0 then
 			return nil
 		end
@@ -112,15 +144,15 @@ function Spatial.new(mesh)
 			lo = lo:Min(t.lo)
 			hi = hi:Max(t.hi)
 		end
-		local node = { lo = lo, hi = hi }
+		local node: Node = { lo = lo, hi = hi }
 		if #list <= 8 then
 			node.leaves = list
 			return node
 		end
 		local size = hi - lo
 		local axis = size.X >= size.Y and size.X >= size.Z and "X" or size.Y >= size.Z and "Y" or "Z"
-		table.sort(list, function(a, b)
-			return a.center[axis] < b.center[axis]
+		table.sort(list, function(a: Tri, b: Tri)
+			return (a.center :: any)[axis] < (b.center :: any)[axis]
 		end)
 		local left, right = {}, {}
 		for i, t in list do
@@ -133,10 +165,10 @@ function Spatial.new(mesh)
 	self.root = build(table.clone(self.triangles))
 	return self
 end
-function Spatial:closest(point, maxDistance)
+function Spatial.closest(self: Self, point: Vector3, maxDistance: number?): Hit?
 	local best = (maxDistance or math.huge) ^ 2
-	local hit = nil
-	local function visit(node)
+	local hit: Hit? = nil
+	local function visit(node: Node?)
 		if not node or boxDistance(point, node.lo, node.hi) > best then
 			return
 		end
@@ -157,7 +189,7 @@ function Spatial:closest(point, maxDistance)
 				end
 			end
 		else
-			local a, b = node.left, node.right
+			local a, b = node.left :: Node, node.right :: Node
 			if boxDistance(point, a.lo, a.hi) > boxDistance(point, b.lo, b.hi) then
 				a, b = b, a
 			end
@@ -168,12 +200,12 @@ function Spatial:closest(point, maxDistance)
 	visit(self.root)
 	return hit
 end
-function Spatial:raycast(origin, direction, maxDistance)
+function Spatial.raycast(self: Self, origin: Vector3, direction: Vector3, maxDistance: number?): Hit?
 	assert(direction.Magnitude > 0)
 	local d = direction.Unit
 	local best = maxDistance or math.huge
-	local hit = nil
-	local function visit(node)
+	local hit: Hit? = nil
+	local function visit(node: Node?)
 		if not node or not rayBox(origin, d, node.lo, node.hi, best) then
 			return
 		end
@@ -185,7 +217,7 @@ function Spatial:raycast(origin, direction, maxDistance)
 					hit = {
 						position = origin + d * distance,
 						distance = distance,
-						barycentric = bary,
+						barycentric = bary :: Vector3,
 						normal = t.normal,
 						triangle = t.source,
 						face = t.source.face,
@@ -200,7 +232,7 @@ function Spatial:raycast(origin, direction, maxDistance)
 	visit(self.root)
 	return hit
 end
-function Spatial:contains(point)
+function Spatial.contains(self: Self, point: Vector3): boolean
 	-- Generalized winding number; closed consistently oriented input required.
 	local sum = 0
 	for _, t in self.triangles do
@@ -213,7 +245,7 @@ function Spatial:contains(point)
 	end
 	return math.abs(sum) > 2 * math.pi
 end
-function Spatial:signedDistance(point)
+function Spatial.signedDistance(self: Self, point: Vector3): number
 	local h = assert(self:closest(point), "Empty spatial index")
 	return self:contains(point) and -h.distance or h.distance
 end

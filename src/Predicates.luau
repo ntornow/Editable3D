@@ -1,25 +1,45 @@
+--!strict
 -- Filtered signs with exact floating-point expansion fallback for native float32 coordinates.
 -- Original Luau implementation of error-free transforms; no third-party source incorporated.
 local U = require(script.Parent.Util)
 local P = {}
 local X = require(script.Parent.ExpansionArithmetic)
-local add, subtract, multiply = X.add, X.subtract, X.multiply
-local difference, negate, estimate = X.difference, X.negate, X.estimate
+-- Nonoverlapping floating-point expansion, least significant component first.
+type Expansion = { number }
+export type Intersection = {
+	kind: string, -- "none", "point" or "overlap"
+	point: Vector2?,
+	coordinates: { x: number, y: number }?,
+	t: number?,
+	u: number?,
+	proper: boolean?,
+	points: { Vector2 }?,
+	rangeA: { number }?,
+	rangeB: { number }?,
+}
+local add: (Expansion, Expansion) -> Expansion = X.add
+local subtract: (Expansion, Expansion) -> Expansion = X.subtract
+local multiply: (Expansion, Expansion) -> Expansion = X.multiply
+local difference: (number, number) -> Expansion = X.difference
+local negate: (Expansion) -> Expansion = X.negate
+local estimate: (Expansion) -> number = X.estimate
 local epsilon = 2 ^ -52
-local function sign(x)
+local function sign(x: number): number
 	return x > 0 and 1 or x < 0 and -1 or 0
 end
 
-local function check2(p)
+-- Validators accept any value and reject non-coordinates.
+local function check2(p: any)
 	assert(
 		typeof(p) == "Vector2" and U.finite(p.X) and U.finite(p.Y),
 		"Finite native Vector2 coordinates required"
 	)
 end
-local function check3(p)
+local function check3(p: any)
 	assert(U.vector(p), "Finite native Vector3 coordinates required")
 end
-local function determinant(matrix, exact)
+-- Entries are numbers, or expansions when exact; the result has the same kind.
+local function determinant(matrix: { { any } }, exact: boolean): (any, ...number)
 	local n = #matrix
 	if n == 1 then
 		if exact then
@@ -27,10 +47,10 @@ local function determinant(matrix, exact)
 		end
 		return matrix[1][1], math.abs(matrix[1][1])
 	end
-	local result = exact and { 0 } or 0
+	local result: any = exact and { 0 } or 0
 	local permanent = 0
 	for column = 1, n do
-		local minor = {}
+		local minor: { { any } } = {}
 		for i = 2, n do
 			minor[i - 1] = {}
 			for j = 1, n do
@@ -51,14 +71,21 @@ local function determinant(matrix, exact)
 	end
 	return result, permanent
 end
-local function orientedMatrix(points, origin, dimensions, lift, exact)
-	local matrix = {}
+-- Points are Vector2 or Vector3, read by axis name; entries follow determinant's kinds.
+local function orientedMatrix(
+	points: { any },
+	origin: any,
+	dimensions: number,
+	lift: boolean,
+	exact: boolean
+): { { any } }
+	local matrix: { { any } } = {}
 	for i, p in points do
-		local row = {}
-		local squared = exact and { 0 } or 0
+		local row: { any } = {}
+		local squared: any = exact and { 0 } or 0
 		for axis = 1, dimensions do
 			local key = axis == 1 and "X" or axis == 2 and "Y" or "Z"
-			local d = exact and difference(p[key], origin[key]) or p[key] - origin[key]
+			local d: any = exact and difference(p[key], origin[key]) or p[key] - origin[key]
 			row[axis] = d
 			if lift then
 				squared = exact and add(squared, multiply(d, d)) or squared + d * d
@@ -71,7 +98,14 @@ local function orientedMatrix(points, origin, dimensions, lift, exact)
 	end
 	return matrix
 end
-local function predicate(points, origin, dimensions, lift, multiplier)
+-- The third result reports whether the exact expansion path decided the sign.
+local function predicate(
+	points: { any },
+	origin: any,
+	dimensions: number,
+	lift: boolean,
+	multiplier: number
+): (number, number, ...boolean)
 	local check = dimensions == 2 and check2 or check3
 	check(origin)
 	for _, p in points do
@@ -87,25 +121,25 @@ local function predicate(points, origin, dimensions, lift, multiplier)
 	return sign(expansion[#expansion]) * multiplier, estimate(expansion) * multiplier, true
 end
 
-function P.orient2D(a, b, c)
+function P.orient2D(a: Vector2, b: Vector2, c: Vector2): (number, number, ...boolean)
 	return predicate({ a, b }, c, 2, false, 1)
 end
-function P.orient3D(a, b, c, d)
+function P.orient3D(a: Vector3, b: Vector3, c: Vector3, d: Vector3): (number, number, ...boolean)
 	-- Positive when (b-a,c-a,d-a) forms a right-handed frame.
 	return predicate({ b, c, d }, a, 3, false, 1)
 end
-function P.inCircle(a, b, c, d)
+function P.inCircle(a: Vector2, b: Vector2, c: Vector2, d: Vector2): (number, number, ...boolean)
 	-- Positive inside a counter-clockwise oriented circle; reverses with triangle orientation.
 	return predicate({ a, b, c }, d, 2, true, 1)
 end
-function P.inSphere(a, b, c, d, e)
+function P.inSphere(a: Vector3, b: Vector3, c: Vector3, d: Vector3, e: Vector3): (number, number, ...boolean)
 	-- Positive inside a positively oriented tetrahedron's circumsphere.
 	return predicate({ a, b, c, d }, e, 3, true, -1)
 end
 
-function P.polygonOrientation(points)
+function P.polygonOrientation(points: { Vector2 }): (number, number)
 	assert(#points >= 3, "Three or more polygon vertices required")
-	local total = { 0 }
+	local total: Expansion = { 0 }
 	for i, p in points do
 		check2(p)
 		local q = points[i % #points + 1]
@@ -115,7 +149,7 @@ function P.polygonOrientation(points)
 	return sign(total[#total]), estimate(total) * 0.5
 end
 
-function P.onSegment2D(point, a, b)
+function P.onSegment2D(point: Vector2, a: Vector2, b: Vector2): boolean
 	check2(point)
 	check2(a)
 	check2(b)
@@ -125,7 +159,7 @@ function P.onSegment2D(point, a, b)
 		and point.Y <= math.max(a.Y, b.Y)
 		and P.orient2D(a, b, point) == 0
 end
-function P.pointInPolygon2D(point, points)
+function P.pointInPolygon2D(point: Vector2, points: { Vector2 }): (string, number)
 	check2(point)
 	assert(#points >= 3, "Three or more polygon vertices required")
 	local winding = 0
@@ -146,23 +180,23 @@ function P.pointInPolygon2D(point, points)
 	return winding ~= 0 and "inside" or "outside", winding
 end
 
-local function parameter(point, a, b)
+local function parameter(point: Vector2, a: Vector2, b: Vector2): number
 	local x, y = b.X - a.X, b.Y - a.Y
 	if math.abs(x) >= math.abs(y) then
 		return x ~= 0 and (point.X - a.X) / x or 0
 	end
 	return (point.Y - a.Y) / y
 end
-local function crossCoordinates(a, b)
+local function crossCoordinates(a: Vector2, b: Vector2): Expansion
 	return subtract(multiply({ a.X }, { b.Y }), multiply({ a.Y }, { b.X }))
 end
-local function crossDifferences(a, b, c, d)
+local function crossDifferences(a: Vector2, b: Vector2, c: Vector2, d: Vector2): Expansion
 	return subtract(
 		multiply(difference(b.X, a.X), difference(d.Y, c.Y)),
 		multiply(difference(b.Y, a.Y), difference(d.X, c.X))
 	)
 end
-function P.intersectSegments2D(a, b, c, d)
+function P.intersectSegments2D(a: Vector2, b: Vector2, c: Vector2, d: Vector2): Intersection
 	check2(a)
 	check2(b)
 	check2(c)
@@ -198,7 +232,7 @@ function P.intersectSegments2D(a, b, c, d)
 			proper = true,
 		}
 	end
-	local shared = {}
+	local shared: { Vector2 } = {}
 	for _, p in { a, b, c, d } do
 		if P.onSegment2D(p, a, b) and P.onSegment2D(p, c, d) then
 			local duplicate = false

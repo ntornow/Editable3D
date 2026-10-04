@@ -1,21 +1,55 @@
+--!strict
 -- Local/global edge-spoke ARAP with exact positional anchors and sparse PCG.
 local U = require(script.Parent.Util)
 local Laplacian = require(script.Parent.Laplacian)
 local Registration = require(script.Parent.Registration)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type BindOptions = Laplacian.BindOptions
+export type SolveOptions = {
+	maxIterations: number?,
+	linearIterations: number?,
+	tolerance: number?,
+	linearTolerance: number?,
+	initial: Mesh?,
+	requireLinearConvergence: boolean?,
+	requireConvergence: boolean?,
+	recalculateNormals: boolean?,
+	checkpoint: ((fraction: number) -> ())?,
+}
+export type LinearReport = { iterations: number, residual: number, converged: boolean }
+export type SolveReport = {
+	iterations: number,
+	converged: boolean,
+	linearConverged: boolean,
+	energyHistory: { number },
+	linearReports: { LinearReport },
+	inactiveVertices: number,
+	freeVertices: number,
+	anchors: number,
+	maximumStep: number?,
+	energy: number?,
+}
+export type Deformer = {
+	graph: Laplacian.Graph,
+	source: Mesh,
+	solve: (Deformer, { [number]: Vector3 }, SolveOptions?) -> (Mesh, SolveReport),
+}
+type Self = Deformer
 local A = {}
 A.__index = A
 
-function A.bind(mesh, options)
-	options = table.clone(options or {})
+function A.bind(mesh: Mesh, options: BindOptions?): Deformer
+	local options: BindOptions = table.clone(options or {})
 	options.maxVertices = options.maxVertices or 5000
 	local graph = Laplacian.bind(mesh, options)
-	return setmetatable({ graph = graph, source = graph.source }, A)
+	return setmetatable({ graph = graph, source = graph.source }, A) :: any
 end
 
-function A:solve(anchors, options)
-	options = options or {}
+function A.solve(self: Self, anchors: { [number]: Vector3 }, options: SolveOptions?): (Mesh, SolveReport)
+	local options: SolveOptions = options or {}
 	local graph, source = self.graph, self.source
-	local n, free, fixed, inactive = #graph.ids, {}, {}, 0
+	local n, free: { number }, fixed: { [number]: Vector3 }, inactive = #graph.ids, {}, {}, 0
 	local maxIterations = options.maxIterations or 30
 	U.integer(maxIterations, 1)
 	local linearIterations = options.linearIterations or 512
@@ -30,7 +64,7 @@ function A:solve(anchors, options)
 	for _, component in graph.components do
 		local found = false
 		for _, i in component do
-			found = found or fixed[i] ~= nil
+			found = found or (fixed[i] :: Vector3?) ~= nil
 		end
 		if not found then
 			for _, i in component do
@@ -61,7 +95,7 @@ function A:solve(anchors, options)
 			assert(other.vertices[j] == id, "Initial topology changed")
 		end
 	end
-	local p, rest, rotations = {}, {}, {}
+	local p: { Vector3 }, rest: { Vector3 }, rotations: { CFrame } = {}, {}, {}
 	for i, id in graph.ids do
 		assert(U.vector(initial.vertices[id]), "Initial position missing or invalid")
 		rest[i] = source.vertices[id] - origin
@@ -70,7 +104,7 @@ function A:solve(anchors, options)
 	end
 	local function localStep()
 		for i = 1, n do
-			local a, b, w = {}, {}, {}
+			local a: { Vector3 }, b: { Vector3 }, w: { number } = {}, {}, {}
 			for _, j in U.keys(graph.rows[i]) do
 				table.insert(a, rest[i] - rest[j])
 				table.insert(b, p[i] - p[j])
@@ -81,7 +115,7 @@ function A:solve(anchors, options)
 			end
 		end
 	end
-	local function energy()
+	local function energy(): number
 		local value = 0
 		for i = 1, n do
 			for j, w in graph.rows[i] do
@@ -91,14 +125,15 @@ function A:solve(anchors, options)
 		end
 		return value
 	end
-	local function linearSolve(rhs, axis)
-		local x, b, r, z, d = {}, {}, {}, {}, {}
+	-- Vectors are indexed by axis name below.
+	local function linearSolve(rhs: { Vector3 }, axis: string): ({ number }, LinearReport)
+		local x: { number }, b: { number }, r: { number }, z: { number }, d: { number } = {}, {}, {}, {}, {}
 		for i = 1, n do
-			x[i] = p[i][axis]
+			x[i] = (p[i] :: any)[axis]
 			d[i] = 0
 		end
-		local function apply(v)
-			local out = {}
+		local function apply(v: { number }): { number }
+			local out: { number } = {}
 			for _, i in free do
 				local sum = graph.diagonal[i] * v[i]
 				for j, w in graph.rows[i] do
@@ -112,10 +147,10 @@ function A:solve(anchors, options)
 		end
 		local norm = 0
 		for _, i in free do
-			local value = rhs[i][axis]
+			local value = (rhs[i] :: any)[axis]
 			for j, w in graph.rows[i] do
 				if fixed[j] then
-					value += w * fixed[j][axis]
+					value += w * (fixed[j] :: any)[axis]
 				end
 			end
 			b[i] = value
@@ -173,7 +208,7 @@ function A:solve(anchors, options)
 			}
 	end
 	localStep()
-	local report = {
+	local report: SolveReport = {
 		iterations = 0,
 		converged = false,
 		linearConverged = true,
@@ -184,7 +219,7 @@ function A:solve(anchors, options)
 		anchors = U.count(anchors),
 	}
 	for step = 1, maxIterations do
-		local rhs = {}
+		local rhs: { Vector3 } = {}
 		for i = 1, n do
 			local sum = Vector3.zero
 			for j, w in graph.rows[i] do
@@ -193,7 +228,7 @@ function A:solve(anchors, options)
 			end
 			rhs[i] = sum
 		end
-		local coords, linear = {}, {}
+		local coords: { { number } }, linear: { LinearReport } = {}, {}
 		for j, axis in { "X", "Y", "Z" } do
 			coords[j], linear[j] = linearSolve(rhs, axis)
 			report.linearConverged = report.linearConverged and linear[j].converged

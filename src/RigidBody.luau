@@ -1,18 +1,52 @@
+--!strict
 -- Deterministic sphere rigid bodies with angular motion and impulse contacts.
 local U = require(script.Parent.Util)
+export type SphereBody = {
+	radius: number,
+	inverseMass: number,
+	inverseInertia: number,
+	position: Vector3,
+	rotation: CFrame,
+	velocity: Vector3,
+	angularVelocity: Vector3,
+	restitution: number,
+	friction: number,
+}
+export type WorldOptions = { gravity: Vector3? }
+export type SphereOptions = { restitution: number?, friction: number? }
+-- Signed distance field: negative inside the collider.
+export type Field = (Vector3) -> number
+export type World = {
+	bodies: { [number]: SphereBody },
+	colliders: { Field },
+	gravity: Vector3,
+	nextId: number,
+	addSphere: (World, number, number, CFrame?, SphereOptions?) -> number,
+	addCollider: (World, Field) -> (),
+	impulse: (World, number, Vector3, Vector3?) -> (),
+	frame: (World, number) -> CFrame,
+	step: (World, number, number?, number?) -> World,
+}
+type Self = World
 local World = {}
 World.__index = World
-function World.new(options)
-	options = options or {}
+function World.new(options: WorldOptions?): World
+	local options: WorldOptions = options or {}
 	return setmetatable(
 		{ bodies = {}, colliders = {}, gravity = options.gravity or Vector3.new(0, -9.81, 0), nextId = 1 },
 		World
-	)
+	) :: any
 end
-function World:addSphere(radius, mass, frame, options)
+function World.addSphere(
+	self: Self,
+	radius: number,
+	mass: number,
+	frame: CFrame?,
+	options: SphereOptions?
+): number
 	assert(radius > 0 and mass >= 0)
-	options = options or {}
-	frame = frame or CFrame.identity
+	local options: SphereOptions = options or {}
+	local frame: CFrame = frame or CFrame.identity
 	local id = self.nextId
 	self.nextId += 1
 	self.bodies[id] = {
@@ -28,21 +62,21 @@ function World:addSphere(radius, mass, frame, options)
 	}
 	return id
 end
-function World:addCollider(field)
+function World.addCollider(self: Self, field: Field)
 	table.insert(self.colliders, field)
 end
-function World:impulse(id, impulse, point)
+function World.impulse(self: Self, id: number, impulse: Vector3, point: Vector3?)
 	local b = assert(self.bodies[id])
 	b.velocity += impulse * b.inverseMass
 	if point then
 		b.angularVelocity += (point - b.position):Cross(impulse) * b.inverseInertia
 	end
 end
-function World:frame(id)
+function World.frame(self: Self, id: number): CFrame
 	local b = assert(self.bodies[id])
 	return CFrame.new(b.position) * b.rotation
 end
-local function contact(a, b, normal, penetration)
+local function contact(a: SphereBody, b: SphereBody?, normal: Vector3, penetration: number)
 	local wa, wb = a.inverseMass, b and b.inverseMass or 0
 	local sum = wa + wb
 	if sum == 0 then
@@ -85,10 +119,10 @@ local function contact(a, b, normal, penetration)
 		b.angularVelocity += rb:Cross(friction) * b.inverseInertia
 	end
 end
-function World:step(dt, substeps, iterations)
+function World.step(self: Self, dt: number, substeps: number?, iterations: number?): World
 	assert(dt > 0)
-	substeps = substeps or 4
-	iterations = iterations or 4
+	local substeps: number = substeps or 4
+	local iterations: number = iterations or 4
 	U.integer(substeps, 1)
 	U.integer(iterations, 1)
 	local h = dt / substeps

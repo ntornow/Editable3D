@@ -1,12 +1,25 @@
+--!strict
 local U = require(script.Parent.Util)
 local Topology = require(script.Parent.Topology)
 local Deform = require(script.Parent.Deform)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Edge keys / vertex IDs to true or a weight, as in MeshEdit.Selection.
+export type Selection = { [any]: boolean | number }
+-- Remaining fields pass through to MeshEdit's bevel operators.
+export type BevelOptions = {
+	affect: string?,
+	selection: Selection?,
+	angle: number?,
+	weightAttribute: string?,
+	[string]: any,
+}
 local M = {}
-function M.bevel(mesh, width, options)
-	options = options or {}
+function M.bevel(mesh: Mesh, width: number, options: BevelOptions?): (Mesh, { [string]: any })
+	local options: BevelOptions = options or {}
 	local mode = options.affect or "edges"
 	assert(mode == "edges" or mode == "vertices", "Bevel affect must be edges or vertices")
-	local selection = options.selection and table.clone(options.selection) or {}
+	local selection: Selection = options.selection and table.clone(options.selection) or {}
 	if not options.selection then
 		if mode == "vertices" then
 			for id in mesh.vertices do
@@ -21,7 +34,8 @@ function M.bevel(mesh, width, options)
 			for key, edge in mesh:topology().edges do
 				if
 					#edge.faces == 2
-					and mesh:faceNormal(edge.faces[1]):Dot(mesh:faceNormal(edge.faces[2]))
+					-- faceNormal's second result (area) is passed through to Dot, as before.
+					and (mesh:faceNormal(edge.faces[1]) :: any):Dot(mesh:faceNormal(edge.faces[2]))
 						< math.cos(angle) - 1e-8
 				then
 					selection[key] = true
@@ -40,16 +54,16 @@ function M.bevel(mesh, width, options)
 		for key, value in selection do
 			local weight = A.read(channel, key)
 			assert(weight >= 0 and weight <= 1, "Bevel weights must lie in [0,1]")
-			selection[key] = (type(value) == "boolean" and (value and 1 or 0) or value) * weight
+			selection[key] = ((type(value) == "boolean" and (value and 1 or 0) or value) :: number) * weight
 		end
 	end
 	local edit = require(script.Parent.MeshEdit)
 	local bevel: typeof(edit.bevelEdges) = mode == "edges" and edit.bevelEdges or edit.bevelVertices
 	return bevel(mesh, selection, width, options)
 end
-function M.array(mesh, count, step)
+function M.array(mesh: Mesh, count: number, step: CFrame): Mesh
 	U.integer(count, 1)
-	local copies = {}
+	local copies: { Mesh } = {}
 	local frame = CFrame.identity
 	for _ = 1, count do
 		table.insert(copies, Deform.transform(mesh, frame))
@@ -57,7 +71,7 @@ function M.array(mesh, count, step)
 	end
 	return Topology.join(copies)
 end
-function M.mirror(mesh, axis, weldTolerance)
+function M.mirror(mesh: Mesh, axis: string, weldTolerance: number?): Mesh
 	assert(axis == "X" or axis == "Y" or axis == "Z")
 	local scale = axis == "X" and Vector3.new(-1, 1, 1)
 		or axis == "Y" and Vector3.new(1, -1, 1)
@@ -68,15 +82,16 @@ function M.mirror(mesh, axis, weldTolerance)
 	end
 	return result
 end
-function M.solidify(mesh, thickness, options)
+-- Solidify/shell/clip options are forwarded to non-strict private modules.
+function M.solidify(mesh: Mesh, thickness: number, options: any?)
 	local result = require(script.Parent.MeshSolidify)(mesh, thickness, options)
 	return result
 end
-function M.shell(mesh, thickness, options)
+function M.shell(mesh: Mesh, thickness: number, options: any?)
 	return require(script.Parent.MeshSolidify)(mesh, thickness, options, true)
 end
-function M.clipPlane(mesh, point, normal, cap, options)
-	local config = table.clone(options or {})
+function M.clipPlane(mesh: Mesh, point: Vector3, normal: Vector3, cap: boolean?, options: { [string]: any }?)
+	local config: { [string]: any } = table.clone(options or {})
 	config.keep = "negative"
 	config.cap = cap ~= false
 	if config.tolerance == nil then
@@ -86,12 +101,12 @@ function M.clipPlane(mesh, point, normal, cap, options)
 	local result = require(script.Parent.MeshBisect)(mesh, point, normal, config)
 	return result
 end
-function M.bevelConvex(mesh, width)
+function M.bevelConvex(mesh: Mesh, width: number): Mesh
 	assert(type(width) == "number" and U.finite(width) and width > 0, "Positive finite bevel width required")
 	require(script.Parent.AttributeCore).validate(mesh)
 	local report = mesh:validate()
 	assert(report.valid and report.closed, "Convex bevel requires a closed oriented mesh")
-	local normals = {}
+	local normals: { [number]: Vector3 } = {}
 	for fid, f in mesh.faces do
 		local n = mesh:faceNormal(fid)
 		normals[fid] = n
@@ -100,7 +115,7 @@ function M.bevelConvex(mesh, width)
 			assert((p - origin):Dot(n) <= 1e-6, "bevelConvex supports convex meshes only")
 		end
 	end
-	local planes = {}
+	local planes: { { Vector3 } } = {}
 	for _, e in mesh:topology().edges do
 		local n1, n2 = normals[e.faces[1]], normals[e.faces[2]]
 		if n1:Dot(n2) < 1 - 1e-6 then
@@ -115,7 +130,7 @@ function M.bevelConvex(mesh, width)
 	end
 	return result
 end
-function M.stack(mesh, operations)
+function M.stack(mesh: Mesh, operations: { (Mesh) -> Mesh }): Mesh
 	local m = mesh:clone()
 	for _, op in operations do
 		m = op(m)

@@ -1,10 +1,17 @@
+--!strict
 local U = require(script.Parent.Util)
 local Spatial = require(script.Parent.Spatial)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Per-vertex blend weights in [0, 1], keyed by vertex id; missing ids weigh 1.
+export type Mask = { [number]: number }
+export type Handle = { from: Vector3, to: Vector3 }
 local D = {}
-function D.masked(mesh, operation, options)
+-- Operation and options are forwarded to the non-strict DeformMasked module.
+function D.masked(mesh: Mesh, operation: any, options: any?)
 	return require(script.Parent.DeformMasked)(mesh, operation, options)
 end
-function D.map(mesh, callback, mask)
+function D.map(mesh: Mesh, callback: (Vector3, number) -> Vector3, mask: Mask?): Mesh
 	local out = mesh:clone()
 	for id, p in mesh.vertices do
 		local q = callback(p, id)
@@ -13,10 +20,10 @@ function D.map(mesh, callback, mask)
 	end
 	return out:recalculateNormals()
 end
-function D.transform(mesh, frame, scale)
-	scale = scale or Vector3.one
+function D.transform(mesh: Mesh, frame: CFrame, scale: Vector3?): Mesh
+	local scale: Vector3 = scale or Vector3.one
 	assert(scale.X ~= 0 and scale.Y ~= 0 and scale.Z ~= 0, "Scale must be nonsingular")
-	local out = D.map(mesh, function(p)
+	local out = D.map(mesh, function(p: Vector3): Vector3
 		return frame:PointToWorldSpace(p * scale)
 	end)
 	if scale.X * scale.Y * scale.Z < 0 then
@@ -24,33 +31,33 @@ function D.transform(mesh, frame, scale)
 	end
 	return out
 end
-function D.twist(mesh, radians, lo, hi, mask)
+function D.twist(mesh: Mesh, radians: number, lo: number, hi: number, mask: Mask?): Mesh
 	assert(hi > lo)
-	return D.map(mesh, function(p)
+	return D.map(mesh, function(p: Vector3): Vector3
 		local a = radians * (p.Y - lo) / (hi - lo)
 		return Vector3.new(p.X * math.cos(a) - p.Z * math.sin(a), p.Y, p.X * math.sin(a) + p.Z * math.cos(a))
 	end, mask)
 end
-function D.taper(mesh, bottom, top, lo, hi, mask)
+function D.taper(mesh: Mesh, bottom: number, top: number, lo: number, hi: number, mask: Mask?): Mesh
 	assert(hi > lo)
-	return D.map(mesh, function(p)
+	return D.map(mesh, function(p: Vector3): Vector3
 		local s = bottom + (top - bottom) * math.clamp((p.Y - lo) / (hi - lo), 0, 1)
 		return Vector3.new(p.X * s, p.Y, p.Z * s)
 	end, mask)
 end
-function D.bend(mesh, curvature, mask)
+function D.bend(mesh: Mesh, curvature: number, mask: Mask?): Mesh
 	if math.abs(curvature) < 1e-10 then
 		return mesh:clone()
 	end
-	return D.map(mesh, function(p)
+	return D.map(mesh, function(p: Vector3): Vector3
 		local a = p.Y * curvature
 		local r = 1 / curvature + p.X
 		return Vector3.new(math.cos(a) * r - 1 / curvature, math.sin(a) * r, p.Z)
 	end, mask)
 end
-function D.lattice(mesh, lo, hi, controls, mask)
+function D.lattice(mesh: Mesh, lo: Vector3, hi: Vector3, controls: { Vector3 }, mask: Mask?): Mesh
 	assert(#controls == 8 and hi.X > lo.X and hi.Y > lo.Y and hi.Z > lo.Z)
-	return D.map(mesh, function(p)
+	return D.map(mesh, function(p: Vector3): Vector3
 		local t = (p - lo) / (hi - lo)
 		local x, y, z = math.clamp(t.X, 0, 1), math.clamp(t.Y, 0, 1), math.clamp(t.Z, 0, 1)
 		local a = controls[1]:Lerp(controls[2], x):Lerp(controls[3]:Lerp(controls[4], x), y)
@@ -58,17 +65,23 @@ function D.lattice(mesh, lo, hi, controls, mask)
 		return p + a:Lerp(b, z) -- controls are displacement vectors in x-fast order
 	end, mask)
 end
-function D.shrinkwrap(mesh, target, offset, mask, maxDistance)
+function D.shrinkwrap(mesh: Mesh, target: Mesh, offset: number?, mask: Mask?, maxDistance: number?): Mesh
 	local index = Spatial.new(target)
-	return D.map(mesh, function(p)
+	return D.map(mesh, function(p: Vector3): Vector3
 		local h = index:closest(p, maxDistance)
 		return h and h.position + h.normal * (offset or 0) or p
 	end, mask)
 end
-function D.contact(mesh, field, clearance, mask, iterations)
-	clearance = clearance or 0
+function D.contact(
+	mesh: Mesh,
+	field: (Vector3) -> number,
+	clearance: number?,
+	mask: Mask?,
+	iterations: number?
+): Mesh
+	local clearance: number = clearance or 0
 	local epsilon = 1e-4
-	return D.map(mesh, function(p)
+	return D.map(mesh, function(p: Vector3): Vector3
 		for _ = 1, iterations or 8 do
 			local d = field(p)
 			if d >= clearance - 1e-6 then
@@ -88,12 +101,12 @@ function D.contact(mesh, field, clearance, mask, iterations)
 		return p
 	end, mask)
 end
-function D.rbf(mesh, handles, radius, mask)
+function D.rbf(mesh: Mesh, handles: { Handle }, radius: number, mask: Mask?): Mesh
 	assert(radius > 0 and #handles > 0)
 	local n = #handles
-	local matrix = {}
-	local rhs = {}
-	local function kernel(d)
+	local matrix: { { number } } = {}
+	local rhs: { Vector3 } = {}
+	local function kernel(d: number): number
 		local r = d / radius
 		return math.exp(-r * r)
 	end
@@ -130,7 +143,7 @@ function D.rbf(mesh, handles, radius, mask)
 			end
 		end
 	end
-	return D.map(mesh, function(p)
+	return D.map(mesh, function(p: Vector3): Vector3
 		local q = p
 		for i, h in handles do
 			q += rhs[i] * kernel((p - h.from).Magnitude)
@@ -138,22 +151,23 @@ function D.rbf(mesh, handles, radius, mask)
 		return q
 	end, mask)
 end
-function D.simple(mesh, mode, amount, options)
+-- Options for the kernels below are forwarded to non-strict modules.
+function D.simple(mesh: Mesh, mode: string, amount: number, options: any?)
 	return require(script.Parent.DeformOperations).simple(mesh, mode, amount, options)
 end
-function D.shear(mesh, factor, options)
+function D.shear(mesh: Mesh, factor: number, options: any?)
 	return require(script.Parent.DeformOperations).shear(mesh, factor, options)
 end
-function D.cast(mesh, shape, options)
+function D.cast(mesh: Mesh, shape: string, options: any?)
 	return require(script.Parent.DeformOperations).cast(mesh, shape, options)
 end
-function D.warp(mesh, from, to, options)
+function D.warp(mesh: Mesh, from: CFrame, to: CFrame, options: any?)
 	return require(script.Parent.DeformOperations).warp(mesh, from, to, options)
 end
-function D.taperProfile(mesh, profile, options)
+function D.taperProfile(mesh: Mesh, profile: any, options: any?)
 	return require(script.Parent.DeformOperations).taper(mesh, profile, options)
 end
-function D.curve(mesh, curve, options)
+function D.curve(mesh: Mesh, curve: any, options: any?)
 	return require(script.Parent.DeformCurve)(mesh, curve, options)
 end
 return D

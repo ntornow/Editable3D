@@ -1,15 +1,21 @@
+--!strict
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
 local History = {}
 History.__index = History
-function History.new(mesh, limit)
+export type State = { label: string, mesh: Mesh }
+type HistoryData = { states: { State }, cursor: number, limit: number }
+export type History = typeof(setmetatable({} :: HistoryData, History))
+function History.new(mesh: Mesh, limit: number?): History
 	return setmetatable(
-		{ states = { { label = "Initial", mesh = mesh:clone() } }, cursor = 1, limit = limit or 32 },
+		{ states = { { label = "Initial", mesh = mesh:clone() } }, cursor = 1, limit = limit or 32 } :: HistoryData,
 		History
 	)
 end
-function History:current()
+function History.current(self: History): Mesh
 	return self.states[self.cursor].mesh:clone()
 end
-function History:apply(label, operation)
+function History.apply(self: History, label: string, operation: (Mesh) -> Mesh): Mesh
 	local candidate = operation(self:current())
 	assert(candidate and candidate.validate, "Operation must return mesh")
 	local report = candidate:validate()
@@ -24,11 +30,11 @@ function History:apply(label, operation)
 	self.cursor = #self.states
 	return self:current()
 end
-function History:undo()
+function History.undo(self: History): Mesh
 	self.cursor = math.max(1, self.cursor - 1)
 	return self:current()
 end
-function History:redo()
+function History.redo(self: History): Mesh
 	self.cursor = math.min(#self.states, self.cursor + 1)
 	return self:current()
 end

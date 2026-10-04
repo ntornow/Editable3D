@@ -1,9 +1,70 @@
+--!strict
 -- Reusable length intervals and bounded inverse queries on positive NURBS curves.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
 local Bounds = require(script.Parent.CurveBounds)
 local A = {}
-local function push(heap, node)
+export type ArcLengthCheckpoint = (info: { [string]: any }) -> ()
+export type ArcLengthOptions = {
+	tolerance: number?,
+	maxNodes: number?,
+	maxLeaves: number?,
+	maxDepth: number?,
+	maxIterations: number?,
+	maxSamples: number?,
+	maxWork: number?,
+	checkpoint: ArcLengthCheckpoint?,
+}
+export type ArcLengthResult = {
+	parameter: number,
+	position: Vector3,
+	tangent: Vector3,
+	lowerBound: number,
+	upperBound: number,
+	length: number,
+	targetLowerBound: number,
+	targetUpperBound: number,
+	errorBound: number,
+	converged: boolean,
+	iterations: number,
+	parameterLowerBound: number,
+	parameterUpperBound: number,
+	reason: string?,
+}
+export type ArcLengthSampling = {
+	parameters: { number },
+	results: { ArcLengthResult },
+	errorBound: number,
+	converged: boolean,
+	length: number,
+}
+export type PreparedArcLength = {
+	length: number,
+	lowerBound: number,
+	upperBound: number,
+	errorBound: number,
+	converged: boolean,
+	reason: string?,
+	segments: number,
+	visited: number,
+	atLength: (distance: number) -> ArcLengthResult,
+	atFraction: (fraction: number) -> ArcLengthResult,
+	sample: (count: number) -> ({ Vector3 }, ArcLengthSampling),
+}
+-- Curve descriptors come from NURBS (typed separately); treated as opaque here.
+type Curve = any
+type Node = {
+	curve: Curve,
+	first: number,
+	last: number,
+	depth: number,
+	lower: number,
+	upper: number,
+	gap: number,
+	beforeLower: number,
+	beforeUpper: number,
+}
+local function push(heap: { Node }, node: Node)
 	local i = #heap + 1
 	while i > 1 do
 		local parent = math.floor(i / 2)
@@ -14,8 +75,8 @@ local function push(heap, node)
 	end
 	heap[i] = node
 end
-local function pop(heap)
-	local first, last = heap[1], table.remove(heap)
+local function pop(heap: { Node }): Node
+	local first, last = heap[1], table.remove(heap) :: Node
 	if #heap > 0 then
 		local i = 1
 		while i * 2 <= #heap do
@@ -32,8 +93,8 @@ local function pop(heap)
 	end
 	return first
 end
-function A.prepare(curve, options)
-	options = table.clone(options or {})
+function A.prepare(curve: Curve, options: ArcLengthOptions?): PreparedArcLength
+	local options: ArcLengthOptions = table.clone(options or {})
 	local tolerance = options.tolerance or 1e-4
 	assert(
 		type(tolerance) == "number" and U.finite(tolerance) and tolerance > 0,
@@ -46,15 +107,16 @@ function A.prepare(curve, options)
 	local maxSamples = U.integer(options.maxSamples or 10000, 2)
 	local maxWork = U.integer(options.maxWork or 1000000, 1)
 	assert(maxDepth <= 52 and maxIterations <= 64, "Arc length parameter resolution budget exceeded")
-	local prepared = N.compileCurve(curve)
+	local prepared: any = N.compileCurve(curve)
 	if options.checkpoint then
 		options.checkpoint({ stage = "prepare", visited = 0 })
 	end
-	local heap, blocked, visited = {}, {}, 0
+	local heap: { Node }, blocked: { Node }, visited = {}, {}, 0
 	local lower, upper = 0, 0
-	local pieces = N.bezierSegments(curve)
+	local pieces: { any } = N.bezierSegments(curve)
 	assert(#pieces <= maxLeaves, "Initial length segment budget exceeded")
-	local function add(node)
+	local function add(raw: any)
+		local node: Node = raw
 		node.lower, node.upper = Bounds.length(node.curve)
 		node.gap = node.upper - node.lower
 		lower += node.lower
@@ -91,7 +153,7 @@ function A.prepare(curve, options)
 	for _, leaf in heap do
 		table.insert(leaves, leaf)
 	end
-	table.sort(leaves, function(a, b)
+	table.sort(leaves, function(a: Node, b: Node): boolean
 		return a.first < b.first
 	end)
 	lower, upper = 0, 0
@@ -102,7 +164,7 @@ function A.prepare(curve, options)
 	end
 	local total = (lower + upper) / 2
 	local lengthConverged = upper - lower <= tolerance / 4
-	local function prefix(t)
+	local function prefix(t: number): (number, number)
 		if t == 0 then
 			return 0, 0
 		end
@@ -129,7 +191,7 @@ function A.prepare(curve, options)
 		local a, b = Bounds.length(left)
 		return leaf.beforeLower + a, leaf.beforeUpper + b
 	end
-	local function inverse(value, normalized)
+	local function inverse(value: number, normalized: boolean): ArcLengthResult
 		if options.checkpoint then
 			options.checkpoint({ stage = "inverse", iteration = 0 })
 		end
@@ -142,7 +204,7 @@ function A.prepare(curve, options)
 			normalized and value * lower or value, normalized and value * upper or value
 		local lo, hi, iterations = 0, 1, 0
 		local t = value == 0 and 0 or (normalized and value == 1 and 1 or 0.5)
-		local pLo, pHi, errorBound
+		local pLo: number, pHi: number, errorBound: number
 		while true do
 			pLo, pHi = prefix(t)
 			errorBound = math.max(math.abs(pLo - targetHi), math.abs(pHi - targetLo))
@@ -189,13 +251,13 @@ function A.prepare(curve, options)
 				or nil,
 		}
 	end
-	local function sample(count)
+	local function sample(count: number): ({ Vector3 }, ArcLengthSampling)
 		U.integer(count, 2)
 		assert(
 			count <= maxSamples and count * (maxIterations + 1) <= maxWork,
 			"Arc length sampling budget exceeded"
 		)
-		local points, parameters, results = {}, {}, {}
+		local points: { Vector3 }, parameters: { number }, results: { ArcLengthResult } = {}, {}, {}
 		local maximum, converged = 0, true
 		for i = 0, count - 1 do
 			local r = inverse(i / (count - 1), true)
@@ -223,19 +285,19 @@ function A.prepare(curve, options)
 			or nil,
 		segments = #leaves,
 		visited = visited,
-		atLength = function(distance)
+		atLength = function(distance: number): ArcLengthResult
 			return inverse(distance, false)
 		end,
-		atFraction = function(fraction)
+		atFraction = function(fraction: number): ArcLengthResult
 			return inverse(fraction, true)
 		end,
 		sample = sample,
 	})
 end
-function A.parameter(curve, distance, options)
+function A.parameter(curve: Curve, distance: number, options: ArcLengthOptions?): ArcLengthResult
 	return A.prepare(curve, options).atLength(distance)
 end
-function A.sample(curve, count, options)
+function A.sample(curve: Curve, count: number, options: ArcLengthOptions?): ({ Vector3 }, ArcLengthSampling)
 	return A.prepare(curve, options).sample(count)
 end
 return A

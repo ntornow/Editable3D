@@ -1,11 +1,23 @@
+--!strict
 local U = require(script.Parent.Util)
 local Q = require(script.Parent.Quaternion)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type Bone = { name: string, parent: number?, bindLocal: CFrame }
+-- Bone id -> local (pose) or world transform.
+export type Pose = { [number]: CFrame }
+export type SkinOptions = { recalculateNormals: boolean?, normalAngle: number? }
+export type SkinReport = { weightedVertices: number, method: string }
+export type IKOptions = { iterations: number?, tolerance: number? }
+export type IKReport = { endpointError: number }
+type RigData = { bones: { [number]: Bone }, order: { number }, nextId: number }
 local Rig = {}
 Rig.__index = Rig
-function Rig.new()
-	return setmetatable({ bones = {}, order = {}, nextId = 1 }, Rig)
+export type Rig = typeof(setmetatable({} :: RigData, Rig))
+function Rig.new(): Rig
+	return setmetatable({ bones = {}, order = {}, nextId = 1 } :: RigData, Rig)
 end
-function Rig:addBone(name, parentId, bindLocal)
+function Rig.addBone(self: Rig, name: string, parentId: number?, bindLocal: CFrame?): number
 	assert(type(name) == "string" and #name > 0)
 	assert(not parentId or self.bones[parentId], "Parent must exist first")
 	for _, b in self.bones do
@@ -17,8 +29,8 @@ function Rig:addBone(name, parentId, bindLocal)
 	table.insert(self.order, id)
 	return id
 end
-function Rig:worldTransforms(pose)
-	local world = {}
+function Rig.worldTransforms(self: Rig, pose: Pose?): Pose
+	local world: Pose = {}
 	for _, id in self.order do
 		local b = self.bones[id]
 		local localFrame = pose and pose[id] or b.bindLocal
@@ -26,7 +38,7 @@ function Rig:worldTransforms(pose)
 	end
 	return world
 end
-function Rig:skin(mesh, pose)
+function Rig.skin(self: Rig, mesh: Mesh, pose: Pose?): Mesh
 	local bind = self:worldTransforms()
 	local posed = self:worldTransforms(pose)
 	local transforms = {}
@@ -37,7 +49,7 @@ function Rig:skin(mesh, pose)
 	for id, p in mesh.vertices do
 		local result = Vector3.zero
 		local total = 0
-		for bone, w in mesh.weights[id] or {} do
+		for bone, w in mesh.weights[id] or {} :: { [number]: number } do
 			assert(transforms[bone], "Unknown weighted bone")
 			assert(w >= 0 and U.finite(w))
 			result += transforms[bone]:PointToWorldSpace(p) * w
@@ -49,8 +61,8 @@ function Rig:skin(mesh, pose)
 	end
 	return out:recalculateNormals()
 end
-function Rig:skinDualQuaternion(mesh, pose, options)
-	options = options or {}
+function Rig.skinDualQuaternion(self: Rig, mesh: Mesh, pose: Pose?, options: SkinOptions?): (Mesh, SkinReport)
+	local options: SkinOptions = options or {}
 	local bind, posed = self:worldTransforms(), self:worldTransforms(pose)
 	local transforms = {}
 	for id in self.bones do
@@ -69,7 +81,7 @@ function Rig:skinDualQuaternion(mesh, pose, options)
 	for id, p in mesh.vertices do
 		local weights = mesh.weights[id] or {}
 		local ids = U.keys(weights)
-		local reference, biggest = nil, 0
+		local reference: Q.Quat?, biggest = nil, 0
 		for _, bone in ids do
 			local w = weights[bone]
 			assert(transforms[bone], "Unknown weighted bone")
@@ -127,9 +139,9 @@ function Rig:skinDualQuaternion(mesh, pose, options)
 	out.revision += 1
 	return out, { weightedVertices = count, method = "dualQuaternion" }
 end
-function Rig:automaticWeights(mesh, influences, power)
-	influences = influences or 4
-	power = power or 2
+function Rig.automaticWeights(self: Rig, mesh: Mesh, influences: number?, power: number?): Mesh
+	local influences: number = influences or 4
+	local power: number = power or 2
 	U.integer(influences, 1)
 	assert(power > 0 and #self.order > 0)
 	local world = self:worldTransforms()
@@ -166,7 +178,7 @@ function Rig:automaticWeights(mesh, influences, power)
 	end
 	return out
 end
-function Rig.normalizeWeights(mesh, influences)
+function Rig.normalizeWeights(mesh: Mesh, influences: number?): Mesh
 	local out = mesh:clone()
 	for id, weights in out.weights do
 		local list = {}
@@ -190,7 +202,12 @@ function Rig.normalizeWeights(mesh, influences)
 	end
 	return out
 end
-function Rig.fabrik(points, target, iterations, tolerance)
+function Rig.fabrik(
+	points: { Vector3 },
+	target: Vector3,
+	iterations: number?,
+	tolerance: number?
+): { Vector3 }
 	assert(#points >= 2)
 	local p = table.clone(points)
 	local lengths, total = {}, 0
@@ -222,7 +239,7 @@ function Rig.fabrik(points, target, iterations, tolerance)
 	end
 	return p
 end
-function Rig.blendShapes(base, shapes, weights)
+function Rig.blendShapes(base: Mesh, shapes: { [string]: Mesh }, weights: { [string]: number }): Mesh
 	local out = base:clone()
 	for name, shape in shapes do
 		local w = weights[name] or 0
@@ -235,8 +252,14 @@ function Rig.blendShapes(base, shapes, weights)
 	end
 	return out:recalculateNormals()
 end
-function Rig:solveIK(pose, chain, target, options)
-	options = options or {}
+function Rig.solveIK(
+	self: Rig,
+	pose: Pose?,
+	chain: { number },
+	target: Vector3,
+	options: IKOptions?
+): (Pose, IKReport)
+	local options: IKOptions = options or {}
 	assert(#chain >= 2)
 	local world = self:worldTransforms(pose)
 	local points = {}

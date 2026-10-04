@@ -1,11 +1,87 @@
+--!strict
 -- Fixed-weight linear fits and bounded nonlinear rational spline refinement.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
-local QR = require(script.Parent.DenseQR)
+-- DenseQR is not strict yet; this is its contract as used here.
+local QR: (
+	matrix: { { number } },
+	rhs: { { number } },
+	columns: number,
+	options: BudgetOptions
+) -> ({ { number } }?, SolveDiagnostics) =
+	require(script.Parent.DenseQR) :: any
 local F = {}
 
-local function parameters(points, supplied, mode)
-	local n, out = #points, {}
+export type BudgetOptions = {
+	maxControls: number?,
+	maxSamples: number?,
+	maxMatrixEntries: number?,
+	maxWork: number?,
+	rankTolerance: number?,
+}
+export type CurveFitOptions = {
+	parameters: { number }?,
+	parameterization: string?, -- "chord" | "centripetal" | "uniform"
+	knots: { number }?,
+	weights: { number }?,
+	pins: { [number]: Vector3 }?,
+	pinEndpoints: boolean?,
+	sampleWeights: { number }?,
+	tolerance: number?,
+	maxControls: number?,
+	maxSamples: number?,
+	maxMatrixEntries: number?,
+	maxWork: number?,
+	rankTolerance: number?,
+}
+export type SurfaceFitOptions = {
+	parametersU: { number }?,
+	parametersV: { number }?,
+	parameterization: string?,
+	knotsU: { number }?,
+	knotsV: { number }?,
+	weights: { { number } }?,
+	pins: { [number]: { [number]: Vector3 } }?,
+	sampleWeights: { { number } }?,
+	tolerance: number?,
+	maxControls: number?,
+	maxSamples: number?,
+	maxMatrixEntries: number?,
+	maxWork: number?,
+	rankTolerance: number?,
+}
+export type SolveDiagnostics = {
+	rank: number,
+	rows: number?,
+	columns: number,
+	method: string?,
+	diagonalRatio: number?,
+	reason: string?,
+}
+-- Solver diagnostics extended in place with fit residuals.
+export type FitReport = {
+	rank: number,
+	rows: number?,
+	columns: number,
+	method: string?,
+	diagonalRatio: number?,
+	reason: string?,
+	rmsError: number,
+	maximumError: number,
+	samples: number,
+	success: boolean,
+	parameters: { number }?,
+	controls: number?,
+	parametersU: { number }?,
+	parametersV: { number }?,
+	controlsU: number?,
+	controlsV: number?,
+	interpolated: boolean?,
+	tolerance: number?,
+}
+
+local function parameters(points: { Vector3 }, supplied: { number }?, mode: string?): { number }
+	local n, out: { number } = #points, {}
 	assert(n >= 2, "At least two samples required")
 	for _, p in points do
 		assert(U.vector(p), "Finite Vector3 samples required")
@@ -22,7 +98,7 @@ local function parameters(points, supplied, mode)
 		assert(out[1] == 0 and out[n] == 1, "Fitting parameters must span [0,1]")
 		return out
 	end
-	mode = mode or "chord"
+	local mode: string = mode or "chord"
 	assert(mode == "chord" or mode == "centripetal" or mode == "uniform", "Unknown parameterization")
 	out[1] = 0
 	for i = 2, n do
@@ -39,8 +115,8 @@ local function parameters(points, supplied, mode)
 	return out
 end
 
-local function averagedKnots(params, degree)
-	local n, knots = #params, {}
+local function averagedKnots(params: { number }, degree: number): { number }
+	local n, knots: { number } = #params, {}
 	for _ = 1, degree + 1 do
 		table.insert(knots, 0)
 	end
@@ -57,7 +133,7 @@ local function averagedKnots(params, degree)
 	return knots
 end
 
-local function checkedBudget(samples, controls, options)
+local function checkedBudget(samples: number, controls: number, options: BudgetOptions)
 	U.integer(controls, 2)
 	assert(controls <= (options.maxControls or 256), "Fitting control budget exceeded")
 	assert(samples <= (options.maxSamples or 10000), "Fitting sample budget exceeded")
@@ -77,9 +153,16 @@ local function checkedBudget(samples, controls, options)
 	end
 end
 
-local function solve(rows, data, controlCount, pins, sampleWeights, options)
+local function solve(
+	rows: { { number } },
+	data: { Vector3 },
+	controlCount: number,
+	pins: { [number]: Vector3 },
+	sampleWeights: { number }?,
+	options: BudgetOptions
+): ({ Vector3 }, SolveDiagnostics)
 	local origin = data[1]
-	local free, freeMap = {}, {}
+	local free: { number }, freeMap: { [number]: number } = {}, {}
 	for index, point in pins do
 		U.integer(index, 1)
 		assert(index <= controlCount and U.vector(point), "Invalid fixed control")
@@ -100,7 +183,7 @@ local function solve(rows, data, controlCount, pins, sampleWeights, options)
 			maximumWeight = math.max(maximumWeight, w)
 		end
 	end
-	local matrix, rhs = {}, {}
+	local matrix: { { number } }, rhs: { { number } } = {}, {}
 	for sample, row in rows do
 		local scale = sampleWeights and math.sqrt(sampleWeights[sample] / maximumWeight) or 1
 		local point = data[sample]
@@ -116,17 +199,18 @@ local function solve(rows, data, controlCount, pins, sampleWeights, options)
 			matrix[sample][column] = row[index] * scale
 		end
 	end
-	local solutions, diagnostics = {}, { rank = 0, rows = #data, columns = 0, method = "Fixed controls" }
+	local solutions: { { number } }?, diagnostics: SolveDiagnostics =
+		{}, { rank = 0, rows = #data, columns = 0, method = "Fixed controls" }
 	if #free > 0 then
 		solutions, diagnostics = QR(matrix, rhs, #free, options)
 		assert(solutions, "Fitting system is rank deficient or ill-conditioned")
 	end
-	local controls = {}
+	local controls: { Vector3 } = {}
 	for i = 1, controlCount do
 		if pins[i] then
 			controls[i] = pins[i]
 		else
-			local p = solutions[freeMap[i]]
+			local p = (solutions :: { { number } })[freeMap[i]]
 			controls[i] = origin + Vector3.new(p[1], p[2], p[3])
 			assert(U.vector(controls[i]), "Fitted control exceeds coordinate range")
 		end
@@ -134,7 +218,7 @@ local function solve(rows, data, controlCount, pins, sampleWeights, options)
 	return controls, diagnostics
 end
 
-local function residuals(data, evaluate)
+local function residuals(data: { Vector3 }, evaluate: (index: number) -> Vector3): (number, number)
 	local sum, maximum = 0, 0
 	for i, p in data do
 		local error = (evaluate(i) - p).Magnitude
@@ -144,8 +228,13 @@ local function residuals(data, evaluate)
 	return math.sqrt(sum / #data), maximum
 end
 
-function F.curve(points, degree, controlCount, options)
-	options = options or {}
+function F.curve(
+	points: { Vector3 },
+	degree: number,
+	controlCount: number,
+	options: CurveFitOptions?
+): (N.Curve, FitReport)
+	local options: CurveFitOptions = options or {}
 	checkedBudget(#points, controlCount, options)
 	local params = parameters(points, options.parameters, options.parameterization)
 	local knots = options.knots or (controlCount == #points and averagedKnots(params, degree) or nil)
@@ -154,11 +243,11 @@ function F.curve(points, degree, controlCount, options)
 		degree,
 		{ weights = options.weights, knots = knots }
 	)
-	local rows = {}
+	local rows: { { number } } = {}
 	for i, t in params do
 		rows[i] = N.basisWeights(basisCurve, t)
 	end
-	local pins = table.clone(options.pins or {})
+	local pins: { [number]: Vector3 } = table.clone(options.pins or {})
 	if options.pinEndpoints ~= false then
 		assert(not pins[1] or pins[1] == points[1], "Endpoint pin conflicts with sample")
 		assert(
@@ -167,7 +256,8 @@ function F.curve(points, degree, controlCount, options)
 		)
 		pins[1], pins[controlCount] = points[1], points[#points]
 	end
-	local controls, report = solve(rows, points, controlCount, pins, options.sampleWeights, options)
+	local controls, diagnostics = solve(rows, points, controlCount, pins, options.sampleWeights, options)
+	local report: FitReport = diagnostics :: any
 	local curve = N.curve(controls, degree, { weights = basisCurve.weights, knots = basisCurve.knots })
 	report.rmsError, report.maximumError = residuals(points, function(i)
 		return N.evaluate(curve, params[i])
@@ -177,20 +267,29 @@ function F.curve(points, degree, controlCount, options)
 	return curve, report
 end
 
-function F.interpolateCurve(points, degree, options)
+function F.interpolateCurve(
+	points: { Vector3 },
+	degree: number,
+	options: CurveFitOptions?
+): (N.Curve, FitReport)
 	local curve, report = F.curve(points, degree, #points, options)
-	local tolerance = (options or {}).tolerance or 1e-4
+	local tolerance = ((options or {}) :: CurveFitOptions).tolerance or 1e-4
 	assert(U.finite(tolerance) and tolerance >= 0, "Finite nonnegative interpolation tolerance required")
 	assert(report.maximumError <= tolerance, "Curve interpolation exceeded requested tolerance")
 	report.interpolated, report.tolerance = true, tolerance
 	return curve, report
 end
 
-local function gridParameters(grid, axis, supplied, mode)
+local function gridParameters(
+	grid: { { Vector3 } },
+	axis: string,
+	supplied: { number }?,
+	mode: string?
+): { number }
 	local count = axis == "U" and #grid or #grid[1]
 	local lines = axis == "U" and #grid[1] or #grid
 	if supplied then
-		local points = {}
+		local points: { Vector3 } = {}
 		for i = 1, count do
 			points[i] = axis == "U" and grid[i][1] or grid[1][i]
 		end
@@ -198,7 +297,7 @@ local function gridParameters(grid, axis, supplied, mode)
 	end
 	local out = table.create(count, 0)
 	for line = 1, lines do
-		local points = {}
+		local points: { Vector3 } = {}
 		for i = 1, count do
 			points[i] = axis == "U" and grid[i][line] or grid[line][i]
 		end
@@ -211,8 +310,15 @@ local function gridParameters(grid, axis, supplied, mode)
 	return out
 end
 
-function F.surface(grid, degreeU, degreeV, controlsU, controlsV, options)
-	options = options or {}
+function F.surface(
+	grid: { { Vector3 } },
+	degreeU: number,
+	degreeV: number,
+	controlsU: number,
+	controlsV: number,
+	options: SurfaceFitOptions?
+): (N.Surface, FitReport)
+	local options: SurfaceFitOptions = options or {}
 	U.integer(controlsU, 2)
 	U.integer(controlsV, 2)
 	local nu, nv = #grid, #grid > 0 and #grid[1] or 0
@@ -236,7 +342,7 @@ function F.surface(grid, degreeU, degreeV, controlsU, controlsV, options)
 		degreeV,
 		{ knots = options.knotsV or (controlsV == nv and averagedKnots(pv, degreeV) or nil) }
 	)
-	local weights, dummy, maximumWeight = {}, {}, 0
+	local weights: { { number } }, dummy: { { Vector3 } }, maximumWeight = {}, {}, 0
 	if options.weights then
 		assert(#options.weights == controlsU, "Surface weight rows mismatch")
 	end
@@ -252,14 +358,15 @@ function F.surface(grid, degreeU, degreeV, controlsU, controlsV, options)
 			maximumWeight = math.max(maximumWeight, w)
 		end
 	end
-	local basisU, basisV = {}, {}
+	local basisU: { { number } }, basisV: { { number } } = {}, {}
 	for i, t in pu do
 		basisU[i] = N.basisWeights(cu, t)
 	end
 	for j, t in pv do
 		basisV[j] = N.basisWeights(cv, t)
 	end
-	local rows, samples, locations, sampleWeights = {}, {}, {}, options.sampleWeights and {} or nil
+	local rows: { { number } }, samples: { Vector3 }, locations: { { number } }, sampleWeights: { number }? =
+		{}, {}, {}, options.sampleWeights and {} or nil
 	if options.sampleWeights then
 		assert(#options.sampleWeights == nu, "Sample weight rows mismatch")
 	end
@@ -268,7 +375,7 @@ function F.surface(grid, degreeU, degreeV, controlsU, controlsV, options)
 			assert(#options.sampleWeights[a] == nv, "Sample weight columns mismatch")
 		end
 		for b = 1, nv do
-			local row, denominator = {}, 0
+			local row: { number }, denominator = {}, 0
 			for i = 1, controlsU do
 				for j = 1, controlsV do
 					local value = basisU[a][i] * basisV[b][j] * (weights[i][j] / maximumWeight)
@@ -284,12 +391,12 @@ function F.surface(grid, degreeU, degreeV, controlsU, controlsV, options)
 			table.insert(samples, grid[a][b])
 			table.insert(locations, { pu[a], pv[b] })
 			if sampleWeights then
-				table.insert(sampleWeights, options.sampleWeights[a][b])
+				table.insert(sampleWeights, (options.sampleWeights :: { { number } })[a][b])
 			end
 		end
 	end
-	local pins = {}
-	for i, row in options.pins or {} do
+	local pins: { [number]: Vector3 } = {}
+	for i, row in (options.pins or {}) :: { [number]: { [number]: Vector3 } } do
 		U.integer(i, 1)
 		assert(i <= controlsU, "Surface pin row outside control net")
 		for j, p in row do
@@ -298,7 +405,8 @@ function F.surface(grid, degreeU, degreeV, controlsU, controlsV, options)
 			pins[(i - 1) * controlsV + j] = p
 		end
 	end
-	local controls, report = solve(rows, samples, controlsU * controlsV, pins, sampleWeights, options)
+	local controls, diagnostics = solve(rows, samples, controlsU * controlsV, pins, sampleWeights, options)
+	local report: FitReport = diagnostics :: any
 	for i = 1, controlsU do
 		for j = 1, controlsV do
 			dummy[i][j] = controls[(i - 1) * controlsV + j]
@@ -314,20 +422,26 @@ function F.surface(grid, degreeU, degreeV, controlsU, controlsV, options)
 	return surface, report
 end
 
-function F.interpolateSurface(grid, degreeU, degreeV, options)
+function F.interpolateSurface(
+	grid: { { Vector3 } },
+	degreeU: number,
+	degreeV: number,
+	options: SurfaceFitOptions?
+): (N.Surface, FitReport)
 	local surface, report = F.surface(grid, degreeU, degreeV, #grid, #grid > 0 and #grid[1] or 0, options)
-	local tolerance = (options or {}).tolerance or 1e-4
+	local tolerance = ((options or {}) :: SurfaceFitOptions).tolerance or 1e-4
 	assert(U.finite(tolerance) and tolerance >= 0, "Finite nonnegative interpolation tolerance required")
 	assert(report.maximumError <= tolerance, "Surface interpolation exceeded requested tolerance")
 	report.interpolated, report.tolerance = true, tolerance
 	return surface, report
 end
 
-function F.refineCurve(initial, points, options)
+-- NonlinearFit is not strict yet: initial may be a NURBS or cyclic descriptor; options/results pass through.
+function F.refineCurve(initial: any, points: { Vector3 }, options: any)
 	return require(script.Parent.NonlinearFit).run(initial, points, false, options)
 end
 
-function F.refineSurface(initial, points, options)
+function F.refineSurface(initial: any, points: { Vector3 }, options: any)
 	return require(script.Parent.NonlinearFit).run(initial, points, true, options)
 end
 

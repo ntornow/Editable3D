@@ -1,9 +1,21 @@
+--!strict
 -- Weighted proper-rotation / similarity fitting with Horn's quaternion formulation.
 local U = require(script.Parent.Util)
 local Q = require(script.Parent.Quaternion)
+-- `scale` is read only by fit; rotation accepts the same table.
+export type Options = { weights: { number }?, reference: CFrame?, scale: boolean? }
+export type RotationReport = { ambiguous: boolean, eigenvalueMultiplicity: number }
+export type FitResult = {
+	frame: CFrame,
+	scale: number,
+	rms: number,
+	maximumError: number,
+	rotationAmbiguous: boolean,
+	totalWeight: number,
+}
 local R = {}
 
-local function checked(a, b, weights)
+local function checked(a: { Vector3 }, b: { Vector3 }, weights: { number }?): number
 	assert(#a > 0 and #a == #b, "Corresponding nonempty point arrays required")
 	if weights then
 		assert(#weights == #a, "Weight count mismatch")
@@ -19,8 +31,8 @@ local function checked(a, b, weights)
 	return total
 end
 
-function R.rotation(source, target, options)
-	options = options or {}
+function R.rotation(source: { Vector3 }, target: { Vector3 }, options: Options?): (CFrame, RotationReport)
+	local options: Options = options or {}
 	local weights = options.weights
 	local total = checked(source, target, weights)
 	local s = table.create(9, 0)
@@ -122,8 +134,8 @@ function R.rotation(source, target, options)
 		{ ambiguous = multiplicity > 1, eigenvalueMultiplicity = multiplicity }
 end
 
-function R.fit(source, target, options)
-	options = options or {}
+function R.fit(source: { Vector3 }, target: { Vector3 }, options: Options?): FitResult
+	local options: Options = options or {}
 	local weights = options.weights
 	local total = checked(source, target, weights)
 	local sx, sy, sz, tx, ty, tz = 0, 0, 0, 0, 0, 0
@@ -137,7 +149,7 @@ function R.fit(source, target, options)
 		tz += b.Z * w
 	end
 	local ca, cb = Vector3.new(sx, sy, sz), Vector3.new(tx, ty, tz)
-	local a, b = {}, {}
+	local a: { Vector3 }, b: { Vector3 } = {}, {}
 	for i, p in source do
 		a[i] = p - ca
 		b[i] = target[i] - cb

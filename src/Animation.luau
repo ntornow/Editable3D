@@ -1,6 +1,12 @@
+--!strict
 local U = require(script.Parent.Util)
+-- Key values are polymorphic: numbers or anything with :Lerp (see Util.mix).
+export type Key = { time: number, value: any }
+export type Track = { keys: { Key }, interpolation: string }
+export type Values = { [string]: any }
+export type Frame = { time: number, values: Values }
 local A = {}
-function A.track(keys, interpolation)
+function A.track(keys: { Key }, interpolation: string?): Track
 	assert(#keys > 0)
 	keys = U.copy(keys)
 	table.sort(keys, function(a, b)
@@ -11,9 +17,9 @@ function A.track(keys, interpolation)
 	end
 	interpolation = interpolation or "linear"
 	assert(interpolation == "linear" or interpolation == "step" or interpolation == "smooth")
-	return { keys = keys, interpolation = interpolation }
+	return { keys = keys, interpolation = interpolation :: string }
 end
-function A.sample(track, time)
+function A.sample(track: Track, time: number): any
 	local keys = track.keys
 	if time <= keys[1].time then
 		return keys[1].value
@@ -39,18 +45,18 @@ function A.sample(track, time)
 	end
 	return U.mix(keys[lo].value, keys[hi].value, t)
 end
-function A.evaluate(tracks, time, duration, looped)
+function A.evaluate(tracks: { [string]: Track }, time: number, duration: number?, looped: boolean?): Values
 	if looped then
 		assert(duration and duration > 0)
 		time %= duration
 	end
-	local result = {}
+	local result: Values = {}
 	for name, track in tracks do
 		result[name] = A.sample(track, time)
 	end
 	return result
 end
-function A.blend(a, b, weight)
+function A.blend(a: Values, b: Values, weight: number): Values
 	weight = math.clamp(weight, 0, 1)
 	local out = table.clone(a)
 	for name, value in b do
@@ -58,9 +64,9 @@ function A.blend(a, b, weight)
 	end
 	return out
 end
-function A.bake(tracks, startTime, endTime, fps)
+function A.bake(tracks: { [string]: Track }, startTime: number, endTime: number, fps: number): { Frame }
 	assert(fps > 0 and endTime >= startTime)
-	local frames = {}
+	local frames: { Frame } = {}
 	local count = math.ceil((endTime - startTime) * fps)
 	for i = 0, count do
 		local t = math.min(startTime + i / fps, endTime)

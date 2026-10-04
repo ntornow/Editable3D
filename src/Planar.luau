@@ -1,13 +1,40 @@
+--!strict
 -- Validated simple polygon domains with holes. Exact predicate decisions, original ear clipping.
 local U = require(script.Parent.Util)
 local P = require(script.Parent.Predicates)
 local Mesh = require(script.Parent.Mesh)
 -- Deferred require breaks a load-order cycle; the analyzer does not follow it.
 local deferredRequire = require :: any
+export type Loop = { Vector2 }
+export type Options = {
+	maxWork: number?,
+	maxVertices: number?,
+	maxIntersections: number?,
+	checkpoint: ((fraction: number) -> ())?,
+	_visit: (() -> ())?,
+}
+export type Hit = {
+	loopA: number,
+	edgeA: number,
+	loopB: number,
+	edgeB: number,
+	intersection: P.Intersection,
+}
+export type HitStatus = { complete: boolean, reason: string? }
+-- Points indexed by triangle and boundary-loop corner ids; outer loop first.
+export type Domain = {
+	points: { Vector2 },
+	triangles: { { number } },
+	boundaryLoops: { { number } },
+	area: number,
+	holes: number,
+}
+type Edge = { loop: number, index: number, a: Vector2, b: Vector2 }
+type Node = { id: number, previous: number, next: number, active: boolean }
 local D = {}
 
-local function context(options)
-	options = options or {}
+local function context(options: Options?): () -> ()
+	local options: Options = options or {}
 	local maximum = options.maxWork or 5000000
 	U.integer(maximum, 1)
 	local work = 0
@@ -22,8 +49,8 @@ local function context(options)
 		end
 	end
 end
-local function cleanLoops(loops, options)
-	local result, total = {}, 0
+local function cleanLoops(loops: { Loop }, options: Options): { Loop }
+	local result: { Loop }, total = {}, 0
 	for i, loop in loops do
 		assert(
 			total + #loop - ((#loop > 1 and loop[1] == loop[#loop]) and 1 or 0)
@@ -45,14 +72,14 @@ local function cleanLoops(loops, options)
 	assert(total <= (options.maxVertices or 2000), "Planar input vertex budget exceeded")
 	return result
 end
-local function intersections(loops, work, maxHits)
-	local edges = {}
+local function intersections(loops: { Loop }, work: () -> (), maxHits: number): ({ Hit }, HitStatus)
+	local edges: { Edge } = {}
 	for loop, points in loops do
 		for i, p in points do
 			table.insert(edges, { loop = loop, index = i, a = p, b = points[i % #points + 1] })
 		end
 	end
-	local hits = {}
+	local hits: { Hit } = {}
 	for i, a in edges do
 		for j = i + 1, #edges do
 			work()
@@ -74,27 +101,27 @@ local function intersections(loops, work, maxHits)
 	return hits, { complete = true }
 end
 
-function D.intersections(loops, options)
-	options = options or {}
+function D.intersections(loops: { Loop }, options: Options?): ({ Hit }, HitStatus)
+	local options: Options = options or {}
 	local maximum = options.maxIntersections or 10000
 	U.integer(maximum, 1)
 	return intersections(cleanLoops(loops, options), context(options), maximum)
 end
 
-local function reversed(points)
-	local out = {}
+local function reversed(points: Loop): Loop
+	local out: Loop = {}
 	for i = #points, 1, -1 do
 		table.insert(out, points[i])
 	end
 	return out
 end
-local function strictlyInTriangle(p, a, b, c)
+local function strictlyInTriangle(p: Vector2, a: Vector2, b: Vector2, c: Vector2): boolean
 	return P.orient2D(a, b, p) >= 0 and P.orient2D(b, c, p) >= 0 and P.orient2D(c, a, p) >= 0
 end
-function D.triangulate(outer, holes, options)
-	options = options or {}
-	holes = holes or {}
-	local input = { outer }
+function D.triangulate(outer: Loop, holes: { Loop }?, options: Options?): Domain
+	local options: Options = options or {}
+	local holes: { Loop } = holes or {}
+	local input: { Loop } = { outer }
 	for _, hole in holes do
 		table.insert(input, hole)
 	end
@@ -122,7 +149,7 @@ function D.triangulate(outer, holes, options)
 			end
 		end
 	end
-	local points, rings = {}, {}
+	local points: { Vector2 }, rings: { { number } } = {}, {}
 	for i, loop in loops do
 		rings[i] = {}
 		for _, p in loop do
@@ -131,8 +158,8 @@ function D.triangulate(outer, holes, options)
 		end
 	end
 	local contour = table.clone(rings[1])
-	local bridges = {}
-	local order = {}
+	local bridges: { { number } } = {}
+	local order: { { ring: number, start: number, point: Vector2 } } = {}
 	for i = 2, #rings do
 		local right = 1
 		for j, id in rings[i] do
@@ -146,7 +173,7 @@ function D.triangulate(outer, holes, options)
 	table.sort(order, function(a, b)
 		return a.point.X > b.point.X or a.point.X == b.point.X and a.point.Y < b.point.Y
 	end)
-	local function visible(a, b)
+	local function visible(a: number, b: number): boolean
 		local pa, pb = points[a], points[b]
 		if pa == pb then
 			return false
@@ -185,7 +212,7 @@ function D.triangulate(outer, holes, options)
 	for _, hole in order do
 		local ring = rings[hole.ring]
 		local h = ring[hole.start]
-		local best, distance = nil, math.huge
+		local best: number?, distance = nil, math.huge
 		for i, id in contour do
 			local x, y = points[h].X - points[id].X, points[h].Y - points[id].Y
 			local length = x * x + y * y
@@ -194,7 +221,7 @@ function D.triangulate(outer, holes, options)
 			end
 		end
 		assert(best, "No representable nonintersecting hole bridge found")
-		local merged = {}
+		local merged: { number } = {}
 		for i = 1, best do
 			table.insert(merged, contour[i])
 		end
@@ -209,13 +236,13 @@ function D.triangulate(outer, holes, options)
 		table.insert(bridges, { h, contour[best] })
 		contour = merged
 	end
-	local nodes = {}
+	local nodes: { Node } = {}
 	for i, id in contour do
 		nodes[i] = { id = id, previous = (i - 2) % #contour + 1, next = i % #contour + 1, active = true }
 	end
-	local remaining, head, triangles = #nodes, 1, {}
-	local removed = {}
-	local function remove(index)
+	local remaining, head, triangles: { { number } } = #nodes, 1, {}
+	local removed: { [number]: boolean } = {}
+	local function remove(index: number)
 		local node = nodes[index]
 		nodes[node.previous].next = node.next
 		nodes[node.next].previous = node.previous
@@ -278,7 +305,7 @@ function D.triangulate(outer, holes, options)
 	end
 	-- Reinsert removed collinear original vertices into all incident spanning edges.
 	for id in removed do
-		local result = {}
+		local result: { { number } } = {}
 		for _, triangle in triangles do
 			local split = false
 			for i = 1, 3 do
@@ -297,7 +324,7 @@ function D.triangulate(outer, holes, options)
 		end
 		triangles = result
 	end
-	local edges, area = {}, 0
+	local edges: { [string]: { count: number, balance: number } }, area = {}, 0
 	for _, triangle in triangles do
 		local orientation, det = P.orient2D(points[triangle[1]], points[triangle[2]], points[triangle[3]])
 		assert(orientation > 0, "Triangulation contains a zero or reversed triangle")
@@ -310,7 +337,7 @@ function D.triangulate(outer, holes, options)
 			edges[key].balance += id < b and 1 or -1
 		end
 	end
-	local boundaries = {}
+	local boundaries: { [string]: boolean } = {}
 	for _, ring in rings do
 		for i, id in ring do
 			local b = ring[i % #ring + 1]
@@ -334,8 +361,8 @@ function D.triangulate(outer, holes, options)
 	return { points = points, triangles = triangles, boundaryLoops = rings, area = area, holes = #rings - 1 }
 end
 
-function D.toMesh(domain, frame)
-	frame = frame or CFrame.identity
+function D.toMesh(domain: Domain, frame: CFrame?): Mesh.Mesh
+	local frame: CFrame = frame or CFrame.identity
 	assert(typeof(frame) == "CFrame")
 	local mesh = Mesh.new()
 	for _, p in domain.points do
@@ -343,7 +370,7 @@ function D.toMesh(domain, frame)
 	end
 	local normal = frame:VectorToWorldSpace(Vector3.zAxis)
 	for _, triangle in domain.triangles do
-		local corners = {}
+		local corners: { Mesh.Corner } = {}
 		for i, id in triangle do
 			corners[i] = { uv = domain.points[id], normal = normal }
 		end
@@ -351,7 +378,8 @@ function D.toMesh(domain, frame)
 	end
 	return mesh
 end
-function D.constrain(outer, holes, paths, options)
+-- Paths and options are forwarded to the non-strict PlanarConstrain module.
+function D.constrain(outer: Loop, holes: { Loop }?, paths: any, options: any?)
 	return deferredRequire(script.Parent.PlanarConstrain)(outer, holes, paths, options)
 end
 return D

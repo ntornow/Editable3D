@@ -1,16 +1,45 @@
+--!strict
 -- Typed numeric channels. Quaternion components are x,y,z,w; times are seconds.
 local U = require(script.Parent.Util)
 local Q = require(script.Parent.Quaternion)
+export type Tuple = { number }
+export type Channel = {
+	path: string,
+	node: number?,
+	interpolation: string,
+	times: { number },
+	values: { Tuple },
+	inTangents: { Tuple }?,
+	outTangents: { Tuple }?,
+}
+export type ChannelOptions = {
+	interpolation: string?,
+	inTangents: { Tuple }?,
+	outTangents: { Tuple }?,
+	node: number?,
+}
+export type Clip = {
+	name: string?,
+	channels: { Channel },
+	startTime: number,
+	endTime: number,
+	duration: number,
+}
+-- Clips built elsewhere may omit startTime/endTime; sample then derives them from the channels.
+export type ClipInput = { channels: { Channel }, startTime: number?, endTime: number? }
+export type SampleOptions = { loop: boolean?, pingPong: boolean? }
+-- Node id -> channel path -> sampled tuple.
+export type Pose = { [number]: { [string]: Tuple } }
 local T = {}
-local dimensions = { translation = 3, scale = 3, rotation = 4 }
-local function tuple(value, n)
+local dimensions: { [string]: number } = { translation = 3, scale = 3, rotation = 4 }
+local function tuple(value: Tuple, n: number)
 	assert(type(value) == "table" and #value == n, "Channel tuple size mismatch")
 	for _, v in value do
 		assert(type(v) == "number" and U.finite(v), "Nonfinite channel value")
 	end
 end
-function T.channel(path, times, values, options)
-	options = options or {}
+function T.channel(path: string, times: { number }, values: { Tuple }, options: ChannelOptions?): Channel
+	local options: ChannelOptions = options or {}
 	assert(
 		path == "translation" or path == "scale" or path == "rotation" or path == "weights" or path == "value",
 		"Unsupported channel path"
@@ -44,8 +73,8 @@ function T.channel(path, times, values, options)
 			assert(math.abs(Q.dot(values[i], values[i]) - 1) < 1e-4, "Rotation keys must be unit quaternions")
 		end
 		if cubic then
-			tuple(options.inTangents[i], size)
-			tuple(options.outTangents[i], size)
+			tuple((options.inTangents :: { Tuple })[i], size)
+			tuple((options.outTangents :: { Tuple })[i], size)
 		end
 	end
 	return {
@@ -58,7 +87,7 @@ function T.channel(path, times, values, options)
 		outTangents = cubic and U.copy(options.outTangents) or nil,
 	}
 end
-function T.sampleChannel(channel, time)
+function T.sampleChannel(channel: Channel, time: number): Tuple
 	assert(type(time) == "number" and U.finite(time), "Invalid sample time")
 	local times, values = channel.times, channel.values
 	if time <= times[1] then
@@ -84,24 +113,24 @@ function T.sampleChannel(channel, time)
 	if channel.interpolation == "LINEAR" and channel.path == "rotation" then
 		return Q.slerp(values[lo], values[hi], t)
 	end
-	local result = {}
+	local result: Tuple = {}
 	for k, a in values[lo] do
 		local b = values[hi][k]
 		if channel.interpolation == "CUBICSPLINE" then
 			result[k] = (2 * t ^ 3 - 3 * t ^ 2 + 1) * a
-				+ (t ^ 3 - 2 * t ^ 2 + t) * dt * channel.outTangents[lo][k]
+				+ (t ^ 3 - 2 * t ^ 2 + t) * dt * (channel.outTangents :: { Tuple })[lo][k]
 				+ (-2 * t ^ 3 + 3 * t ^ 2) * b
-				+ (t ^ 3 - t ^ 2) * dt * channel.inTangents[hi][k]
+				+ (t ^ 3 - t ^ 2) * dt * (channel.inTangents :: { Tuple })[hi][k]
 		else
 			result[k] = a + (b - a) * t
 		end
 	end
 	return channel.path == "rotation" and Q.normalize(result) or result
 end
-function T.clip(channels, name)
+function T.clip(channels: { Channel }, name: string?): Clip
 	assert(#channels > 0, "Empty clip")
 	local first, last = math.huge, -math.huge
-	local seen = {}
+	local seen: { [string]: boolean } = {}
 	for _, c in channels do
 		local key = tostring(c.node or 1) .. ":" .. c.path
 		assert(not seen[key], "Duplicate animation target/path")
@@ -117,8 +146,8 @@ function T.clip(channels, name)
 		duration = last - first,
 	}
 end
-function T.sample(clip, time, options)
-	options = options or {}
+function T.sample(clip: ClipInput, time: number, options: SampleOptions?): (Pose, number)
+	local options: SampleOptions = options or {}
 	assert(U.finite(time), "Invalid sample time")
 	local first = clip.startTime or math.huge
 	local last = clip.endTime or -math.huge
@@ -137,7 +166,7 @@ function T.sample(clip, time, options)
 			time = first + (time - first) % duration
 		end
 	end
-	local result = {}
+	local result: Pose = {}
 	for _, c in clip.channels do
 		local node = c.node or 1
 		result[node] = result[node] or {}
@@ -145,7 +174,7 @@ function T.sample(clip, time, options)
 	end
 	return result, time
 end
-function T.layer(base, overlay, weight, additive)
+function T.layer(base: Pose, overlay: Pose, weight: number, additive: boolean?): Pose
 	assert(type(weight) == "number" and U.finite(weight), "Invalid layer weight")
 	local out = U.copy(base)
 	for node, paths in overlay do
@@ -155,11 +184,12 @@ function T.layer(base, overlay, weight, additive)
 			if not a then
 				a = table.create(#b, path == "scale" and 1 or 0)
 				if path == "rotation" then
-					a[4] = 1
+					-- a was just created above; the solver keeps the `not a` (nil) refinement.
+					(a :: any)[4] = 1
 				end
 			end
 			assert(#a == #b, "Layer tuple size mismatch")
-			local value = {}
+			local value: Tuple = {}
 			if path == "rotation" then
 				value = additive and Q.multiply(a, Q.slerp(Q.identity, b, weight)) or Q.slerp(a, b, weight)
 			else

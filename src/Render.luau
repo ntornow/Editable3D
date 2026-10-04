@@ -1,10 +1,24 @@
+--!strict
 -- Deterministic CPU reference renderer: pinhole camera, diffuse direct light, shadows.
 local Spatial = require(script.Parent.Spatial)
 local Texture = require(script.Parent.Texture)
 local Camera = require(script.Parent.Camera)
+local Types = require(script.Parent.Types)
+export type ShaderContext = { position: Vector3, normal: Vector3, uv: Vector2, material: number }
+export type RenderOptions = {
+	lightDirection: Vector3?,
+	ambient: number?,
+	background: Color3?,
+	backgroundAlpha: number?,
+	shader: ((ShaderContext) -> Color3)?,
+	color: Color3?,
+	shadows: boolean?,
+	yieldEvery: number?,
+}
+export type SilhouetteComparison = { intersectionOverUnion: number, intersection: number, union: number }
 local R = {}
-function R.render(mesh, camera, options)
-	options = options or {}
+function R.render(mesh: Types.Mesh, camera: Types.Camera, options: RenderOptions?): (Types.Texture, buffer)
+	local options: RenderOptions = options or {}
 	local index = Spatial.new(mesh)
 	local light = (options.lightDirection or Vector3.new(-1, 2, -1)).Unit
 	local ambient = options.ambient or 0.15
@@ -62,16 +76,16 @@ function R.render(mesh, camera, options)
 	end
 	return image, depth
 end
-function R.silhouette(mesh, camera)
+function R.silhouette(mesh: Types.Mesh, camera: Types.Camera): (Types.Texture, buffer)
 	return R.render(
 		mesh,
 		camera,
 		{ color = Color3.new(1, 1, 1), ambient = 1, shadows = false, background = Color3.new() }
 	)
 end
-function R.compareSilhouettes(a, b, threshold)
+function R.compareSilhouettes(a: Types.Texture, b: Types.Texture, threshold: number?): SilhouetteComparison
 	assert(a.width == b.width and a.height == b.height)
-	threshold = threshold or 0.5
+	local threshold: number = threshold or 0.5
 	local intersection, union = 0, 0
 	for y = 0, a.height - 1 do
 		for x = 0, a.width - 1 do

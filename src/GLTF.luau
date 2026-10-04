@@ -1,3 +1,4 @@
+--!strict
 -- glTF 2.0 geometry interchange. No HTTP, filesystem, plugins, or downloaded models.
 -- Spec: https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html
 local Mesh = require(script.Parent.Mesh)
@@ -5,9 +6,72 @@ local U = require(script.Parent.Util)
 local Morph = require(script.Parent.Morph)
 local Timeline = require(script.Parent.Timeline)
 local Quaternion = require(script.Parent.Quaternion)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+type Corner = Types.Corner
+-- JSON-decoded glTF documents (and the export documents built for JSONEncode) follow the
+-- glTF 2.0 schema with many optional sections; they stay dynamic at this boundary.
+type Doc = any
+-- Bytes keyed by one-based buffer index or by external URI; binary strings or buffers.
+export type Sources = { [any]: any }
+-- Column-major 4x4 affine matrix.
+export type Matrix = { number }
+type Tuple = { number }
+export type MorphTarget = Morph.Shape
+export type TRS = { translation: { number }, rotation: Quaternion.Quat, scale: { number } }
+export type Node = {
+	name: string?,
+	matrix: Matrix,
+	children: { number }?,
+	mesh: number?,
+	skin: number?,
+	camera: number?,
+	weights: { number }?,
+	trs: TRS?,
+}
+export type Skin = { name: string?, joints: { number }, inverseBindMatrices: { Matrix }, skeleton: number? }
+export type Image = { name: string?, mimeType: string, data: buffer | string }
+export type SceneRoot = { name: string?, nodes: { number } }
+-- Scene arrays and their references use one-based indices.
+export type Scene = {
+	meshes: { Mesh },
+	meshNames: { string }?,
+	morphTargets: { { MorphTarget } }?,
+	meshWeights: { { number } }?,
+	animations: { any }?, -- Timeline clips
+	nodes: { Node },
+	skins: { Skin },
+	-- Material/texture/sampler/camera records are glTF JSON objects passed through unchanged.
+	materials: { any },
+	textures: { any },
+	samplers: { any },
+	images: { Image },
+	scenes: { SceneRoot },
+	scene: number?,
+	cameras: { any },
+	extensionsUsed: { string }?,
+	warnings: { string },
+}
+export type Pose = { transforms: { [number]: Matrix }, weights: { [number]: { number } }, time: number }
+export type ExportOptions = { materials: { any }?, name: string? }
+-- Structural view of Rig.Rig (not required here to keep the module's require set unchanged).
+type RigLike = {
+	order: { number },
+	bones: { [number]: { name: string, parent: number?, bindLocal: CFrame } },
+	worldTransforms: (any) -> { [number]: CFrame },
+}
+-- Accessor component table entries are { byteSize, reader }.
+type ComponentSpec = { any }
+type AccessorWriter = (
+	values: { Tuple },
+	kind: string,
+	component: number,
+	target: number?,
+	bounds: boolean
+) -> number
 local GLTF = {}
 local Http = game:GetService("HttpService")
-local components = {
+local components: { [number]: ComponentSpec } = {
 	[5120] = { 1, buffer.readi8 },
 	[5121] = { 1, buffer.readu8 },
 	[5122] = { 2, buffer.readi16 },
@@ -15,7 +79,7 @@ local components = {
 	[5125] = { 4, buffer.readu32 },
 	[5126] = { 4, buffer.readf32 },
 }
-local dimensions = {
+local dimensions: { [string]: { number } } = {
 	SCALAR = { 1, 1 },
 	VEC2 = { 2, 1 },
 	VEC3 = { 3, 1 },
@@ -24,27 +88,27 @@ local dimensions = {
 	MAT3 = { 3, 3 },
 	MAT4 = { 4, 4 },
 }
-local identity = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
-local function integer(n, minimum)
+local identity: Matrix = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
+local function integer(n: any, minimum: number?): number
 	assert(type(n) == "number" and n % 1 == 0 and n >= (minimum or 0), "Expected nonnegative integer")
 	return n
 end
-local function finite(n)
+local function finite(n: any): number
 	assert(U.finite(n), "Nonfinite glTF number")
 	return n
 end
-local function at(list, index, label)
+local function at(list: { any }?, index: number, label: string): any
 	integer(index)
 	return assert(list and list[index + 1], "Invalid " .. label .. " index " .. index)
 end
-local function bytes(data)
+local function bytes(data: any): buffer
 	if type(data) == "string" then
 		return buffer.fromstring(data)
 	end
 	assert(typeof(data) == "buffer", "Expected buffer or binary string")
 	return data
 end
-local function slice(b, offset, length)
+local function slice(b: buffer, offset: number, length: number): buffer
 	integer(offset)
 	integer(length)
 	assert(offset + length <= buffer.len(b), "Binary range out of bounds")
@@ -53,9 +117,9 @@ local function slice(b, offset, length)
 	return result
 end
 local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-local function base64decode(s)
+local function base64decode(s: string): buffer
 	assert(#s % 4 == 0 and not s:find("[^A-Za-z0-9+/=]"), "Invalid base64")
-	local out = {}
+	local out: { string } = {}
 	for i = 1, #s, 4 do
 		local n, padding = 0, 0
 		for j = 0, 3 do
@@ -79,8 +143,8 @@ local function base64decode(s)
 	end
 	return buffer.fromstring(table.concat(out))
 end
-local function base64encode(b)
-	local out = {}
+local function base64encode(b: buffer): string
+	local out: { string } = {}
 	for i = 0, buffer.len(b) - 1, 3 do
 		local remaining = buffer.len(b) - i
 		local n = buffer.readu8(b, i) * 65536
@@ -97,7 +161,7 @@ local function base64encode(b)
 	end
 	return table.concat(out)
 end
-local function uriBytes(uri, sources)
+local function uriBytes(uri: string, sources: Sources?): buffer
 	local encoded = uri:match("^data:[^,]*;base64,(.*)$")
 	if encoded then
 		return base64decode(encoded)
@@ -106,11 +170,11 @@ local function uriBytes(uri, sources)
 	assert(sources and sources[uri], "Provide bytes for external URI: " .. uri)
 	return bytes(sources[uri])
 end
-local function resolveBuffers(doc, sources)
-	local result = {}
+local function resolveBuffers(doc: Doc, sources: Sources?): { buffer }
+	local result: { buffer } = {}
 	for i, item in doc.buffers or {} do
 		integer(item.byteLength, 1)
-		local data = sources and sources[i]
+		local data: any = sources and sources[i]
 		if not data and item.uri then
 			data = uriBytes(item.uri, sources)
 		end
@@ -121,7 +185,7 @@ local function resolveBuffers(doc, sources)
 	end
 	return result
 end
-local function viewRange(doc, buffers, index)
+local function viewRange(doc: Doc, buffers: { buffer }, index: number): (buffer, number, number, any)
 	local view = at(doc.bufferViews, index, "bufferView")
 	local b = at(buffers, view.buffer, "buffer")
 	local offset = integer(view.byteOffset or 0)
@@ -129,14 +193,14 @@ local function viewRange(doc, buffers, index)
 	assert(offset + length <= buffer.len(b), "bufferView exceeds buffer")
 	return b, offset, length, view
 end
-local function layout(accessor)
+local function layout(accessor: any): (ComponentSpec, { number }, number)
 	local spec = assert(components[accessor.componentType], "Unsupported accessor componentType")
 	local dim = assert(dimensions[accessor.type], "Unsupported accessor type")
 	local column = dim[1] * spec[1]
 	if dim[2] > 1 then
 		column = math.ceil(column / 4) * 4
 	end
-	local offsets = {}
+	local offsets: { number } = {}
 	for c = 0, dim[2] - 1 do
 		for r = 0, dim[1] - 1 do
 			table.insert(offsets, c * column + r * spec[1])
@@ -144,7 +208,7 @@ local function layout(accessor)
 	end
 	return spec, offsets, column * dim[2]
 end
-local function normalized(n, component)
+local function normalized(n: number, component: number): number
 	if component == 5120 then
 		return math.max(n / 127, -1)
 	elseif component == 5121 then
@@ -157,7 +221,7 @@ local function normalized(n, component)
 	error("Only BYTE/UNSIGNED_BYTE/SHORT/UNSIGNED_SHORT may be normalized")
 end
 -- Returns an array of numeric tuples; document indices remain zero-based.
-function GLTF.readAccessor(doc, sources, accessorIndex)
+function GLTF.readAccessor(doc: Doc, sources: Sources?, accessorIndex: number): { Tuple }
 	local buffers = resolveBuffers(doc, sources)
 	local a = at(doc.accessors, accessorIndex, "accessor")
 	local count = integer(a.count, 1)
@@ -167,9 +231,9 @@ function GLTF.readAccessor(doc, sources, accessorIndex)
 	if a.normalized then
 		normalized(0, a.componentType)
 	end
-	local result = {}
-	local function read(b, offset)
-		local tuple = {}
+	local result: { Tuple } = {}
+	local function read(b: buffer, offset: number): Tuple
+		local tuple: Tuple = {}
 		for k, delta in offsets do
 			local value = finite(spec[2](b, offset + delta))
 			tuple[k] = a.normalized and normalized(value, a.componentType) or value
@@ -227,8 +291,8 @@ function GLTF.readAccessor(doc, sources, accessorIndex)
 	end
 	return result
 end
-local function multiply(a, b)
-	local out = {}
+local function multiply(a: Matrix, b: Matrix): Matrix
+	local out: Matrix = {}
 	for c = 0, 3 do
 		for r = 0, 3 do
 			local v = 0
@@ -240,18 +304,18 @@ local function multiply(a, b)
 	end
 	return out
 end
-local function point(m, p)
+local function point(m: Matrix, p: Vector3): Vector3
 	return Vector3.new(
 		m[1] * p.X + m[5] * p.Y + m[9] * p.Z + m[13],
 		m[2] * p.X + m[6] * p.Y + m[10] * p.Z + m[14],
 		m[3] * p.X + m[7] * p.Y + m[11] * p.Z + m[15]
 	)
 end
-local function inverse(m)
+local function inverse(m: Matrix): (Matrix, number)
 	local a, b, c, d, e, f, g, h, i = m[1], m[5], m[9], m[2], m[6], m[10], m[3], m[7], m[11]
 	local det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
 	assert(math.abs(det) > 1e-12, "Singular transform")
-	local r = {
+	local r: Matrix = {
 		(e * i - f * h) / det,
 		(f * g - d * i) / det,
 		(d * h - e * g) / det,
@@ -273,7 +337,7 @@ local function inverse(m)
 	r[13], r[14], r[15] = t.X, t.Y, t.Z
 	return r, det
 end
-local function normal(m, n)
+local function normal(m: Matrix, n: Vector3): Vector3
 	local inv = inverse(m)
 	return U.unit(
 		Vector3.new(
@@ -284,7 +348,7 @@ local function normal(m, n)
 		Vector3.zero
 	)
 end
-local function validateMatrix(m)
+local function validateMatrix(m: any): Matrix
 	assert(type(m) == "table" and #m == 16, "Expected column-major affine matrix of 16 numbers")
 	for _, n in m do
 		finite(n)
@@ -295,7 +359,7 @@ local function validateMatrix(m)
 	)
 	return m
 end
-local function validateNodeMatrix(m)
+local function validateNodeMatrix(m: any): Matrix
 	validateMatrix(m)
 	local columns =
 		{ Vector3.new(m[1], m[2], m[3]), Vector3.new(m[5], m[6], m[7]), Vector3.new(m[9], m[10], m[11]) }
@@ -310,7 +374,8 @@ local function validateNodeMatrix(m)
 	end
 	return m
 end
-local function nodeMatrix(node)
+-- Accepts a glTF JSON node or a TRS table.
+local function nodeMatrix(node: any): Matrix
 	if node.matrix then
 		assert(
 			not node.translation and not node.rotation and not node.scale,
@@ -318,9 +383,9 @@ local function nodeMatrix(node)
 		)
 		return table.clone(validateNodeMatrix(node.matrix))
 	end
-	local t = node.translation or { 0, 0, 0 }
-	local q = node.rotation or { 0, 0, 0, 1 }
-	local s = node.scale or { 1, 1, 1 }
+	local t: { number } = node.translation or { 0, 0, 0 }
+	local q: Quaternion.Quat = node.rotation or { 0, 0, 0, 1 }
+	local s: { number } = node.scale or { 1, 1, 1 }
 	assert(#t == 3 and #q == 4 and #s == 3, "Invalid TRS dimensions")
 	for _, values in { t, q, s } do
 		for _, v in values do
@@ -349,17 +414,19 @@ local function nodeMatrix(node)
 	}
 end
 -- Scene arrays and their references use one-based indices, unlike source glTF JSON.
-function GLTF.worldMatrices(scene, pose)
+-- pose is a Pose from sampleAnimation or a bare map of one-based node index -> local Matrix.
+function GLTF.worldMatrices(scene: Scene, pose: any?): { [number]: Matrix }
 	pose = pose and (pose.transforms or pose)
-	local result, visiting, parents = {}, {}, {}
+	local result: { [number]: Matrix }, visiting: { [number]: boolean? }, parents: { [number]: number } =
+		{}, {}, {}
 	for i, node in scene.nodes do
-		for _, child in node.children or {} do
+		for _, child in (node.children or {}) :: { number } do
 			integer(child, 1)
 			assert(scene.nodes[child] and not parents[child], "Invalid or multiply parented node")
 			parents[child] = i
 		end
 	end
-	local function visit(i)
+	local function visit(i: number): Matrix
 		if result[i] then
 			return result[i]
 		end
@@ -375,20 +442,27 @@ function GLTF.worldMatrices(scene, pose)
 	end
 	return result
 end
-local function attribute(doc, buffers, index, kind, allowed)
+local function attribute(
+	doc: Doc,
+	buffers: { buffer },
+	index: number,
+	kind: string,
+	allowed: { [number]: boolean }
+): ({ Tuple }, any)
 	local a = at(doc.accessors, index, "accessor")
 	assert(a.type == kind, "Wrong attribute tuple size; expected " .. kind)
 	assert(allowed[a.componentType], "Unsupported attribute component type")
 	return GLTF.readAccessor(doc, buffers, index), a
 end
-local FLOAT = { [5126] = true }
-local UINT = { [5121] = true, [5123] = true, [5125] = true }
-local NORM = { [5121] = true, [5123] = true, [5126] = true }
-local JOINT = { [5121] = true, [5123] = true }
-local ANIMATED = { [5120] = true, [5121] = true, [5122] = true, [5123] = true, [5126] = true }
-local function readMesh(doc, buffers, source)
+local FLOAT: { [number]: boolean } = { [5126] = true }
+local UINT: { [number]: boolean } = { [5121] = true, [5123] = true, [5125] = true }
+local NORM: { [number]: boolean } = { [5121] = true, [5123] = true, [5126] = true }
+local JOINT: { [number]: boolean } = { [5121] = true, [5123] = true }
+local ANIMATED: { [number]: boolean } =
+	{ [5120] = true, [5121] = true, [5122] = true, [5123] = true, [5126] = true }
+local function readMesh(doc: Doc, buffers: { buffer }, source: any): (Mesh, { MorphTarget }, { number })
 	local mesh = Mesh.new()
-	local targets = {}
+	local targets: { MorphTarget } = {}
 	local targetCount = #(source.primitives[1].targets or {})
 	for i = 1, targetCount do
 		targets[i] = {
@@ -413,12 +487,12 @@ local function readMesh(doc, buffers, source)
 		assert(mode == 4 or mode == 5 or mode == 6, "Only triangle primitives are supported")
 		local attrs = assert(p.attributes)
 		local positions = attribute(doc, buffers, assert(attrs.POSITION), "VEC3", FLOAT)
-		local data = {}
-		for name, index in attrs do
+		local data: { [string]: { Tuple } } = {}
+		for name: string, index: number in attrs do
 			if name == "POSITION" then
 				continue
 			end
-			local kind, allowed
+			local kind: string, allowed: { [number]: boolean }
 			if name == "NORMAL" then
 				kind, allowed = "VEC3", FLOAT
 			elseif name == "TANGENT" then
@@ -445,13 +519,13 @@ local function readMesh(doc, buffers, source)
 			assert(#values == #positions, "Attribute count mismatch")
 			data[name] = values
 		end
-		local morphData = {}
-		for i, target in p.targets or {} do
-			local decoded = {}
+		local morphData: { [number]: { [string]: { Tuple } } } = {}
+		for i: number, target: any in p.targets or {} do
+			local decoded: { [string]: { Tuple } } = {}
 			assert(next(target), "Empty morph target")
-			for name, index in target do
+			for name: string, index: number in target do
 				assert(attrs[name] ~= nil, "Morph attribute requires a base attribute")
-				local kind = (name == "POSITION" or name == "NORMAL" or name == "TANGENT") and "VEC3"
+				local kind: any = (name == "POSITION" or name == "NORMAL" or name == "TANGENT") and "VEC3"
 					or (
 						(name == "TEXCOORD_0" or name == "TEXCOORD_1") and "VEC2"
 						or (name == "COLOR_0" and at(doc.accessors, attrs[name], "accessor").type)
@@ -469,7 +543,7 @@ local function readMesh(doc, buffers, source)
 			"Joints and weights must be paired"
 		)
 		assert(not data.JOINTS_1 or data.JOINTS_0, "JOINTS_1 requires JOINTS_0")
-		local ids = {}
+		local ids: { number } = {}
 		for i, v in positions do
 			ids[i] = mesh:addVertex(Vector3.new(v[1], v[2], v[3]))
 			for t, md in morphData do
@@ -478,7 +552,7 @@ local function readMesh(doc, buffers, source)
 				end
 			end
 			if data.JOINTS_0 then
-				local weights = {}
+				local weights: { [number]: number } = {}
 				local total = 0
 				for set = 0, 1 do
 					local js, ws = data["JOINTS_" .. set], data["WEIGHTS_" .. set]
@@ -500,7 +574,7 @@ local function readMesh(doc, buffers, source)
 				mesh.weights[ids[i]] = weights
 			end
 		end
-		local indices = {}
+		local indices: { number } = {}
 		if p.indices ~= nil then
 			local values, a = attribute(doc, buffers, p.indices, "SCALAR", UINT)
 			assert(not a.normalized, "Indices cannot be normalized")
@@ -521,17 +595,17 @@ local function readMesh(doc, buffers, source)
 		if mode == 4 then
 			assert(#indices % 3 == 0, "TRIANGLES index count must be divisible by three")
 		end
-		local function face(a, b, c)
+		local function face(a: number, b: number, c: number)
 			if a == b or b == c or c == a then
 				return
 			end -- legal strip degenerates
-			local corners = {}
+			local corners: { Corner } = {}
 			for k, id in { a, b, c } do
-				local corner = {}
+				local corner: Corner = {}
 				for set = 0, 1 do
 					local v = data["TEXCOORD_" .. set]
 					if v then
-						corner[set == 0 and "uv" or "uv1"] = Vector2.new(v[id][1], v[id][2])
+						(corner :: any)[set == 0 and "uv" or "uv1"] = Vector2.new(v[id][1], v[id][2])
 					end
 				end
 				local n = data.NORMAL
@@ -557,9 +631,9 @@ local function readMesh(doc, buffers, source)
 			end
 			local fid = mesh:addFace({ ids[a], ids[b], ids[c] }, corners, material)
 			for t, md in morphData do
-				local deltas = {}
+				local deltas: { Morph.CornerDelta } = {}
 				for k, id in { a, b, c } do
-					local d = {}
+					local d: Morph.CornerDelta = {}
 					for attr, values in md do
 						local v = values[id]
 						if attr == "NORMAL" then
@@ -598,7 +672,7 @@ local function readMesh(doc, buffers, source)
 	end
 	return mesh, targets, U.copy(source.weights or table.create(targetCount, 0))
 end
-local function validateBindings(doc)
+local function validateBindings(doc: Doc)
 	for _, texture in doc.textures or {} do
 		if texture.source ~= nil then
 			at(doc.images, texture.source, "texture image")
@@ -607,7 +681,7 @@ local function validateBindings(doc)
 			at(doc.samplers, texture.sampler, "texture sampler")
 		end
 	end
-	local function textureInfo(info)
+	local function textureInfo(info: any)
 		if not info then
 			return
 		end
@@ -626,7 +700,7 @@ local function validateBindings(doc)
 		textureInfo(material.emissiveTexture)
 	end
 end
-local function decomposeNode(node)
+local function decomposeNode(node: Node): TRS
 	local m = validateNodeMatrix(node.matrix)
 	if node.trs then
 		local candidate = nodeMatrix(node.trs)
@@ -651,10 +725,10 @@ local function decomposeNode(node)
 	local q = Quaternion.fromCFrame(CFrame.fromMatrix(Vector3.zero, x / sx, y / sy, z / sz))
 	return { translation = { m[13], m[14], m[15] }, rotation = q, scale = { sx, sy, sz } }
 end
-local function readAnimations(doc, buffers, scene)
-	local animations = {}
-	for i, a in doc.animations or {} do
-		local channels = {}
+local function readAnimations(doc: Doc, buffers: { buffer }, scene: Scene): { any }
+	local animations: { any } = {}
+	for i: number, a: any in doc.animations or {} do
+		local channels: { any } = {}
 		for _, c in a.channels do
 			local target = assert(c.target, "Missing animation target")
 			if target.node == nil then
@@ -671,7 +745,7 @@ local function readAnimations(doc, buffers, scene)
 			local sampler = at(a.samplers, c.sampler, "animation sampler")
 			local input, inputAccessor = attribute(doc, buffers, sampler.input, "SCALAR", FLOAT)
 			assert(inputAccessor.min and inputAccessor.max, "Animation timestamps need min/max bounds")
-			local times = {}
+			local times: { number } = {}
 			for k, v in input do
 				assert(v[1] >= 0, "Animation timestamps cannot be negative")
 				times[k] = v[1]
@@ -692,17 +766,17 @@ local function readAnimations(doc, buffers, scene)
 			local count = 1
 			if path == "weights" then
 				assert(n.mesh ~= nil, "Weight animation requires a mesh")
-				count = #scene.morphTargets[n.mesh + 1]
+				count = #(scene.morphTargets :: { { MorphTarget } })[n.mesh + 1]
 				assert(count > 0, "Weight animation requires morph targets")
 			end
 			assert(#output == #times * factor * count, "Animation output count mismatch")
-			local values, ins, outs = {}, {}, {}
-			local function value(k, slot)
+			local values: { any }, ins: { any }, outs: { any } = {}, {}, {}
+			local function value(k: number, slot: number): any
 				local offset = ((k - 1) * factor + slot) * count
 				if path ~= "weights" then
 					return output[offset + 1]
 				end
-				local result = {}
+				local result: { number } = {}
 				for j = 1, count do
 					result[j] = output[offset + j][1]
 				end
@@ -730,10 +804,10 @@ local function readAnimations(doc, buffers, scene)
 	end
 	return animations
 end
-function GLTF.sampleAnimation(scene, animationIndex, time, options)
+function GLTF.sampleAnimation(scene: Scene, animationIndex: number, time: number, options: any?): Pose
 	local clip = assert(scene.animations and scene.animations[animationIndex], "Missing animation")
 	local sampled, sampleTime = Timeline.sample(clip, time, options)
-	local result = { transforms = {}, weights = {}, time = sampleTime }
+	local result: Pose = { transforms = {}, weights = {}, time = sampleTime }
 	for index, paths in sampled do
 		local node = assert(scene.nodes[index], "Invalid animated node")
 		local trs = decomposeNode(node)
@@ -741,14 +815,14 @@ function GLTF.sampleAnimation(scene, animationIndex, time, options)
 			if path == "weights" then
 				result.weights[index] = value
 			else
-				trs[path] = value
+				(trs :: any)[path] = value
 			end
 		end
 		result.transforms[index] = nodeMatrix(trs)
 	end
 	return result
 end
-function GLTF.fromDocument(doc, sources)
+function GLTF.fromDocument(doc: Doc, sources: Sources?): Scene
 	assert(doc.asset and doc.asset.version == "2.0", "Only glTF 2.0 is supported")
 	assert(not doc.asset.minVersion or doc.asset.minVersion == "2.0", "Unsupported minimum glTF version")
 	assert(
@@ -763,7 +837,7 @@ function GLTF.fromDocument(doc, sources)
 	end
 	validateBindings(doc)
 	local buffers = resolveBuffers(doc, sources)
-	local scene = {
+	local scene: Scene = {
 		meshes = {},
 		meshNames = {},
 		morphTargets = {},
@@ -784,12 +858,13 @@ function GLTF.fromDocument(doc, sources)
 	for _, ext in doc.extensionsUsed or {} do
 		table.insert(scene.warnings, "Optional extension not evaluated: " .. ext)
 	end
-	for i, source in doc.meshes or {} do
-		scene.meshes[i], scene.morphTargets[i], scene.meshWeights[i] = readMesh(doc, buffers, source)
-		scene.meshNames[i] = source.name or "Mesh " .. i
+	for i: number, source: any in doc.meshes or {} do
+		scene.meshes[i], (scene.morphTargets :: { { MorphTarget } })[i], (scene.meshWeights :: { { number } })[i] =
+			readMesh(doc, buffers, source);
+		(scene.meshNames :: { string })[i] = source.name or "Mesh " .. i
 	end
-	for i, n in doc.nodes or {} do
-		local children = {}
+	for i: number, n: any in doc.nodes or {} do
+		local children: { number } = {}
 		for j, c in n.children or {} do
 			at(doc.nodes, c, "node")
 			children[j] = c + 1
@@ -806,7 +881,9 @@ function GLTF.fromDocument(doc, sources)
 		end
 		if n.weights then
 			assert(
-				n.mesh ~= nil and #n.weights == #scene.morphTargets[n.mesh + 1] and #n.weights > 0,
+				n.mesh ~= nil
+					and #n.weights == #(scene.morphTargets :: { { MorphTarget } })[n.mesh + 1]
+					and #n.weights > 0,
 				"Invalid node morph weights"
 			)
 			for _, w in n.weights do
@@ -829,8 +906,8 @@ function GLTF.fromDocument(doc, sources)
 		}
 	end
 	GLTF.worldMatrices(scene)
-	for i, s in doc.scenes or {} do
-		local roots = {}
+	for i: number, s: any in doc.scenes or {} do
+		local roots: { number } = {}
 		for j, n in s.nodes or {} do
 			at(doc.nodes, n, "node")
 			roots[j] = n + 1
@@ -840,9 +917,9 @@ function GLTF.fromDocument(doc, sources)
 	if doc.scene ~= nil then
 		at(doc.scenes, doc.scene, "scene")
 	end
-	for i, s in doc.skins or {} do
-		local joints = {}
-		local seen = {}
+	for i: number, s: any in doc.skins or {} do
+		local joints: { number } = {}
+		local seen: { [number]: boolean } = {}
 		for j, n in s.joints do
 			at(doc.nodes, n, "joint node")
 			assert(not seen[n], "Duplicate skin joint")
@@ -850,7 +927,7 @@ function GLTF.fromDocument(doc, sources)
 			joints[j] = n + 1
 		end
 		assert(#joints > 0, "Empty skin")
-		local matrices = {}
+		local matrices: { Matrix } = {}
 		if s.inverseBindMatrices ~= nil then
 			matrices = attribute(doc, buffers, s.inverseBindMatrices, "MAT4", FLOAT)
 			assert(#matrices == #joints, "Inverse bind count mismatch")
@@ -875,7 +952,7 @@ function GLTF.fromDocument(doc, sources)
 	for _, n in scene.nodes do
 		if n.skin then
 			local skin = scene.skins[n.skin]
-			local mesh = scene.meshes[n.mesh]
+			local mesh = scene.meshes[n.mesh :: number]
 			for id in mesh.vertices do
 				local weights = mesh.weights[id]
 				assert(weights and next(weights), "Skinned mesh lacks vertex weights")
@@ -885,9 +962,9 @@ function GLTF.fromDocument(doc, sources)
 			end
 		end
 	end
-	for i, img in doc.images or {} do
+	for i: number, img: any in doc.images or {} do
 		assert((img.uri ~= nil) ~= (img.bufferView ~= nil), "Image needs exactly one URI or bufferView")
-		local data
+		local data: buffer
 		if img.uri then
 			data = uriBytes(img.uri, sources)
 		else
@@ -905,16 +982,16 @@ function GLTF.fromDocument(doc, sources)
 	scene.animations = readAnimations(doc, buffers, scene)
 	return scene
 end
-function GLTF.fromJSON(json, sources)
+function GLTF.fromJSON(json: string, sources: Sources?): Scene
 	return GLTF.fromDocument(Http:JSONDecode(json), sources)
 end
-function GLTF.fromGLB(data, sources)
+function GLTF.fromGLB(data: buffer | string, sources: Sources?): Scene
 	local b = bytes(data)
 	assert(buffer.len(b) >= 20, "Truncated GLB")
 	assert(buffer.readu32(b, 0) == 0x46546C67 and buffer.readu32(b, 4) == 2, "Invalid GLB magic/version")
 	assert(buffer.readu32(b, 8) == buffer.len(b), "GLB length mismatch")
 	local offset = 12
-	local doc, bin
+	local doc: Doc, bin: buffer?
 	local count = 0
 	while offset < buffer.len(b) do
 		assert(offset + 8 <= buffer.len(b), "Truncated GLB chunk header")
@@ -933,7 +1010,7 @@ function GLTF.fromGLB(data, sources)
 		end
 		offset += 8 + length
 	end
-	local supplied = table.clone(sources or {})
+	local supplied: Sources = table.clone(sources or {})
 	if bin then
 		assert(
 			doc.buffers and doc.buffers[1] and not doc.buffers[1].uri,
@@ -944,7 +1021,7 @@ function GLTF.fromGLB(data, sources)
 	end
 	return GLTF.fromDocument(assert(doc), supplied)
 end
-local function transformMesh(mesh, m)
+local function transformMesh(mesh: Mesh, m: Matrix): Mesh
 	local out = mesh:clone()
 	local _inv, det = inverse(m)
 	for id, p in out.vertices do
@@ -969,7 +1046,7 @@ local function transformMesh(mesh, m)
 			end
 		end
 		if det < 0 then
-			local vs, cs = {}, {}
+			local vs: { number }, cs: { Corner } = {}, {}
 			for j = #face.vertices, 1, -1 do
 				table.insert(vs, face.vertices[j])
 				table.insert(cs, face.corners[j])
@@ -982,14 +1059,15 @@ local function transformMesh(mesh, m)
 end
 -- Evaluate a mesh instance in world coordinates, including its skin at a matrix pose.
 -- Pose maps one-based node indices to local column-major matrices.
-function GLTF.meshAt(scene, nodeIndex, pose)
+-- pose is a Pose from sampleAnimation or a bare node-index -> Matrix map (see worldMatrices).
+function GLTF.meshAt(scene: Scene, nodeIndex: number, pose: any?): Mesh
 	local node = assert(scene.nodes[nodeIndex], "Missing scene node")
-	local mesh = assert(scene.meshes[node.mesh], "Node has no mesh")
-	local targets = scene.morphTargets and scene.morphTargets[node.mesh]
+	local mesh = assert(scene.meshes[node.mesh :: number], "Node has no mesh")
+	local targets = scene.morphTargets and scene.morphTargets[node.mesh :: number]
 	if targets and #targets > 0 then
-		local weights = pose and pose.weights and pose.weights[nodeIndex]
+		local weights: { number } = pose and pose.weights and pose.weights[nodeIndex]
 			or node.weights
-			or (scene.meshWeights and scene.meshWeights[node.mesh])
+			or (scene.meshWeights and scene.meshWeights[node.mesh :: number])
 			or table.create(#targets, 0)
 		assert(#weights == #targets, "Morph weight count mismatch")
 		mesh = Morph.evaluate(mesh, targets, weights)
@@ -1007,16 +1085,16 @@ function GLTF.meshAt(scene, nodeIndex, pose)
 		return transformMesh(mesh, world[nodeIndex])
 	end
 	local skin = assert(scene.skins[node.skin])
-	local transforms = {}
+	local transforms: { Matrix } = {}
 	for i, j in skin.joints do
 		transforms[i] = multiply(world[j], skin.inverseBindMatrices[i])
 	end
 	local out = mesh:clone()
-	local blendedMatrices = {}
+	local blendedMatrices: { [number]: Matrix } = {}
 	for id, p in mesh.vertices do
 		local blended = table.create(16, 0)
 		local sum = 0
-		for j, w in mesh.weights[id] or {} do
+		for j, w in (mesh.weights[id] or {}) :: { [number]: number } do
 			assert(transforms[j] and w >= 0, "Invalid skin weights")
 			for k = 1, 16 do
 				blended[k] += transforms[j][k] * w
@@ -1044,13 +1122,13 @@ function GLTF.meshAt(scene, nodeIndex, pose)
 	out.revision += 1
 	return out
 end
-local function frameMatrix(cf)
+local function frameMatrix(cf: CFrame): Matrix
 	local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
 	return { r00, r10, r20, 0, r01, r11, r21, 0, r02, r12, r22, 0, x, y, z, 1 }
 end
-function GLTF.fromMesh(mesh, options)
-	options = options or {}
-	local materials = U.copy(options.materials or {})
+function GLTF.fromMesh(mesh: Mesh, options: ExportOptions?): Scene
+	local options: ExportOptions = options or {}
+	local materials: { any } = U.copy(options.materials or {})
 	local count = 0
 	for _, face in mesh.faces do
 		integer(face.material)
@@ -1079,9 +1157,9 @@ function GLTF.fromMesh(mesh, options)
 	}
 end
 -- Rig weights are remapped from authoring bone IDs to ordered glTF skin joints.
-function GLTF.fromRig(mesh, rig, options)
+function GLTF.fromRig(mesh: Mesh, rig: RigLike, options: ExportOptions?): Scene
 	local scene = GLTF.fromMesh(mesh, options)
-	local map, joints, matrices = {}, {}, {}
+	local map: { [number]: number }, joints: { number }, matrices: { Matrix } = {}, {}, {}
 	local world = rig:worldTransforms()
 	for i, id in rig.order do
 		map[id] = i
@@ -1095,16 +1173,16 @@ function GLTF.fromRig(mesh, rig, options)
 	for i, id in rig.order do
 		local parent = rig.bones[id].parent
 		if parent then
-			table.insert(scene.nodes[map[parent] + 1].children, i + 1)
+			table.insert(scene.nodes[map[parent] + 1].children :: { number }, i + 1)
 		else
 			table.insert(scene.scenes[1].nodes, i + 1)
 		end
 	end
 	assert(#joints > 0, "Cannot export empty rig")
 	for id in scene.meshes[1].vertices do
-		local weights = {}
+		local weights: { [number]: number } = {}
 		local sum = 0
-		for bone, w in mesh.weights[id] or {} do
+		for bone, w in (mesh.weights[id] or {}) :: { [number]: number } do
 			assert(map[bone] and U.finite(w) and w >= 0, "Unknown bone or invalid weight")
 			weights[map[bone]] = w
 			sum += w
@@ -1120,10 +1198,10 @@ function GLTF.fromRig(mesh, rig, options)
 		{ name = options and options.name or "Rig", joints = joints, inverseBindMatrices = matrices }
 	return scene
 end
-local function writer(doc)
-	local chunks = {}
+local function writer(doc: Doc): ((buffer, number?) -> number, AccessorWriter, () -> buffer)
+	local chunks: { buffer } = {}
 	local length = 0
-	local function append(b, target)
+	local function append(b: buffer, target: number?): number
 		local padding = -length % 4
 		if padding > 0 then
 			table.insert(chunks, buffer.create(padding))
@@ -1138,7 +1216,13 @@ local function writer(doc)
 		length += buffer.len(b)
 		return index
 	end
-	local function accessor(values, kind, component, target, bounds)
+	local function accessor(
+		values: { Tuple },
+		kind: string,
+		component: number,
+		target: number?,
+		bounds: boolean
+	): number
 		assert(#values > 0, "Cannot write empty accessor")
 		local spec = assert(components[component])
 		local dim = assert(dimensions[kind])
@@ -1175,7 +1259,7 @@ local function writer(doc)
 		})
 		return index
 	end
-	local function finish()
+	local function finish(): buffer
 		local b = buffer.create(length)
 		local offset = 0
 		for _, chunk in chunks do
@@ -1186,15 +1270,22 @@ local function writer(doc)
 	end
 	return append, accessor, finish
 end
-local function exportMesh(mesh, doc, write, name, targets, weights)
-	targets = targets or {}
+local function exportMesh(
+	mesh: Mesh,
+	doc: Doc,
+	write: AccessorWriter,
+	name: string?,
+	targets: { MorphTarget }?,
+	weights: { number }?
+): any
+	local targets: { MorphTarget } = targets or {}
 	if weights then
 		assert(#weights == #targets and #targets > 0, "Morph weight count mismatch")
 		for _, w in weights do
 			finite(w)
 		end
 	end
-	local groups = {}
+	local groups: { [number]: { number } } = {}
 	for _, fid in U.keys(mesh.faces) do
 		local face = mesh.faces[fid]
 		integer(face.material)
@@ -1202,14 +1293,14 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 		groups[face.material] = groups[face.material] or {}
 		table.insert(groups[face.material], fid)
 	end
-	local primitives = {}
+	local primitives: { any } = {}
 	for _, material in U.keys(groups) do
-		local enabled = { POSITION = true }
-		local morphEnabled = {}
+		local enabled: { [string]: boolean } = { POSITION = true }
+		local morphEnabled: { [number]: { [string]: boolean } } = {}
 		for t, target in targets do
-			local attrs = { POSITION = true }
+			local attrs: { [string]: boolean } = { POSITION = true }
 			for _, fid in groups[material] do
-				for k, d in target.corners and target.corners[fid] or {} do
+				for k, d in (target.corners and target.corners[fid] or {}) :: { [number]: Morph.CornerDelta } do
 					local c = assert(mesh.faces[fid].corners[k], "Missing morph corner")
 					for key in d do
 						local attr = ({
@@ -1221,7 +1312,7 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 							alpha = "COLOR_0",
 						})[key]
 						assert(attr, "Unsupported morph corner attribute")
-						assert(key == "alpha" or c[key], "Morph attribute requires a base attribute")
+						assert(key == "alpha" or (c :: any)[key], "Morph attribute requires a base attribute")
 						attrs[attr] = true
 					end
 				end
@@ -1248,7 +1339,7 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 					enabled.TANGENT = true
 				end
 				local n = 0
-				for _, w in mesh.weights[face.vertices[i]] or {} do
+				for _, w in (mesh.weights[face.vertices[i]] or {}) :: { [number]: number } do
 					if w > 0 then
 						n += 1
 					end
@@ -1268,8 +1359,8 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 			enabled.JOINTS_1 = true
 			enabled.WEIGHTS_1 = true
 		end
-		local arrays, indices, mapping = {}, {}, {}
-		local morphArrays = {}
+		local arrays: { [string]: { Tuple } }, indices: { Tuple }, mapping: { [string]: number } = {}, {}, {}
+		local morphArrays: { [number]: { [string]: { Tuple } } } = {}
 		for t, attrs in morphEnabled do
 			morphArrays[t] = {}
 			for attr in attrs do
@@ -1288,7 +1379,7 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 					local id = face.vertices[cornerIndex]
 					local c = face.corners[cornerIndex]
 					local p = mesh.vertices[id]
-					local values = { POSITION = { p.X, p.Y, p.Z } }
+					local values: { [string]: Tuple } = { POSITION = { p.X, p.Y, p.Z } }
 					local n = c.normal or faceNormal
 					values.NORMAL = { n.X, n.Y, n.Z }
 					local uv = c.uv or Vector2.zero
@@ -1302,12 +1393,12 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 							c.tangent and (c.tangentSign == 1 or c.tangentSign == -1),
 							"Every tangent corner needs a vector and sign"
 						)
-						values.TANGENT = { c.tangent.X, c.tangent.Y, c.tangent.Z, c.tangentSign }
+						values.TANGENT = { c.tangent.X, c.tangent.Y, c.tangent.Z, c.tangentSign :: number }
 					end
 					if influenceCount > 0 then
-						local list = {}
+						local list: { Tuple } = {}
 						local sum = 0
-						for joint, w in mesh.weights[id] or {} do
+						for joint, w in (mesh.weights[id] or {}) :: { [number]: number } do
 							integer(joint, 1)
 							finite(w)
 							assert(w >= 0, "Negative skin weight")
@@ -1321,7 +1412,7 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 							return a[1] < b[1]
 						end)
 						for set = 0, (influenceCount > 4 and 1 or 0) do
-							local js, ws = {}, {}
+							local js: Tuple, ws: Tuple = {}, {}
 							for j = 1, 4 do
 								local pair = list[set * 4 + j]
 								js[j] = pair and pair[1] or 0
@@ -1330,21 +1421,23 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 							values["JOINTS_" .. set], values["WEIGHTS_" .. set] = js, ws
 						end
 					end
-					local key = { tostring(id) }
+					local key: { string } = { tostring(id) }
 					for _, attr in U.keys(enabled) do
 						for _, v in values[attr] do
 							table.insert(key, string.format("%.17g", v))
 						end
 					end
-					local morphValues = {}
+					local morphValues: { [number]: { [string]: Tuple } } = {}
 					for t, target in targets do
-						local d = target.corners and target.corners[fid] and target.corners[fid][cornerIndex]
+						local d: Morph.CornerDelta = target.corners
+								and target.corners[fid]
+								and target.corners[fid][cornerIndex]
 							or {}
 						local dp = target.positions and target.positions[id] or Vector3.zero
 						local dn, dt = d.normal or Vector3.zero, d.tangent or Vector3.zero
 						local uv0, uv1 = d.uv or Vector2.zero, d.uv1 or Vector2.zero
 						local col = d.color or Vector3.zero
-						local mv = {
+						local mv: { [string]: Tuple } = {
 							POSITION = { dp.X, dp.Y, dp.Z },
 							NORMAL = { dn.X, dn.Y, dn.Z },
 							TANGENT = { dt.X, dt.Y, dt.Z },
@@ -1377,16 +1470,16 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 				end
 			end
 		end
-		local attrs = {}
+		local attrs: { [string]: number } = {}
 		for _, attr in U.keys(enabled) do
 			local kind = (attr == "POSITION" or attr == "NORMAL") and "VEC3"
 				or ((attr == "TEXCOORD_0" or attr == "TEXCOORD_1") and "VEC2" or "VEC4")
 			attrs[attr] =
 				write(arrays[attr], kind, attr:match("^JOINTS") and 5123 or 5126, 34962, attr == "POSITION")
 		end
-		local primitiveTargets = {}
+		local primitiveTargets: { { [string]: number } } = {}
 		for t, targetAttrs in morphEnabled do
-			local result = {}
+			local result: { [string]: number } = {}
 			for _, attr in U.keys(targetAttrs) do
 				local kind = attr == "COLOR_0" and "VEC4"
 					or ((attr == "TEXCOORD_0" or attr == "TEXCOORD_1") and "VEC2" or "VEC3")
@@ -1403,7 +1496,7 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 		})
 	end
 	assert(#primitives > 0, "Cannot export empty mesh")
-	local names = {}
+	local names: { string } = {}
 	for i, target in targets do
 		names[i] = target.name or "Target " .. i
 	end
@@ -1415,9 +1508,9 @@ local function exportMesh(mesh, doc, write, name, targets, weights)
 	}
 end
 -- Return glTF JSON table and an array containing its binary buffer.
-function GLTF.toDocument(scene)
+function GLTF.toDocument(scene: Scene): (Doc, { buffer })
 	GLTF.worldMatrices(scene)
-	local doc = {
+	local doc: Doc = {
 		asset = { version = "2.0", generator = "Editable3D Luau GLTF" },
 		accessors = {},
 		bufferViews = {},
@@ -1441,19 +1534,19 @@ function GLTF.toDocument(scene)
 		local weights = targets and #targets > 0 and scene.meshWeights and scene.meshWeights[i] or nil
 		doc.meshes[i] = exportMesh(mesh, doc, write, scene.meshNames and scene.meshNames[i], targets, weights)
 	end
-	local animated = {}
-	for _, clip in scene.animations or {} do
+	local animated: { [number]: boolean } = {}
+	for _, clip in (scene.animations or {}) :: { any } do
 		if #clip.channels == 0 then
 			continue
 		end -- ignored node-less input channels
-		local channels, samplers = {}, {}
+		local channels: { any }, samplers: { any } = {}, {}
 		Timeline.clip(clip.channels, clip.name) -- validates unique target/path pairs
 		for k, c in clip.channels do
 			local node = assert(scene.nodes[c.node], "Invalid animation node")
-			local path = c.path
+			local path: string = c.path
 			assert(path ~= "value", "glTF supports TRS and weights channels only")
 			local checked = Timeline.channel(path, c.times, c.values, c)
-			local times, values = {}, {}
+			local times: { Tuple }, values: { any } = {}, {}
 			for _, t in checked.times do
 				assert(t >= 0, "Negative animation time")
 				table.insert(times, { t })
@@ -1467,7 +1560,7 @@ function GLTF.toDocument(scene)
 					"Morph animation count mismatch"
 				)
 			end
-			local function emit(value)
+			local function emit(value: any)
 				if path == "weights" then
 					for _, v in value do
 						table.insert(values, { v })
@@ -1478,9 +1571,9 @@ function GLTF.toDocument(scene)
 			end
 			for j, value in checked.values do
 				if checked.interpolation == "CUBICSPLINE" then
-					emit(checked.inTangents[j])
+					emit((checked.inTangents :: { any })[j])
 					emit(value)
-					emit(checked.outTangents[j])
+					emit((checked.outTangents :: { any })[j])
 				else
 					emit(value)
 				end
@@ -1497,8 +1590,8 @@ function GLTF.toDocument(scene)
 		table.insert(doc.animations, { name = clip.name, channels = channels, samplers = samplers })
 	end
 	for i, node in scene.nodes do
-		local children = {}
-		for k, n in node.children or {} do
+		local children: { number } = {}
+		for k, n in (node.children or {}) :: { number } do
 			assert(scene.nodes[n], "Invalid child node")
 			children[k] = n - 1
 		end
@@ -1508,8 +1601,8 @@ function GLTF.toDocument(scene)
 		if node.skin then
 			assert(node.mesh and scene.skins[node.skin], "Invalid node skin")
 			local skin = scene.skins[node.skin]
-			for id in scene.meshes[node.mesh].vertices do
-				local weights = scene.meshes[node.mesh].weights[id]
+			for id in scene.meshes[node.mesh :: number].vertices do
+				local weights = scene.meshes[node.mesh :: number].weights[id]
 				assert(weights and next(weights), "Skinned mesh lacks vertex weights")
 				for joint in weights do
 					assert(skin.joints[joint], "Skin weight joint out of range")
@@ -1523,7 +1616,7 @@ function GLTF.toDocument(scene)
 			assert(
 				node.mesh
 					and scene.morphTargets
-					and #node.weights == #scene.morphTargets[node.mesh]
+					and #node.weights == #scene.morphTargets[node.mesh :: number]
 					and #node.weights > 0,
 				"Invalid node morph weights"
 			)
@@ -1548,10 +1641,10 @@ function GLTF.toDocument(scene)
 			doc.nodes[i].scale = trs.scale
 		end
 	end
-	for i, skin in scene.skins or {} do
+	for i, skin in (scene.skins or {}) :: { Skin } do
 		assert(#skin.joints > 0 and #skin.joints == #skin.inverseBindMatrices, "Invalid skin")
-		local joints = {}
-		local seen = {}
+		local joints: { number } = {}
+		local seen: { [number]: boolean } = {}
 		for j, n in skin.joints do
 			assert(scene.nodes[n], "Invalid skin joint")
 			assert(not seen[n], "Duplicate skin joint")
@@ -1566,13 +1659,13 @@ function GLTF.toDocument(scene)
 			skeleton = skin.skeleton and skin.skeleton - 1 or nil,
 		}
 	end
-	for i, img in scene.images or {} do
+	for i, img in (scene.images or {}) :: { Image } do
 		assert(img.mimeType == "image/png" or img.mimeType == "image/jpeg", "Unsupported image MIME")
 		assert(buffer.len(bytes(img.data)) > 0, "Image payload cannot be empty")
 		doc.images[i] = { name = img.name, mimeType = img.mimeType, bufferView = append(bytes(img.data)) }
 	end
-	for i, s in scene.scenes or {} do
-		local roots = {}
+	for i, s in (scene.scenes or {}) :: { SceneRoot } do
+		local roots: { number } = {}
 		for j, n in s.nodes do
 			assert(scene.nodes[n], "Invalid scene root")
 			roots[j] = n - 1
@@ -1594,14 +1687,14 @@ function GLTF.toDocument(scene)
 	return doc, { b }
 end
 -- Embedded JSON by default; pass a URI to return JSON plus external binary bytes.
-function GLTF.toJSON(scene, bufferURI)
+function GLTF.toJSON(scene: Scene, bufferURI: string?): (string, { buffer })
 	local doc, buffers = GLTF.toDocument(scene)
 	if doc.buffers then
 		doc.buffers[1].uri = bufferURI or "data:application/octet-stream;base64," .. base64encode(buffers[1])
 	end
 	return Http:JSONEncode(doc), buffers
 end
-function GLTF.toGLB(scene)
+function GLTF.toGLB(scene: Scene): buffer
 	local doc, buffers = GLTF.toDocument(scene)
 	local json = Http:JSONEncode(doc)
 	json ..= string.rep(" ", -#json % 4)

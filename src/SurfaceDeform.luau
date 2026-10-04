@@ -1,11 +1,43 @@
+--!strict
 -- Original nearest-triangle surface attachment. No Blender source or model data.
 local U = require(script.Parent.Util)
 local Spatial = require(script.Parent.Spatial)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type BindOptions = {
+	maxDistance: number?,
+	maxVertices: number?,
+	mask: { [number]: number }?,
+	checkpoint: ((fraction: number) -> ())?,
+}
+export type EvaluateOptions = { mode: string?, influence: number?, recalculateNormals: boolean? }
+export type BindReport = {
+	boundVertices: number,
+	unboundVertices: number,
+	maskedVertices: number,
+	maximumDistance: number,
+}
+export type EvaluateReport = { affectedVertices: number, maximumDisplacement: number }
+type Record = {
+	triangle: { number },
+	barycentric: Vector3,
+	offset: Vector3,
+	affine: Vector2,
+	weight: number,
+}
+export type Binding = {
+	source: Mesh,
+	targetSignature: string,
+	records: { [number]: Record },
+	report: BindReport,
+	evaluate: (Binding, Mesh, EvaluateOptions?) -> (Mesh, EvaluateReport),
+}
+type Self = Binding
 local S = {}
 S.__index = S
 
-local function signature(mesh)
-	local items = {}
+local function signature(mesh: Mesh): string
+	local items: { string } = {}
 	for _, id in U.keys(mesh.vertices) do
 		table.insert(items, "v" .. id)
 	end
@@ -15,7 +47,7 @@ local function signature(mesh)
 	return table.concat(items, ";")
 end
 
-local function basis(a, b, c)
+local function basis(a: Vector3, b: Vector3, c: Vector3): (Vector3, Vector3, Vector3, Vector3, Vector3)
 	local e, f = b - a, c - a
 	local cross = e:Cross(f)
 	assert(e.Magnitude > 1e-10 and cross.Magnitude > 1e-10, "Surface control triangle collapsed")
@@ -23,8 +55,8 @@ local function basis(a, b, c)
 	return x, z:Cross(x), z, e, f
 end
 
-function S.bind(mesh, target, options)
-	options = options or {}
+function S.bind(mesh: Mesh, target: Mesh, options: BindOptions?): (Binding, BindReport)
+	local options: BindOptions = options or {}
 	local limit = options.maxDistance or math.huge
 	assert(limit >= 0 and limit == limit, "Invalid binding distance")
 	assert(
@@ -33,8 +65,10 @@ function S.bind(mesh, target, options)
 	)
 	local index = Spatial.new(target)
 	assert(index.root, "Surface control mesh is empty or degenerate")
-	local self = setmetatable({ source = mesh:clone(), targetSignature = signature(target), records = {} }, S)
-	local report = { boundVertices = 0, unboundVertices = 0, maskedVertices = 0, maximumDistance = 0 }
+	local self: Binding =
+		setmetatable({ source = mesh:clone(), targetSignature = signature(target), records = {} }, S) :: any
+	local report: BindReport =
+		{ boundVertices = 0, unboundVertices = 0, maskedVertices = 0, maximumDistance = 0 }
 	local ids = U.keys(mesh.vertices)
 	for i, id in ids do
 		local p = mesh.vertices[id]
@@ -71,15 +105,15 @@ function S.bind(mesh, target, options)
 	return self, report
 end
 
-function S:evaluate(target, options)
-	options = options or {}
+function S.evaluate(self: Self, target: Mesh, options: EvaluateOptions?): (Mesh, EvaluateReport)
+	local options: EvaluateOptions = options or {}
 	assert(signature(target) == self.targetSignature, "Surface control topology changed; bind again")
 	local mode = options.mode or "RIGID"
 	assert(mode == "RIGID" or mode == "AFFINE", "Surface mode must be RIGID or AFFINE")
-	local influence = options.influence == nil and 1 or options.influence
+	local influence: number = (options.influence == nil and 1 or options.influence) :: number
 	assert(U.finite(influence) and influence >= 0 and influence <= 1, "Influence must be in [0,1]")
 	local out = self.source:clone()
-	local report = { affectedVertices = 0, maximumDisplacement = 0 }
+	local report: EvaluateReport = { affectedVertices = 0, maximumDisplacement = 0 }
 	for _, id in U.keys(self.records) do
 		local r = self.records[id]
 		local a, b, c =

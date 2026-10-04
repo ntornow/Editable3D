@@ -1,26 +1,63 @@
+--!strict
 -- Harmonic/biharmonic displacement interpolation with exact positional anchors.
 -- Sparse matrix-free PCG; rotations are not estimated (not ARAP).
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type BindOptions = { maxVertices: number?, weights: string? }
+export type SolveOptions = {
+	order: number?,
+	maxIterations: number?,
+	tolerance: number?,
+	checkpoint: ((fraction: number) -> ())?,
+	requireConvergence: boolean?,
+	recalculateNormals: boolean?,
+}
+export type AxisReport = {
+	axis: string,
+	iterations: number,
+	residual: number,
+	relativeResidual: number,
+	converged: boolean,
+}
+export type SolveReport = {
+	axes: { AxisReport },
+	converged: boolean,
+	anchors: number,
+	freeVertices: number,
+	inactiveVertices: number,
+	order: number,
+}
+export type Graph = {
+	source: Mesh,
+	ids: { number },
+	index: { [number]: number },
+	rows: { { [number]: number } },
+	diagonal: { number },
+	components: { { number } },
+	solve: (Graph, { [number]: Vector3 }, SolveOptions?) -> (Mesh, SolveReport),
+}
+type Self = Graph
 local L = {}
 L.__index = L
 
-function L.bind(mesh, options)
-	options = options or {}
+function L.bind(mesh: Mesh, options: BindOptions?): Graph
+	local options: BindOptions = options or {}
 	local ids = U.keys(mesh.vertices)
 	assert(#ids <= (options.maxVertices or 100000), "Laplacian vertex budget exceeded")
 	local mode = options.weights or "UNIFORM"
 	assert(mode == "UNIFORM" or mode == "COTANGENT", "Unknown Laplacian weights")
-	local self = setmetatable(
+	local self: Graph = setmetatable(
 		{ source = mesh:clone(), ids = ids, index = {}, rows = {}, diagonal = {}, components = {} },
 		L
-	)
+	) :: any
 	for i, id in ids do
 		assert(U.vector(mesh.vertices[id]), "Invalid vertex position")
 		self.index[id] = i
 		self.rows[i] = {}
 		self.diagonal[i] = 0
 	end
-	local weights = {}
+	local weights: { [string]: { a: number, b: number, w: number } } = {}
 	for key, edge in mesh:topology().edges do
 		weights[key] = { a = edge.a, b = edge.b, w = mode == "UNIFORM" and 1 or 0 }
 	end
@@ -47,7 +84,7 @@ function L.bind(mesh, options)
 		self.diagonal[a] += w
 		self.diagonal[b] += w
 	end
-	local seen = {}
+	local seen: { [number]: boolean } = {}
 	for i = 1, #ids do
 		if not seen[i] then
 			local component, cursor = { i }, 1
@@ -68,8 +105,8 @@ function L.bind(mesh, options)
 	return self
 end
 
-function L:solve(anchors, options)
-	options = options or {}
+function L.solve(self: Self, anchors: { [number]: Vector3 }, options: SolveOptions?): (Mesh, SolveReport)
+	local options: SolveOptions = options or {}
 	local order = options.order or 2
 	assert(order == 1 or order == 2, "Laplacian order must be 1 or 2")
 	local iterations = options.maxIterations or 512
@@ -77,7 +114,7 @@ function L:solve(anchors, options)
 	local tolerance = options.tolerance or 1e-7
 	assert(U.finite(tolerance) and tolerance > 0, "Positive tolerance required")
 	local n = #self.ids
-	local fixed, target, count, inactive = {}, {}, 0, 0
+	local fixed: { [number]: boolean }, target: { [number]: Vector3 }, count, inactive = {}, {}, 0, 0
 	for id, p in anchors do
 		local i = assert(self.index[id], "Unknown anchor vertex")
 		assert(U.vector(p), "Invalid anchor position")
@@ -97,7 +134,7 @@ function L:solve(anchors, options)
 			end
 		end
 	end
-	local free, diagonal = {}, {}
+	local free: { number }, diagonal: { number } = {}, {}
 	for i = 1, n do
 		if not fixed[i] then
 			table.insert(free, i)
@@ -111,7 +148,7 @@ function L:solve(anchors, options)
 		end
 		diagonal[i] = math.max(d, 1e-20)
 	end
-	local function laplace(v)
+	local function laplace(v: { number }): { number }
 		local out = table.create(n, 0)
 		for i = 1, n do
 			local sum = self.diagonal[i] * v[i]
@@ -122,15 +159,15 @@ function L:solve(anchors, options)
 		end
 		return out
 	end
-	local function apply(v)
+	local function apply(v: { number }): { number }
 		local out = laplace(v)
 		return order == 2 and laplace(out) or out
 	end
-	local coordinates, reports = {}, {}
+	local coordinates: { { number } }, reports: { AxisReport } = {}, {}
 	for axisIndex, axis in { "X", "Y", "Z" } do
 		local prescribed = table.create(n, 0)
 		for i, d in target do
-			prescribed[i] = d[axis]
+			prescribed[i] = (d :: any)[axis]
 		end
 		local rhs = apply(prescribed)
 		local x, r, z, p = table.create(n, 0), table.create(n, 0), table.create(n, 0), table.create(n, 0)
@@ -183,22 +220,19 @@ function L:solve(anchors, options)
 		end
 		residual = math.sqrt(squared)
 		for i, d in target do
-			x[i] = d[axis]
+			x[i] = (d :: any)[axis]
 		end
 		coordinates[axisIndex] = x
-		table.insert(
-			reports,
-			{
-				axis = axis,
-				iterations = used,
-				residual = residual,
-				relativeResidual = residual / math.max(math.sqrt(rhsNorm), 1e-20),
-				converged = residual <= threshold * 1.01,
-			}
-		)
+		table.insert(reports, {
+			axis = axis,
+			iterations = used,
+			residual = residual,
+			relativeResidual = residual / math.max(math.sqrt(rhsNorm), 1e-20),
+			converged = residual <= threshold * 1.01,
+		})
 	end
 	local out = self.source:clone()
-	local report = {
+	local report: SolveReport = {
 		axes = reports,
 		converged = true,
 		anchors = count,

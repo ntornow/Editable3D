@@ -1,12 +1,22 @@
+--!strict
 local Mesh = require(script.Parent.Mesh)
 local Topology = require(script.Parent.Topology)
 local Deform = require(script.Parent.Deform)
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type ScatterPoint = { position: Vector3, normal: Vector3, face: number, barycentric: Vector3 }
+export type ScatterReport = { requested: number, generated: number, attempts: number }
 local G = {}
-function G.scatter(mesh, count, seed, density)
+function G.scatter(
+	mesh: Mesh,
+	count: number,
+	seed: number?,
+	density: ((Vector3) -> number)?
+): ({ ScatterPoint }, ScatterReport)
 	U.integer(count, 0)
 	local triangles = mesh:triangles()
-	local cumulative = {}
+	local cumulative: { number } = {}
 	local total = 0
 	for i, t in triangles do
 		local a, b, c = mesh.vertices[t[1]], mesh.vertices[t[2]], mesh.vertices[t[3]]
@@ -16,7 +26,7 @@ function G.scatter(mesh, count, seed, density)
 	end
 	assert(total > 0 or count == 0)
 	local random = Random.new(seed or 0)
-	local points = {}
+	local points: { ScatterPoint } = {}
 	local attempts = 0
 	while #points < count and attempts < math.max(count * 100, 100) do
 		attempts += 1
@@ -45,14 +55,14 @@ function G.scatter(mesh, count, seed, density)
 	end
 	return points, { requested = count, generated = #points, attempts = attempts }
 end
-function G.instance(mesh, transforms)
-	local instances = {}
+function G.instance(mesh: Mesh, transforms: { CFrame }): Mesh
+	local instances: { Mesh } = {}
 	for _, frame in transforms do
 		table.insert(instances, Deform.transform(mesh, frame))
 	end
 	return Topology.join(instances)
 end
-function G.assignMaterial(mesh, faces, slot)
+function G.assignMaterial(mesh: Mesh, faces: { [number]: boolean }, slot: number): Mesh
 	U.integer(slot, 1)
 	local out = mesh:clone()
 	for id, selected in faces do
@@ -62,7 +72,7 @@ function G.assignMaterial(mesh, faces, slot)
 	end
 	return out
 end
-function G.vertexColors(mesh, field)
+function G.vertexColors(mesh: Mesh, field: (Vector3, number) -> (Color3, number?)): Mesh
 	local out = mesh:clone()
 	for _, f in out.faces do
 		for i, id in f.vertices do
@@ -73,7 +83,7 @@ function G.vertexColors(mesh, field)
 	end
 	return out
 end
-function G.group(mesh, name, mask)
+function G.group(mesh: Mesh, name: string, mask: { [number]: number }): Mesh
 	local out = mesh:clone()
 	out.groups[name] = {}
 	for id, w in mask do
@@ -82,11 +92,17 @@ function G.group(mesh, name, mask)
 	end
 	return out
 end
-function G.parametric(fn, uSegments, vSegments, wrapU, wrapV)
+function G.parametric(
+	fn: (number, number) -> Vector3,
+	uSegments: number,
+	vSegments: number,
+	wrapU: boolean?,
+	wrapV: boolean?
+): Mesh
 	U.integer(uSegments, 1)
 	U.integer(vSegments, 1)
 	local m = Mesh.new()
-	local rows = {}
+	local rows: { [number]: { [number]: number } } = {}
 	local nu, nv = wrapU and uSegments or uSegments + 1, wrapV and vSegments or vSegments + 1
 	for i = 0, nu - 1 do
 		rows[i] = {}

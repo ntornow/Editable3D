@@ -1,9 +1,29 @@
+--!strict
 -- Explicit cleanup, winding repair and bounded intersection arrangements.
 local U = require(script.Parent.Util)
 local A = require(script.Parent.AttributeCore)
 local C = require(script.Parent.Connectivity)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Arrangement options pass through to ArrangementSnapshot, MeshArrangement and Intersections.
+export type ArrangementOptions = { [string]: any }
+export type CleanOptions = {
+	areaTolerance: number?,
+	maxElements: number?,
+	removeLoose: boolean?,
+	checkpoint: ((fraction: number) -> ())?,
+	[string]: any,
+}
+export type OrientOptions = {
+	maxWork: number?,
+	outward: boolean?,
+	checkpoint: ((fraction: number) -> ())?,
+	[string]: any,
+}
+-- Reports carry operation-specific fields (validation, removed IDs, arrangement audits, ...).
+export type RepairReport = { [string]: any }
 local R = {}
-function R.splitIntersections(mesh, options)
+function R.splitIntersections(mesh: Mesh, options: ArrangementOptions?): (Mesh, RepairReport)
 	local copies
 	copies, options = require(script.Parent.ArrangementSnapshot)({ mesh }, options)
 	mesh = copies[1]
@@ -15,7 +35,7 @@ function R.splitIntersections(mesh, options)
 	report.work = data.getWork()
 	return out, report
 end
-function R.resolveIntersections(mesh, options)
+function R.resolveIntersections(mesh: Mesh, options: ArrangementOptions?): (Mesh, RepairReport)
 	local copies
 	copies, options = require(script.Parent.ArrangementSnapshot)({ mesh }, options)
 	mesh = copies[1]
@@ -23,10 +43,10 @@ function R.resolveIntersections(mesh, options)
 	local selection, classification = require(script.Parent.MeshWindingBoundary)(data, options)
 	local conformity = require(script.Parent.MeshArrangementConform)(data, selection, options)
 	local out, report = require(script.Parent.MeshArrangementBuild)(data, selection, false, options)
-	local scan = table.clone(options.intersectionOptions or {})
-	scan.maxWork = scan.maxWork or options.maxWork
+	local scan = table.clone((options :: ArrangementOptions).intersectionOptions or {})
+	scan.maxWork = scan.maxWork or (options :: ArrangementOptions).maxWork
 	scan.includeAdjacent, scan.includeContacts = false, true
-	scan.checkpoint = scan.checkpoint or options.checkpoint
+	scan.checkpoint = scan.checkpoint or (options :: ArrangementOptions).checkpoint
 	local _, audit = require(script.Parent.Intersections).mesh(out, scan)
 	report.arrangement, report.classification, report.intersections = data.report, classification, audit
 	report.conformity = conformity
@@ -45,8 +65,8 @@ function R.resolveIntersections(mesh, options)
 	end
 	return out, report
 end
-function R.clean(mesh, options)
-	options = options or {}
+function R.clean(mesh: Mesh, options: CleanOptions?): (Mesh, RepairReport)
+	local options: CleanOptions = options or {}
 	local tolerance = options.areaTolerance or 1e-12
 	assert(
 		type(tolerance) == "number" and U.finite(tolerance) and tolerance >= 0,
@@ -137,8 +157,8 @@ function R.clean(mesh, options)
 	report.complete = report.validation.valid
 	return out, report
 end
-function R.orient(mesh, options)
-	options = options or {}
+function R.orient(mesh: Mesh, options: OrientOptions?): (Mesh, RepairReport)
+	local options: OrientOptions = options or {}
 	local index = C.index(mesh, options)
 	A.validate(mesh)
 	local maxWork = U.integer(options.maxWork or 2000000, 1)
@@ -183,17 +203,17 @@ function R.orient(mesh, options)
 		table.insert(components, { faces = queue, closed = closed })
 	end
 	local out = mesh:clone()
-	local function reverse(fid)
+	local function reverse(fid: number)
 		local f = out.faces[fid]
 		local vs, cs = {}, {}
 		for i = #f.vertices, 1, -1 do
 			table.insert(vs, f.vertices[i])
 			table.insert(cs, U.copy(f.corners[i]))
 			if cs[#cs].normal then
-				cs[#cs].normal = -cs[#cs].normal
+				cs[#cs].normal = -(cs[#cs].normal :: Vector3)
 			end
 			if cs[#cs].tangentSign then
-				cs[#cs].tangentSign = -cs[#cs].tangentSign
+				cs[#cs].tangentSign = -(cs[#cs].tangentSign :: number)
 			end
 		end
 		f.vertices, f.corners = vs, cs

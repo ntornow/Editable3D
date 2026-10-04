@@ -1,24 +1,34 @@
+--!strict
 local Mesh = require(script.Parent.Mesh)
 local U = require(script.Parent.Util)
 local A = require(script.Parent.AttributeCore)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+type Face = Types.Face
+type Corner = Types.Corner
+-- A correspondence reference: { sourceKey, weight }. Keys are vertex IDs, face IDs,
+-- edge keys or "face:corner" strings depending on the domain.
+export type Ref = { any }
+-- Face-ID set: a selected face maps to any truthy value.
+export type FaceSet = { [number]: any }
 local T = {}
-local function ref(key, weight)
+local function ref(key: any, weight: number?): Ref
 	return { key, weight or 1 }
 end
-local function cornerKey(fid, i)
+local function cornerKey(fid: number, i: number): string
 	return fid .. ":" .. i
 end
-local function mixCorners(face, references)
-	local result, fields = {}, {}
+local function mixCorners(face: Face, references: { Ref }): Corner
+	local result: { [string]: any }, fields: { [string]: boolean } = {}, {}
 	for _, pair in references do
-		for field in face.corners[pair[1]] do
+		for field in face.corners[pair[1]] :: any do
 			fields[field] = true
 		end
 	end
 	for field in fields do
-		local channel, refs = nil, {}
+		local channel: any, refs: { Ref } = nil, {}
 		for _, pair in references do
-			local value = face.corners[pair[1]][field]
+			local value = (face.corners[pair[1]] :: any)[field]
 			if value ~= nil then
 				local kind = typeof(value)
 				channel = channel
@@ -33,9 +43,9 @@ local function mixCorners(face, references)
 		end
 		result[field] = A.blend(channel, refs)
 	end
-	return result
+	return result :: Corner
 end
-function T.triangulate(mesh)
+function T.triangulate(mesh: Mesh): Mesh
 	local out = mesh:clone()
 	out.faces = {}
 	out.nextFace = 1
@@ -54,7 +64,7 @@ function T.triangulate(mesh)
 	end
 	return A.transfer(mesh, out, maps)
 end
-function T.join(meshes)
+function T.join(meshes: { Mesh }): Mesh
 	local out = Mesh.new()
 	for _, m in meshes do
 		local map = {}
@@ -94,7 +104,7 @@ function T.join(meshes)
 	end
 	return out
 end
-function T.extract(mesh, faces)
+function T.extract(mesh: Mesh, faces: FaceSet): Mesh
 	local out = mesh:clone()
 	for id in out.faces do
 		if not faces[id] then
@@ -103,7 +113,7 @@ function T.extract(mesh, faces)
 	end
 	return out:removeUnused()
 end
-function T.components(mesh)
+function T.components(mesh: Mesh): { Mesh }
 	local top = mesh:topology()
 	local seen = {}
 	local result = {}
@@ -131,7 +141,7 @@ function T.components(mesh)
 	end
 	return result
 end
-function T.reverse(mesh)
+function T.reverse(mesh: Mesh): Mesh
 	local out = mesh:clone()
 	local maps = { corner = {}, identity = { corner = false } }
 	for fid, f in out.faces do
@@ -154,22 +164,22 @@ function T.reverse(mesh)
 	out.revision += 1
 	return A.transfer(mesh, out, maps)
 end
-function T.weld(mesh, tolerance)
+function T.weld(mesh: Mesh, tolerance: number): (Mesh, { [number]: number })
 	assert(tolerance > 0, "Positive tolerance required")
 	local out = mesh:clone()
-	local buckets, map = {}, {}
+	local buckets: { [string]: { number } }, map: { [number]: number } = {}, {}
 	local maps = { vertex = {}, edge = {}, corner = {}, identity = { edge = false, corner = false } }
-	local function bucketKey(x, y, z)
+	local function bucketKey(x: number, y: number, z: number): string
 		return x .. "," .. y .. "," .. z
 	end
 	for _, id in U.keys(out.vertices) do
 		local p = out.vertices[id]
 		local x, y, z = math.floor(p.X / tolerance), math.floor(p.Y / tolerance), math.floor(p.Z / tolerance)
-		local found
+		local found: number?
 		for dx = -1, 1 do
 			for dy = -1, 1 do
 				for dz = -1, 1 do
-					for _, other in buckets[bucketKey(x + dx, y + dy, z + dz)] or {} do
+					for _, other in (buckets[bucketKey(x + dx, y + dy, z + dz)] or {}) :: { number } do
 						if
 							(p - out.vertices[other]).Magnitude <= tolerance and (not found or other < found)
 						then
@@ -227,10 +237,11 @@ function T.weld(mesh, tolerance)
 	end
 	return out:removeUnused():recalculateNormals(), map
 end
-function T.extrude(mesh, selected, offset)
+function T.extrude(mesh: Mesh, selected: FaceSet, offset: Vector3): (Mesh, { [number]: number })
 	assert(U.vector(offset))
 	local out = mesh:clone()
-	local map, boundary = {}, {}
+	-- Boundary entries are { a, b, sourceFace, cornerIndex }, or false once shared.
+	local map: { [number]: number }, boundary: { [string]: { number } | false } = {}, {}
 	local maps = { vertex = {}, edge = {}, face = {}, corner = {} }
 	for _, fid in U.keys(selected) do
 		if selected[fid] then
@@ -270,8 +281,9 @@ function T.extrude(mesh, selected, offset)
 	end
 	for _, edge in boundary do
 		if edge then
-			local a, b = edge[1], edge[2]
-			local sourceId, i = edge[3], edge[4]
+			local entry = edge :: { number }
+			local a, b = entry[1], entry[2]
+			local sourceId, i = entry[3], entry[4]
 			local face = mesh.faces[sourceId]
 			local j = i % #face.vertices + 1
 			local fid = out:addFace(
@@ -289,7 +301,7 @@ function T.extrude(mesh, selected, offset)
 	A.vertexData(mesh, out, maps.vertex)
 	return out:removeUnused():recalculateNormals(), map
 end
-function T.insetFaces(mesh, selected, fraction)
+function T.insetFaces(mesh: Mesh, selected: FaceSet, fraction: number): Mesh
 	assert(fraction > 0 and fraction < 1, "Inset fraction must be between zero and one")
 	local out = mesh:clone()
 	local maps = { vertex = {}, edge = {}, face = {}, corner = {} }
@@ -338,7 +350,7 @@ function T.insetFaces(mesh, selected, fraction)
 	A.vertexData(mesh, out, maps.vertex)
 	return out:recalculateNormals()
 end
-function T.bridge(mesh, loopA, loopB)
+function T.bridge(mesh: Mesh, loopA: { number }, loopB: { number }): Mesh
 	assert(#loopA == #loopB and #loopA >= 3, "Bridge requires equally sampled loops")
 	local out = mesh:clone()
 	for i, a in loopA do
@@ -347,13 +359,13 @@ function T.bridge(mesh, loopA, loopB)
 	end
 	return out:recalculateNormals()
 end
-function T.fill(mesh, loop)
+function T.fill(mesh: Mesh, loop: { number }): Mesh
 	local out = mesh:clone()
 	out:addFace(loop)
 	return out:recalculateNormals()
 end
-function T.splitEdge(mesh, a, b, t)
-	t = t or 0.5
+function T.splitEdge(mesh: Mesh, a: number, b: number, t: number?): (Mesh, number)
+	local t: number = t or 0.5
 	assert(t > 0 and t < 1)
 	assert(mesh:topology().edges[U.edge(a, b)], "Edge not found")
 	local out = mesh:clone()
@@ -409,7 +421,7 @@ function T.splitEdge(mesh, a, b, t)
 	A.vertexData(mesh, out, maps.vertex)
 	return out:recalculateNormals(), id
 end
-function T.dissolveEdge(mesh, a, b)
+function T.dissolveEdge(mesh: Mesh, a: number, b: number): Mesh
 	local edge = mesh:topology().edges[U.edge(a, b)]
 	assert(edge and #edge.faces == 2, "Dissolve requires two incident faces")
 	local fa, fb = mesh.faces[edge.faces[1]], mesh.faces[edge.faces[2]]

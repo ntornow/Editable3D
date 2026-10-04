@@ -1,3 +1,4 @@
+--!strict
 -- Scope is explicit: these are implemented algorithms, not Blender compatibility stubs.
 return table.freeze({
 	mesh = "Typed sparse vertex/edge/face/corner channels, explicit correspondence and domain transfer, directed-corner connectivity, fan/duplicate diagnostics, bounded paths/loops/rings, polygon topology, ear clipping, region extrusion, per-face inset, edge split/dissolve, loop bridge, weld, connected components; region inset, individual extrusion, loop cuts, slides, poke, delimited triangle pairing, cleanup and component winding repair; quad grid fill, welded spin/screw, conforming bisect with holed caps, finite knife paths and constrained crossing/overlapping networks with free interior endpoints; weighted/custom normals and tangent frames",

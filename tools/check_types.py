@@ -21,11 +21,20 @@ FIXTURES = ROOT / '.validation/contracts'
 # Studio release scripts are analyzed too; studio_read_report is a placeholder template.
 ANALYZED = ['src', 'tests', 'examples', 'tools/studio_install.luau', 'tools/studio_verify.luau']
 
-# Modules promoted to --!strict. Add to this list when promoting; never remove silently.
+# Modules promoted to --!strict (every public namespace plus internal helpers promoted so far).
+# Add to this list when promoting; never remove silently.
 STRICT_MODULES = (
-    'init', 'Types', 'OperationBudget', 'PublishRetry', 'PublishTransaction', 'PublishPipeline',
-    'Util', 'Mesh', 'Primitives', 'Selection', 'Normals', 'Sculpt', 'IO', 'Simplify', 'Unwrap',
-    'MeshEdit', 'UV', 'Subdivision', 'Texture', 'Bake', 'Roblox',
+    'ARAP', 'Adaptive', 'Animation', 'ArcLength', 'Attributes', 'BSDF', 'Bake', 'Bezier',
+    'Boolean', 'Camera', 'Capabilities', 'Conformal', 'Connectivity', 'Constraints', 'Convex',
+    'Curves', 'Cyclic', 'Deform', 'Dynamics', 'Fields', 'Fluid', 'GLTF', 'Geometry', 'Graph',
+    'History', 'IO', 'Integrator', 'Intersections', 'Jobs', 'Laplacian', 'Lighting', 'Mesh',
+    'MeshEdit', 'MeshRepair', 'Modifiers', 'Morph', 'NURBS', 'Normals', 'OperationBudget',
+    'Particles', 'PathTrace', 'Planar', 'Predicates', 'Primitives', 'PublishPipeline',
+    'PublishRetry', 'PublishTransaction', 'Quaternion', 'Registration', 'Remesh', 'Render', 'Rig',
+    'RigidBody', 'Roblox', 'Sculpt', 'Selection', 'Simplify', 'Simulation', 'Spatial', 'SplineFit',
+    'SplineQuery', 'Stroke', 'Subdivision', 'SurfaceAdaptive', 'SurfaceDeform', 'SurfaceEdit',
+    'SurfaceTrim', 'Surfaces', 'Texture', 'Timeline', 'Topology', 'Types', 'UV', 'Unwrap', 'Util',
+    'init',
 )
 
 PRELUDE = '--!strict\nlocal E = require("../../src")\nlocal T = require("../../src/Types")\n'

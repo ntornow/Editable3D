@@ -1,18 +1,91 @@
+--!strict
 -- Bounded geometric queries. Positive rational control hulls supply search bounds.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
 local Bounds = require(script.Parent.CurveBounds)
 local Q = {}
 
-function Q.intersectCurveSurface(curve, surface, options)
+-- Curve and surface descriptors come from NURBS (typed separately); treated as opaque here.
+type Curve = any
+type Surface = any
+export type QueryCheckpoint = (progress: number) -> ()
+export type QueryOptions = {
+	tolerance: number?,
+	maxNodes: number?,
+	maxDepth: number?,
+	checkpoint: QueryCheckpoint?,
+}
+export type SampleOptions = {
+	tolerance: number?,
+	maxNodes: number?,
+	maxDepth: number?,
+	maxAngle: number?,
+	checkpoint: QueryCheckpoint?,
+}
+export type LengthReport = {
+	length: number,
+	lowerBound: number,
+	upperBound: number,
+	errorBound: number,
+	converged: boolean,
+	visited: number,
+	segments: number,
+	reason: string?,
+}
+export type SampleReport = {
+	parameters: { number },
+	converged: boolean,
+	errorBound: number,
+	tangentErrorBound: number?,
+	stationarySegments: number,
+	segments: number,
+	visited: number,
+	reason: string?,
+}
+export type SurfaceParameter = { u: number, v: number }
+type ClosestFields = {
+	position: Vector3,
+	distance: number,
+	lowerBound: number,
+	errorBound: number,
+	converged: boolean,
+	visited: number,
+	reason: string?,
+}
+export type CurveClosest = ClosestFields & { parameter: number }
+export type SurfaceClosest = ClosestFields & { parameter: SurfaceParameter }
+type Best = {
+	position: Vector3?,
+	distance: number,
+	parameter: (number | SurfaceParameter)?,
+	lowerBound: number?,
+	errorBound: number?,
+	converged: boolean?,
+	visited: number?,
+	reason: string?,
+}
+type LengthNode = { curve: Curve, depth: number, lower: number, upper: number, priority: number }
+type SampleNode = { curve: Curve, first: number, last: number, depth: number }
+type ClosestNode = {
+	shape: any,
+	u0: number,
+	u1: number,
+	v0: number,
+	v1: number,
+	depth: number,
+	priority: number,
+}
+
+function Q.intersectCurveSurface(curve: Curve, surface: Surface, options: any): any
 	return require(script.Parent.CurveSurfaceIntersections)(curve, surface, options)
 end
 
-function Q.intersectSurfaces(surfaceA, surfaceB, options)
+function Q.intersectSurfaces(surfaceA: Surface, surfaceB: Surface, options: any): any
 	return require(script.Parent.SurfaceIntersections)(surfaceA, surfaceB, options)
 end
 
-local function push(heap, node)
+-- Heaps hold LengthNode or ClosestNode values; both carry a numeric priority.
+local function push(heap: { any }, node: any)
 	local i = #heap + 1
 	while i > 1 do
 		local parent = math.floor(i / 2)
@@ -24,7 +97,7 @@ local function push(heap, node)
 	end
 	heap[i] = node
 end
-local function pop(heap)
+local function pop(heap: { any }): any
 	local result = heap[1]
 	local tail = table.remove(heap)
 	if #heap > 0 then
@@ -44,7 +117,7 @@ local function pop(heap)
 	end
 	return result
 end
-local function limits(options)
+local function limits(options: QueryOptions | SampleOptions): (number, number, number)
 	local tolerance = options.tolerance or 1e-4
 	local nodes, depth = options.maxNodes or 10000, options.maxDepth or 24
 	assert(U.finite(tolerance) and tolerance > 0, "Positive query tolerance required")
@@ -53,7 +126,7 @@ local function limits(options)
 	assert(depth <= 52, "Query depth exceeds floating-point parameter resolution")
 	return tolerance, nodes, depth
 end
-local function curveLengthBounds(c)
+local function curveLengthBounds(c: Curve): (number, number)
 	local lower = (c.points[#c.points] - c.points[1]).Magnitude
 	local upper = 0
 	for i = 2, #c.points do
@@ -62,10 +135,10 @@ local function curveLengthBounds(c)
 	return lower, math.max(lower, upper)
 end
 
-function Q.length(curve, options)
-	options = options or {}
+function Q.length(curve: Curve, options: QueryOptions?): LengthReport
+	local options: QueryOptions = options or {}
 	local tolerance, maxNodes, maxDepth = limits(options)
-	local lower, upper, heap, visited, blocked = 0, 0, {}, 0, 0
+	local lower, upper, heap: { LengthNode }, visited, blocked = 0, 0, {}, 0, 0
 	for _, piece in N.bezierSegments(curve) do
 		local a, b = curveLengthBounds(piece.curve)
 		lower += a
@@ -73,7 +146,7 @@ function Q.length(curve, options)
 		push(heap, { curve = piece.curve, depth = 0, lower = a, upper = b, priority = a - b })
 	end
 	while upper - lower > 2 * tolerance and #heap > 0 and visited < maxNodes do
-		local node = pop(heap)
+		local node: LengthNode = pop(heap)
 		visited += 1
 		if node.depth >= maxDepth then
 			blocked += 1
@@ -107,14 +180,14 @@ function Q.length(curve, options)
 	}
 end
 
-local function distanceToSegment(p, a, b)
+local function distanceToSegment(p: Vector3, a: Vector3, b: Vector3): number
 	local d = b - a
 	local denominator = d:Dot(d)
 	local t = denominator > 0 and math.clamp((p - a):Dot(d) / denominator, 0, 1) or 0
 	return (p - (a + d * t)).Magnitude
 end
-function Q.sample(curve, options)
-	options = options or {}
+function Q.sample(curve: Curve, options: SampleOptions?): ({ Vector3 }, SampleReport)
+	local options: SampleOptions = options or {}
 	local tolerance, maxNodes, maxDepth = limits(options)
 	local maxAngle = options.maxAngle
 	assert(
@@ -122,8 +195,8 @@ function Q.sample(curve, options)
 			or (type(maxAngle) == "number" and U.finite(maxAngle) and maxAngle > 0 and maxAngle < math.pi / 2),
 		"Tangent tolerance must be in (0,pi/2)"
 	)
-	local stack, leaves = {}, {}
-	local pieces = N.bezierSegments(curve)
+	local stack: { SampleNode }, leaves: { SampleNode } = {}, {}
+	local pieces: { any } = N.bezierSegments(curve)
 	for i = #pieces, 1, -1 do
 		local p = pieces[i]
 		p.depth = 0
@@ -132,7 +205,7 @@ function Q.sample(curve, options)
 	local visited, maximum, converged = 0, 0, true
 	local maximumAngle, stationary = 0, 0
 	while #stack > 0 do
-		local node = table.remove(stack)
+		local node = table.remove(stack) :: SampleNode
 		local c = node.curve
 		local error = 0
 		local a, b = c.points[1], c.points[#c.points]
@@ -163,7 +236,7 @@ function Q.sample(curve, options)
 			options.checkpoint(math.min(visited / maxNodes, 1))
 		end
 	end
-	local points, parameters = {}, {}
+	local points: { Vector3 }, parameters: { number } = {}, {}
 	for _, node in leaves do
 		table.insert(points, node.curve.points[1])
 		table.insert(parameters, node.first)
@@ -185,8 +258,8 @@ function Q.sample(curve, options)
 		}
 end
 
-local function hullDistance(shape, target, surface)
-	local points = {}
+local function hullDistance(shape: any, target: Vector3, surface: boolean): number
+	local points: { Vector3 } = {}
 	if surface then
 		for _, row in shape.control do
 			for _, p in row do
@@ -197,20 +270,20 @@ local function hullDistance(shape, target, surface)
 		points = shape.points
 	end
 	local origin = points[1]
-	local function delta(p)
+	local function delta(p: Vector3): { number }
 		return { p.X - origin.X, p.Y - origin.Y, p.Z - origin.Z }
 	end
-	local function dot(a, b)
+	local function dot(a: { number }, b: { number }): number
 		return a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 	end
-	local function cross(a, b)
+	local function cross(a: { number }, b: { number }): { number }
 		return { a[2] * b[3] - a[3] * b[2], a[3] * b[1] - a[1] * b[3], a[1] * b[2] - a[2] * b[1] }
 	end
-	local function normalized(v)
+	local function normalized(v: { number }): { number }
 		local length = math.sqrt(dot(v, v))
 		return { v[1] / length, v[2] / length, v[3] / length }
 	end
-	local function boxDistance(axes)
+	local function boxDistance(axes: { { number } }): number
 		local lo, hi = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
 		for _, p in points do
 			local d = delta(p)
@@ -230,7 +303,7 @@ local function hullDistance(shape, target, surface)
 		return math.sqrt(sum)
 	end
 	local lower = boxDistance({ { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } })
-	local a, maximum = nil, 0
+	local a: { number }?, maximum = nil, 0
 	for _, p in points do
 		local d = delta(p)
 		local size = dot(d, d)
@@ -242,7 +315,7 @@ local function hullDistance(shape, target, surface)
 		return lower
 	end
 	a = normalized(a)
-	local normal
+	local normal: { number }?
 	maximum = 0
 	for _, p in points do
 		local c = cross(a, delta(p))
@@ -258,17 +331,17 @@ local function hullDistance(shape, target, surface)
 	return lower
 end
 
-local function closest(shape, target, options, surface)
+local function closest(shape: any, target: Vector3, options: QueryOptions?, surface: boolean): Best
 	assert(U.vector(target), "Finite query position required")
-	options = options or {}
+	local options: QueryOptions = options or {}
 	local tolerance, maxNodes, maxDepth = limits(options)
-	local root = surface and N.clampSurface(N.clampSurface(shape, "U"), "V") or N.clamp(shape)
-	local heap, visited, blocked = {}, 0, math.huge
-	local best = { distance = math.huge }
-	local function consider(node)
-		local evaluator = surface and N.compileSurface(node.shape) or N.compileCurve(node.shape)
-		local function point(u, v)
-			local d = surface and evaluator.derivatives(u, v) or evaluator.derivatives(u)
+	local root: any = surface and N.clampSurface(N.clampSurface(shape, "U"), "V") or N.clamp(shape)
+	local heap: { ClosestNode }, visited, blocked = {}, 0, math.huge
+	local best: Best = { distance = math.huge }
+	local function consider(node: ClosestNode)
+		local evaluator: any = surface and N.compileSurface(node.shape) or N.compileCurve(node.shape)
+		local function point(u: number, v: number): (any, number)
+			local d: any = surface and evaluator.derivatives(u, v) or evaluator.derivatives(u)
 			local distance = (d.position - target).Magnitude
 			if distance < best.distance then
 				best = {
@@ -293,7 +366,7 @@ local function closest(shape, target, options, surface)
 		-- Projected Newton with positive-Hessian fallback supplies candidates; hulls supply global bounds.
 		for _ = 1, 8 do
 			local residual = d.position - target
-			local du, dv
+			local du: number, dv: number
 			if surface then
 				local a, b, c = d.du:Dot(d.du), d.du:Dot(d.dv), d.dv:Dot(d.dv)
 				local ha, hb, hc = a + residual:Dot(d.duu), b + residual:Dot(d.duv), c + residual:Dot(d.dvv)
@@ -330,7 +403,8 @@ local function closest(shape, target, options, surface)
 			end
 		end
 	end
-	local function add(node)
+	local function add(raw: any)
+		local node: ClosestNode = raw
 		node.priority = hullDistance(node.shape, target, surface)
 		if node.priority <= best.distance then
 			consider(node)
@@ -343,7 +417,7 @@ local function closest(shape, target, options, surface)
 		if best.distance - lower <= tolerance then
 			break
 		end
-		local node = pop(heap)
+		local node: ClosestNode = pop(heap)
 		visited += 1
 		if node.priority >= best.distance then
 			continue
@@ -352,7 +426,7 @@ local function closest(shape, target, options, surface)
 			blocked = math.min(blocked, node.priority)
 			continue
 		end
-		local a, b, axis
+		local a: any, b: any, axis: string
 		if surface then
 			local alongU, alongV = 0, 0
 			for i, row in node.shape.control do
@@ -393,17 +467,17 @@ local function closest(shape, target, options, surface)
 	local lower = math.min(best.distance, blocked, #heap > 0 and heap[1].priority or math.huge)
 	best.lowerBound = lower
 	best.errorBound = math.max(0, best.distance - lower)
-	best.converged = best.errorBound <= tolerance
+	best.converged = (best.errorBound :: number) <= tolerance
 	best.visited = visited
 	best.reason = not best.converged
 			and (visited >= maxNodes and "Node budget exhausted" or "Depth limit reached")
 		or nil
 	return best
 end
-function Q.closestCurve(curve, point, options)
-	return closest(curve, point, options, false)
+function Q.closestCurve(curve: Curve, point: Vector3, options: QueryOptions?): CurveClosest
+	return closest(curve, point, options, false) :: any
 end
-function Q.closestSurface(surface, point, options)
-	return closest(surface, point, options, true)
+function Q.closestSurface(surface: Surface, point: Vector3, options: QueryOptions?): SurfaceClosest
+	return closest(surface, point, options, true) :: any
 end
 return Q

@@ -1,10 +1,21 @@
+--!strict
 local U = require(script.Parent.Util)
 local Graph = {}
 Graph.__index = Graph
-function Graph.new()
-	return setmetatable({ nodes = {}, nextId = 1 }, Graph)
+-- Node operations and their values are caller-defined, so slots and values are polymorphic.
+export type Operation = (inputs: { [any]: any }, parameters: { [any]: any }, context: any) -> any
+export type Node = { operation: Operation, inputs: { [any]: number }, parameters: { [any]: any } }
+type GraphData = { nodes: { [number]: Node }, nextId: number }
+export type Graph = typeof(setmetatable({} :: GraphData, Graph))
+function Graph.new(): Graph
+	return setmetatable({ nodes = {}, nextId = 1 } :: GraphData, Graph)
 end
-function Graph:add(operation, inputs, parameters)
+function Graph.add(
+	self: Graph,
+	operation: Operation,
+	inputs: { [any]: number }?,
+	parameters: { [any]: any }?
+): number
 	assert(type(operation) == "function")
 	local id = self.nextId
 	self.nextId += 1
@@ -12,7 +23,7 @@ function Graph:add(operation, inputs, parameters)
 		{ operation = operation, inputs = U.copy(inputs or {}), parameters = U.copy(parameters or {}) }
 	return id
 end
-function Graph:connect(node, slot, source)
+function Graph.connect(self: Graph, node: number, slot: any, source: number)
 	assert(self.nodes[node] and self.nodes[source])
 	local old = self.nodes[node].inputs[slot]
 	self.nodes[node].inputs[slot] = source
@@ -24,9 +35,9 @@ function Graph:connect(node, slot, source)
 		error(err, 2)
 	end
 end
-function Graph:order(output)
-	local visiting, seen, result = {}, {}, {}
-	local function visit(id)
+function Graph.order(self: Graph, output: number): { number }
+	local visiting: { [number]: boolean? }, seen: { [number]: boolean }, result: { number } = {}, {}, {}
+	local function visit(id: number)
 		assert(self.nodes[id], "Unknown graph node")
 		assert(not visiting[id], "Graph cycle detected")
 		if seen[id] then
@@ -43,11 +54,11 @@ function Graph:order(output)
 	visit(output)
 	return result
 end
-function Graph:evaluate(output, context)
-	local values = {}
+function Graph.evaluate(self: Graph, output: number, context: any?): any
+	local values: { [number]: any } = {}
 	for _, id in self:order(output) do
 		local n = self.nodes[id]
-		local input = {}
+		local input: { [any]: any } = {}
 		for slot, source in n.inputs do
 			input[slot] = values[source]
 		end

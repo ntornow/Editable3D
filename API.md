@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.76.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.77.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -10,66 +10,66 @@ Constructors use dots (`E.Mesh.new()`); instance methods use colons (`mesh:addVe
 
 Source: [src/ARAP.luau](src/ARAP.luau)
 
-- `ARAP.bind(mesh, options)`
-- `ARAP:solve(anchors, options)`
+- `ARAP.bind(mesh: Mesh, options: BindOptions?): Deformer`
+- `ARAP:solve(anchors: { [number]: Vector3 }, options: SolveOptions?): (Mesh, SolveReport)`
 
 ## Adaptive
 
 Source: [src/Adaptive.luau](src/Adaptive.luau)
 
-- `Adaptive.refine(mesh, targetLength, options)`
-- `Adaptive.remesh(mesh, targetLength, options)`
+- `Adaptive.refine(mesh: Types.Mesh, targetLength: TargetLength, options: AdaptiveOptions?): (Types.Mesh, RefineReport)`
+- `Adaptive.remesh(mesh: Types.Mesh, targetLength: TargetLength, options: AdaptiveOptions?): (Types.Mesh, RemeshReport)`
 
 ## Animation
 
 Source: [src/Animation.luau](src/Animation.luau)
 
-- `Animation.track(keys, interpolation)`
-- `Animation.sample(track, time)`
-- `Animation.evaluate(tracks, time, duration, looped)`
-- `Animation.blend(a, b, weight)`
-- `Animation.bake(tracks, startTime, endTime, fps)`
+- `Animation.track(keys: { Key }, interpolation: string?): Track`
+- `Animation.sample(track: Track, time: number): any`
+- `Animation.evaluate(tracks: { [string]: Track }, time: number, duration: number?, looped: boolean?): Values`
+- `Animation.blend(a: Values, b: Values, weight: number): Values`
+- `Animation.bake(tracks: { [string]: Track }, startTime: number, endTime: number, fps: number): { Frame }`
 
 ## ArcLength
 
 Source: [src/ArcLength.luau](src/ArcLength.luau)
 
-- `ArcLength.prepare(curve, options)`
-- `ArcLength.parameter(curve, distance, options)`
-- `ArcLength.sample(curve, count, options)`
+- `ArcLength.prepare(curve: Curve, options: ArcLengthOptions?): PreparedArcLength`
+- `ArcLength.parameter(curve: Curve, distance: number, options: ArcLengthOptions?): ArcLengthResult`
+- `ArcLength.sample(curve: Curve, count: number, options: ArcLengthOptions?): ({ Vector3 }, ArcLengthSampling)`
 
 ## Attributes
 
 Source: [src/Attributes.luau](src/Attributes.luau)
 
-- `Attributes.create(mesh, name, domain, dataType, default, interpolation)`
-- `Attributes.set(mesh, name, values)`
-- `Attributes.get(mesh, name, key)`
-- `Attributes.remove(mesh, name)`
-- `Attributes.names(mesh, domain)`
-- `Attributes.transfer(source, target, maps)`
-- `Attributes.convertDomain(mesh, name, domain, options)`
-- `Attributes.project(source, target, options)`
+- `Attributes.create(mesh: Mesh, name: string, domain: string, dataType: string, default: unknown, interpolation: string?): Mesh`
+- `Attributes.set(mesh: Mesh, name: string, values: { [any]: unknown }): Mesh`
+- `Attributes.get(mesh: Mesh, name: string, key: any): any`
+- `Attributes.remove(mesh: Mesh, name: string): Mesh`
+- `Attributes.names(mesh: Mesh, domain: string?): { string }`
+- `Attributes.transfer(source: Mesh, target: Mesh, maps: any): Mesh`
+- `Attributes.convertDomain(mesh: Mesh, name: string, domain: string, options: { [string]: any }?): (Mesh, any)`
+- `Attributes.project(source: Mesh, target: Mesh, options: { [string]: any }?): (Mesh, any)`
 
 ## BSDF
 
 Source: [src/BSDF.luau](src/BSDF.luau)
 
-- `BSDF.diffuse(color)`
-- `BSDF.ggx(options)`
-- `BSDF.metallicRoughness(options)`
-- `BSDF.dielectric(ior, tint)`
-- `BSDF.mix(a, b, weight)`
-- `BSDF.resolve(material, context)`
-- `BSDF.fresnelDielectric(cosine, etaI, etaT)`
-- `BSDF.fresnelSchlick(cosine, f0)`
-- `BSDF.distributionGGX(cosine, alpha)`
-- `BSDF.maskingGGX(cosine, alpha)`
-- `BSDF.sampleGGX(normal, outgoing, alpha, u, v)`
-- `BSDF.evaluate(material, normal, outgoing, incoming)`
-- `BSDF.pdf(material, normal, outgoing, incoming)`
-- `BSDF.sample(material, normal, outgoing, random, entering)`
-- `BSDF.emission(material, context, frontFacing)`
+- `BSDF.diffuse(color: any?): Material`
+- `BSDF.ggx(options: Material?): Material`
+- `BSDF.metallicRoughness(options: Material?): Material`
+- `BSDF.dielectric(ior: number?, tint: any?): Material`
+- `BSDF.mix(a: MaterialInput, b: MaterialInput, weight: any?): Material`
+- `BSDF.resolve(input: MaterialInput, context: any?): Resolved`
+- `BSDF.fresnelDielectric(cosine: number, etaI: number, etaT: number): number`
+- `BSDF.fresnelSchlick(cosine: number, f0: Color3 | Vector3): Vector3`
+- `BSDF.distributionGGX(cosine: number, alpha: number): number`
+- `BSDF.maskingGGX(cosine: number, alpha: number): number`
+- `BSDF.sampleGGX(normal: Vector3, outgoing: Vector3, alpha: number, u: number, v: number): Vector3?`
+- `BSDF.evaluate(material: MaterialInput, normal: Vector3, outgoing: Vector3, incoming: Vector3): Vector3`
+- `BSDF.pdf(material: MaterialInput, normal: Vector3, outgoing: Vector3, incoming: Vector3): number`
+- `BSDF.sample(material: MaterialInput, normal: Vector3, outgoing: Vector3, random: RandomSource?, entering: boolean?): Sample?`
+- `BSDF.emission(material: MaterialInput, context: any?, frontFacing: boolean?): Vector3`
 
 ## Bake
 
@@ -85,239 +85,239 @@ Source: [src/Bake.luau](src/Bake.luau)
 
 Source: [src/Bezier.luau](src/Bezier.luau)
 
-- `Bezier.new(points, options)`
-- `Bezier.setPoint(curve, index, position)`
-- `Bezier.setMode(curve, index, mode)`
-- `Bezier.setHandle(curve, index, side, position)`
-- `Bezier.split(curve, segment, t)`
-- `Bezier.reverse(curve)`
-- `Bezier.toNURBS(curve)`
-- `Bezier.evaluate(curve, t)`
-- `Bezier.derivatives(curve, t)`
+- `Bezier.new(points: { Vector3 }, options: BezierOptions?): BezierCurve`
+- `Bezier.setPoint(curve: BezierCurve, index: number, position: Vector3): BezierCurve`
+- `Bezier.setMode(curve: BezierCurve, index: number, mode: string): BezierCurve`
+- `Bezier.setHandle(curve: BezierCurve, index: number, side: string, position: Vector3): BezierCurve`
+- `Bezier.split(curve: BezierCurve, segment: number, t: number): BezierCurve`
+- `Bezier.reverse(curve: BezierCurve): BezierCurve`
+- `Bezier.toNURBS(curve: BezierCurve): N.Curve`
+- `Bezier.evaluate(curve: BezierCurve, t: number): Vector3`
+- `Bezier.derivatives(curve: BezierCurve, t: number): N.CurveDerivatives`
 
 ## Boolean
 
 Source: [src/Boolean.luau](src/Boolean.luau)
 
-- `Boolean.apply(a, b, operation, options)`
-- `Boolean.union(a, b, options)`
-- `Boolean.intersect(a, b, options)`
-- `Boolean.subtract(a, b, options)`
+- `Boolean.apply(a: Mesh, b: Mesh, operation: string, options: BooleanOptions?): (Mesh, BooleanReport)`
+- `Boolean.union(a: Mesh, b: Mesh, options: BooleanOptions?): (Mesh, BooleanReport)`
+- `Boolean.intersect(a: Mesh, b: Mesh, options: BooleanOptions?): (Mesh, BooleanReport)`
+- `Boolean.subtract(a: Mesh, b: Mesh, options: BooleanOptions?): (Mesh, BooleanReport)`
 
 ## Camera
 
 Source: [src/Camera.luau](src/Camera.luau)
 
-- `Camera.new(frame, fov, width, height)`
-- `Camera.project(camera, point)`
-- `Camera.ray(camera, pixel)`
-- `Camera.compare(camera, landmarks)`
-- `Camera.fit(initial, landmarks, options)`
+- `Camera.new(frame: CFrame, fov: number, width: number, height: number): Camera`
+- `Camera.project(camera: Camera, point: Vector3): (Vector2?, number)`
+- `Camera.ray(camera: Camera, pixel: Vector2): (Vector3, Vector3)`
+- `Camera.compare(camera: Camera, landmarks: { Landmark }): CompareReport`
+- `Camera.fit(initial: Camera, landmarks: { Landmark }, options: FitOptions?): (Camera, CompareReport)`
 
 ## Conformal
 
 Source: [src/Conformal.luau](src/Conformal.luau)
 
-- `Conformal.lscm(mesh, options)`
-- `Conformal.distortion(mesh)`
+- `Conformal.lscm(mesh: Mesh, options: Options?): (Mesh, Report)`
+- `Conformal.distortion(mesh: Mesh): DistortionReport`
 
 ## Connectivity
 
 Source: [src/Connectivity.luau](src/Connectivity.luau)
 
-- `Connectivity.index(mesh, options)`
-- `Connectivity.analyze(mesh, options)`
-- `Connectivity.boundaries(mesh, options)`
+- `Connectivity.index(mesh: any, options: Options?): Index`
+- `Connectivity.analyze(mesh: any, options: Options?): Analysis`
+- `Connectivity.boundaries(mesh: any, options: Options?): ({ BoundaryLoop }, BoundaryReport)`
 
 ## Constraints
 
 Source: [src/Constraints.luau](src/Constraints.luau)
 
-- `Constraints.copyLocation(owner, target, options)`
-- `Constraints.copyRotation(owner, target, options)`
-- `Constraints.copyTransform(owner, target, options)`
-- `Constraints.limitLocation(owner, options)`
-- `Constraints.limitRotation(owner, options)`
-- `Constraints.limitDistance(owner, target, options)`
-- `Constraints.floor(owner, options)`
-- `Constraints.trackTo(owner, target, options)`
-- `Constraints.dampedTrack(owner, target, options)`
-- `Constraints.lockedTrack(owner, target, options)`
-- `Constraints.followPath(owner, path, factor, options)`
-- `Constraints.setInverse(targetRest)`
-- `Constraints.childOf(owner, target, options)`
-- `Constraints.evaluate(nodes, pose)`
-- `Constraints.rig(rig, pose, stacks)`
+- `Constraints.copyLocation(owner: CFrame, target: Target, options: Options?): CFrame`
+- `Constraints.copyRotation(owner: CFrame, target: CFrame, options: Options?): CFrame`
+- `Constraints.copyTransform(owner: CFrame, target: CFrame, options: Options?): CFrame`
+- `Constraints.limitLocation(owner: CFrame, options: Options?): CFrame`
+- `Constraints.limitRotation(owner: CFrame, options: Options?): CFrame`
+- `Constraints.limitDistance(owner: CFrame, target: Target, options: Options?): CFrame`
+- `Constraints.floor(owner: CFrame, options: Options?): CFrame`
+- `Constraints.trackTo(owner: CFrame, target: Target, options: Options?): CFrame`
+- `Constraints.dampedTrack(owner: CFrame, target: Target, options: Options?): CFrame`
+- `Constraints.lockedTrack(owner: CFrame, target: Target, options: Options?): CFrame`
+- `Constraints.followPath(owner: CFrame, path: PathLike, factor: number, options: Options?): CFrame`
+- `Constraints.setInverse(targetRest: CFrame): CFrame`
+- `Constraints.childOf(owner: CFrame, target: CFrame, options: Options?): CFrame`
+- `Constraints.evaluate(nodes: { [NodeId]: Node }, pose: { [NodeId]: CFrame }?): Result`
+- `Constraints.rig(rig: RigLike, pose: { [NodeId]: CFrame }?, stacks: { [number]: { Constraint } }?): ({ [NodeId]: CFrame }, Result)`
 
 ## Convex
 
 Source: [src/Convex.luau](src/Convex.luau)
 
-- `Convex.fromMesh(mesh, options)`
-- `Convex.box(size)`
-- `Convex.toMesh(shape)`
-- `Convex.hull(points, options)`
-- `Convex.support(shape, direction, frame)`
-- `Convex.bounds(shape, frame)`
-- `Convex.tensorMultiply(t, v)`
-- `Convex.tensorInverse(t)`
-- `Convex.massProperties(shape, mass)`
-- `Convex.contact(shapeA, frameA, shapeB, frameB, options)`
+- `Convex.fromMesh(mesh: Mesh, options: ShapeOptions?): Shape`
+- `Convex.box(size: Vector3): Shape`
+- `Convex.toMesh(shape: Shape): Mesh`
+- `Convex.hull(points: { Vector3 }, options: HullOptions?): Shape`
+- `Convex.support(shape: Shape, direction: Vector3, frame: CFrame?): (Vector3, number)`
+- `Convex.bounds(shape: Shape, frame: CFrame?): (Vector3, Vector3)`
+- `Convex.tensorMultiply(t: Tensor, v: Vector3): Vector3`
+- `Convex.tensorInverse(t: Tensor): Tensor`
+- `Convex.massProperties(shape: Shape, mass: number): MassProperties`
+- `Convex.contact(shapeA: Shape, frameA: CFrame?, shapeB: Shape, frameB: CFrame?, options: ContactOptions?): Contact`
 
 ## Curves
 
 Source: [src/Curves.luau](src/Curves.luau)
 
-- `Curves.bezier(points)`
-- `Curves.catmullRom(points, closed)`
-- `Curves.nurbs(points, degree, knots, weights)`
-- `Curves.sample(curve, segments)`
-- `Curves.resample(points, count)`
-- `Curves.circle(radius, segments)`
-- `Curves.loft(rings, caps)`
-- `Curves.sweep(profile, path, options)`
-- `Curves.lathe(profile, segments)`
-- `Curves.bezierSurface(control, uSegments, vSegments)`
-- `Curves.stroke2D(points, width, options)`
+- `Curves.bezier<T>(points: { T }): Curve<T>`
+- `Curves.catmullRom<T>(points: { T }, closed: boolean?): Curve<T>`
+- `Curves.nurbs(points: { Vector3 }, degree: number, knots: { number }?, weights: { number }?): Curve<Vector3>`
+- `Curves.sample<T>(curve: Curve<T>, segments: number): { T }`
+- `Curves.resample<T>(points: { T }, count: number): { T }`
+- `Curves.circle(radius: number, segments: number): { Vector2 }`
+- `Curves.loft(rings: { { Vector3 } }, caps: boolean?): Mesh`
+- `Curves.sweep(profile: { Vector2 }, path: { Vector3 }, options: SweepOptions?): Mesh`
+- `Curves.lathe(profile: { Vector2 }, segments: number): Mesh`
+- `Curves.bezierSurface(control: { { Vector3 } }, uSegments: number, vSegments: number): Mesh`
+- `Curves.stroke2D(points: { Vector2 }, width: number, options: Stroke2DOptions?): Mesh`
 
 ## Cyclic
 
 Source: [src/Cyclic.luau](src/Cyclic.luau)
 
-- `Cyclic.curve(points, degree, options)`
-- `Cyclic.toNURBS(curve)`
-- `Cyclic.evaluate(curve, t)`
-- `Cyclic.derivatives(curve, t)`
-- `Cyclic.rotateSeam(curve, offset)`
-- `Cyclic.reverse(curve)`
-- `Cyclic.insertKnot(curve, t, count)`
-- `Cyclic.surface(control, degreeU, degreeV, options)`
-- `Cyclic.surfaceToNURBS(surface)`
-- `Cyclic.evaluateSurface(surface, u, v)`
-- `Cyclic.surfaceDerivatives(surface, u, v)`
-- `Cyclic.insertSurfaceKnot(surface, axis, t, count)`
-- `Cyclic.reverseSurface(surface, axis)`
-- `Cyclic.rotateSurfaceSeam(surface, axis, offset)`
-- `Cyclic.elevateDegree(curve, count, options)`
-- `Cyclic.removeKnot(curve, t, count, options)`
-- `Cyclic.elevateSurfaceDegree(surface, axis, count, options)`
-- `Cyclic.removeSurfaceKnot(surface, axis, t, count, options)`
+- `Cyclic.curve(points: { Vector3 }, degree: number, options: CyclicCurveOptions?): CyclicCurve`
+- `Cyclic.toNURBS(curve: CyclicCurve): Curve`
+- `Cyclic.evaluate(curve: CyclicCurve, t: number): Vector3`
+- `Cyclic.derivatives(curve: CyclicCurve, t: number): N.CurveDerivatives`
+- `Cyclic.rotateSeam(curve: CyclicCurve, offset: number): CyclicCurve`
+- `Cyclic.reverse(curve: CyclicCurve): CyclicCurve`
+- `Cyclic.insertKnot(curve: CyclicCurve, t: number, count: number?): CyclicCurve`
+- `Cyclic.surface(control: { { Vector3 } }, degreeU: number, degreeV: number, options: CyclicSurfaceOptions?): CyclicSurface`
+- `Cyclic.surfaceToNURBS(surface: CyclicSurface): Surface`
+- `Cyclic.evaluateSurface(surface: CyclicSurface, u: number, v: number): Vector3`
+- `Cyclic.surfaceDerivatives(surface: CyclicSurface, u: number, v: number): N.SurfaceDerivatives`
+- `Cyclic.insertSurfaceKnot(surface: CyclicSurface, axis: string, t: number, count: number?): CyclicSurface`
+- `Cyclic.reverseSurface(surface: CyclicSurface, axis: string): CyclicSurface`
+- `Cyclic.rotateSurfaceSeam(surface: CyclicSurface, axis: string, offset: number): CyclicSurface`
+- `Cyclic.elevateDegree(curve: CyclicCurve, count: number?, options: any)`
+- `Cyclic.removeKnot(curve: CyclicCurve, t: number, count: number?, options: any)`
+- `Cyclic.elevateSurfaceDegree(surface: CyclicSurface, axis: string, count: number?, options: any)`
+- `Cyclic.removeSurfaceKnot(surface: CyclicSurface, axis: string, t: number, count: number?, options: any)`
 
 ## Deform
 
 Source: [src/Deform.luau](src/Deform.luau)
 
-- `Deform.masked(mesh, operation, options)`
-- `Deform.map(mesh, callback, mask)`
-- `Deform.transform(mesh, frame, scale)`
-- `Deform.twist(mesh, radians, lo, hi, mask)`
-- `Deform.taper(mesh, bottom, top, lo, hi, mask)`
-- `Deform.bend(mesh, curvature, mask)`
-- `Deform.lattice(mesh, lo, hi, controls, mask)`
-- `Deform.shrinkwrap(mesh, target, offset, mask, maxDistance)`
-- `Deform.contact(mesh, field, clearance, mask, iterations)`
-- `Deform.rbf(mesh, handles, radius, mask)`
-- `Deform.simple(mesh, mode, amount, options)`
-- `Deform.shear(mesh, factor, options)`
-- `Deform.cast(mesh, shape, options)`
-- `Deform.warp(mesh, from, to, options)`
-- `Deform.taperProfile(mesh, profile, options)`
-- `Deform.curve(mesh, curve, options)`
+- `Deform.masked(mesh: Mesh, operation: any, options: any?)`
+- `Deform.map(mesh: Mesh, callback: (Vector3, number) -> Vector3, mask: Mask?): Mesh`
+- `Deform.transform(mesh: Mesh, frame: CFrame, scale: Vector3?): Mesh`
+- `Deform.twist(mesh: Mesh, radians: number, lo: number, hi: number, mask: Mask?): Mesh`
+- `Deform.taper(mesh: Mesh, bottom: number, top: number, lo: number, hi: number, mask: Mask?): Mesh`
+- `Deform.bend(mesh: Mesh, curvature: number, mask: Mask?): Mesh`
+- `Deform.lattice(mesh: Mesh, lo: Vector3, hi: Vector3, controls: { Vector3 }, mask: Mask?): Mesh`
+- `Deform.shrinkwrap(mesh: Mesh, target: Mesh, offset: number?, mask: Mask?, maxDistance: number?): Mesh`
+- `Deform.contact(mesh: Mesh, field: (Vector3) -> number, clearance: number?, mask: Mask?, iterations: number?): Mesh`
+- `Deform.rbf(mesh: Mesh, handles: { Handle }, radius: number, mask: Mask?): Mesh`
+- `Deform.simple(mesh: Mesh, mode: string, amount: number, options: any?)`
+- `Deform.shear(mesh: Mesh, factor: number, options: any?)`
+- `Deform.cast(mesh: Mesh, shape: string, options: any?)`
+- `Deform.warp(mesh: Mesh, from: CFrame, to: CFrame, options: any?)`
+- `Deform.taperProfile(mesh: Mesh, profile: any, options: any?)`
+- `Deform.curve(mesh: Mesh, curve: any, options: any?)`
 
 ## Dynamics
 
 Source: [src/Dynamics.luau](src/Dynamics.luau)
 
-- `Dynamics.new(options)`
-- `Dynamics:addConvex(shape, mass, frame, options)`
-- `Dynamics:addBox(size, mass, frame, options)`
-- `Dynamics:remove(id)`
-- `Dynamics:frame(id)`
-- `Dynamics:setFrame(id, frame)`
-- `Dynamics:impulse(id, impulse, point)`
-- `Dynamics:angularImpulse(id, impulse)`
-- `Dynamics:force(id, force, point)`
-- `Dynamics:torque(id, torque)`
-- `Dynamics:velocityAt(id, point)`
-- `Dynamics:momentum()`
-- `Dynamics:energy()`
-- `Dynamics:collisions(options)`
-- `Dynamics:step(dt, options)`
+- `Dynamics.new(options: DynamicsOptions?): Dynamics`
+- `Dynamics:addConvex(shape: Shape, mass: number, frame: CFrame?, options: BodyOptions?): number`
+- `Dynamics:addBox(size: Vector3, mass: number, frame: CFrame?, options: BodyOptions?): number`
+- `Dynamics:remove(id: number)`
+- `Dynamics:frame(id: number): CFrame`
+- `Dynamics:setFrame(id: number, frame: CFrame)`
+- `Dynamics:impulse(id: number, impulse: Vector3, point: Vector3?)`
+- `Dynamics:angularImpulse(id: number, impulse: Vector3)`
+- `Dynamics:force(id: number, force: Vector3, point: Vector3?)`
+- `Dynamics:torque(id: number, torque: Vector3)`
+- `Dynamics:velocityAt(id: number, point: Vector3): Vector3`
+- `Dynamics:momentum(): (Vector3, Vector3)`
+- `Dynamics:energy(): Energy`
+- `Dynamics:collisions(options: DynamicsOptions?): { Manifold }`
+- `Dynamics:step(dt: number, options: DynamicsOptions?): StepReport`
 
 ## Fields
 
 Source: [src/Fields.luau](src/Fields.luau)
 
-- `Fields.sphere(center, radius)`
-- `Fields.box(center, halfSize)`
-- `Fields.capsule(a, b, radius)`
-- `Fields.torus(center, major, minor)`
-- `Fields.plane(point, normal)`
-- `Fields.union(a, b)`
-- `Fields.intersect(a, b)`
-- `Fields.subtract(a, b)`
-- `Fields.smoothUnion(a, b, radius)`
-- `Fields.offset(field, amount)`
-- `Fields.shell(field, thickness)`
-- `Fields.transform(field, frame, scale)`
-- `Fields.fromMesh(mesh)`
+- `Fields.sphere(center: Vector3, radius: number): Field`
+- `Fields.box(center: Vector3, halfSize: Vector3): Field`
+- `Fields.capsule(a: Vector3, b: Vector3, radius: number): Field`
+- `Fields.torus(center: Vector3, major: number, minor: number): Field`
+- `Fields.plane(point: Vector3, normal: Vector3): Field`
+- `Fields.union(a: Field, b: Field): Field`
+- `Fields.intersect(a: Field, b: Field): Field`
+- `Fields.subtract(a: Field, b: Field): Field`
+- `Fields.smoothUnion(a: Field, b: Field, radius: number): Field`
+- `Fields.offset(field: Field, amount: number): Field`
+- `Fields.shell(field: Field, thickness: number): Field`
+- `Fields.transform(field: Field, frame: CFrame, scale: number?): Field`
+- `Fields.fromMesh(mesh: Types.Mesh): Field`
 
 ## Fluid
 
 Source: [src/Fluid.luau](src/Fluid.luau)
 
-- `Fluid.new(options)`
-- `Fluid:add(position, velocity)`
-- `Fluid:step(dt, substeps)`
-- `Fluid:field(radius)`
+- `Fluid.new(options: FluidOptions?): Fluid`
+- `Fluid:add(position: Vector3, velocity: Vector3?): number`
+- `Fluid:step(dt: number, substeps: number?): Fluid`
+- `Fluid:field(radius: number?): (Vector3) -> number`
 
 ## GLTF
 
 Source: [src/GLTF.luau](src/GLTF.luau)
 
-- `GLTF.readAccessor(doc, sources, accessorIndex)`
-- `GLTF.worldMatrices(scene, pose)`
-- `GLTF.sampleAnimation(scene, animationIndex, time, options)`
-- `GLTF.fromDocument(doc, sources)`
-- `GLTF.fromJSON(json, sources)`
-- `GLTF.fromGLB(data, sources)`
-- `GLTF.meshAt(scene, nodeIndex, pose)`
-- `GLTF.fromMesh(mesh, options)`
-- `GLTF.fromRig(mesh, rig, options)`
-- `GLTF.toDocument(scene)`
-- `GLTF.toJSON(scene, bufferURI)`
-- `GLTF.toGLB(scene)`
+- `GLTF.readAccessor(doc: Doc, sources: Sources?, accessorIndex: number): { Tuple }`
+- `GLTF.worldMatrices(scene: Scene, pose: any?): { [number]: Matrix }`
+- `GLTF.sampleAnimation(scene: Scene, animationIndex: number, time: number, options: any?): Pose`
+- `GLTF.fromDocument(doc: Doc, sources: Sources?): Scene`
+- `GLTF.fromJSON(json: string, sources: Sources?): Scene`
+- `GLTF.fromGLB(data: buffer | string, sources: Sources?): Scene`
+- `GLTF.meshAt(scene: Scene, nodeIndex: number, pose: any?): Mesh`
+- `GLTF.fromMesh(mesh: Mesh, options: ExportOptions?): Scene`
+- `GLTF.fromRig(mesh: Mesh, rig: RigLike, options: ExportOptions?): Scene`
+- `GLTF.toDocument(scene: Scene): (Doc, { buffer })`
+- `GLTF.toJSON(scene: Scene, bufferURI: string?): (string, { buffer })`
+- `GLTF.toGLB(scene: Scene): buffer`
 
 ## Geometry
 
 Source: [src/Geometry.luau](src/Geometry.luau)
 
-- `Geometry.scatter(mesh, count, seed, density)`
-- `Geometry.instance(mesh, transforms)`
-- `Geometry.assignMaterial(mesh, faces, slot)`
-- `Geometry.vertexColors(mesh, field)`
-- `Geometry.group(mesh, name, mask)`
-- `Geometry.parametric(fn, uSegments, vSegments, wrapU, wrapV)`
+- `Geometry.scatter(mesh: Mesh, count: number, seed: number?, density: ((Vector3) -> number)?): ({ ScatterPoint }, ScatterReport)`
+- `Geometry.instance(mesh: Mesh, transforms: { CFrame }): Mesh`
+- `Geometry.assignMaterial(mesh: Mesh, faces: { [number]: boolean }, slot: number): Mesh`
+- `Geometry.vertexColors(mesh: Mesh, field: (Vector3, number) -> (Color3, number?)): Mesh`
+- `Geometry.group(mesh: Mesh, name: string, mask: { [number]: number }): Mesh`
+- `Geometry.parametric(fn: (number, number) -> Vector3, uSegments: number, vSegments: number, wrapU: boolean?, wrapV: boolean?): Mesh`
 
 ## Graph
 
 Source: [src/Graph.luau](src/Graph.luau)
 
-- `Graph.new()`
-- `Graph:add(operation, inputs, parameters)`
-- `Graph:connect(node, slot, source)`
-- `Graph:order(output)`
-- `Graph:evaluate(output, context)`
+- `Graph.new(): Graph`
+- `Graph:add(operation: Operation, inputs: { [any]: number }?, parameters: { [any]: any }?): number`
+- `Graph:connect(node: number, slot: any, source: number)`
+- `Graph:order(output: number): { number }`
+- `Graph:evaluate(output: number, context: any?): any`
 
 ## History
 
 Source: [src/History.luau](src/History.luau)
 
-- `History.new(mesh, limit)`
-- `History:current()`
-- `History:apply(label, operation)`
-- `History:undo()`
-- `History:redo()`
+- `History.new(mesh: Mesh, limit: number?): History`
+- `History:current(): Mesh`
+- `History:apply(label: string, operation: (Mesh) -> Mesh): Mesh`
+- `History:undo(): Mesh`
+- `History:redo(): Mesh`
 
 ## IO
 
@@ -334,50 +334,50 @@ Source: [src/IO.luau](src/IO.luau)
 
 Source: [src/Integrator.luau](src/Integrator.luau)
 
-- `Integrator.powerHeuristic(a, b)`
-- `Integrator.prepare(mesh, materials, options)`
-- `Integrator.trace(scene, origin, direction, options, random)`
-- `Integrator.render(mesh, camera, materials, options)`
-- `Integrator.toneMap(image, exposure, method)`
+- `Integrator.powerHeuristic(a: number, b: number): number`
+- `Integrator.prepare(mesh: Types.Mesh, materials: { [number]: B.MaterialInput }?, options: IntegratorOptions?): Scene`
+- `Integrator.trace(scene: Scene, origin: Vector3, direction: Vector3, options: IntegratorOptions?, random: Random?): (Vector3, TraceStats)`
+- `Integrator.render(mesh: Types.Mesh, camera: Types.Camera, materials: { [number]: B.MaterialInput }?, options: IntegratorOptions?): (Types.Texture?, RenderReport)`
+- `Integrator.toneMap(image: Types.Texture, exposure: number?, method: string?): Types.Texture`
 
 ## Intersections
 
 Source: [src/Intersections.luau](src/Intersections.luau)
 
-- `Intersections.segmentTriangle(a, b, triangle)`
-- `Intersections.triangles(a, b)`
-- `Intersections.mesh(mesh, options)`
-- `Intersections.between(a, b, options)`
+- `Intersections.segmentTriangle(a: Vector3, b: Vector3, triangle: { Vector3 }): IntersectionResult`
+- `Intersections.triangles(a: { Vector3 }, b: { Vector3 }): IntersectionResult`
+- `Intersections.mesh(mesh: Mesh, options: { [string]: any }?): ({ IntersectionResult }, ScanReport)`
+- `Intersections.between(a: Mesh, b: Mesh, options: { [string]: any }?): ({ IntersectionResult }, ScanReport)`
 
 ## Jobs
 
 Source: [src/Jobs.luau](src/Jobs.luau)
 
-- `Jobs.start(operation)`
-- `Jobs.await(job, timeout)`
+- `Jobs.start(operation: (Context) -> any): Job`
+- `Jobs.await(job: Job, timeout: number?): (any, string?)`
 
 ## Laplacian
 
 Source: [src/Laplacian.luau](src/Laplacian.luau)
 
-- `Laplacian.bind(mesh, options)`
-- `Laplacian:solve(anchors, options)`
+- `Laplacian.bind(mesh: Mesh, options: BindOptions?): Graph`
+- `Laplacian:solve(anchors: { [number]: Vector3 }, options: SolveOptions?): (Mesh, SolveReport)`
 
 ## Lighting
 
 Source: [src/Lighting.luau](src/Lighting.luau)
 
-- `Lighting.surface(mesh, hit)`
-- `Lighting.point(position, intensity)`
-- `Lighting.directional(direction, radiance)`
-- `Lighting.environment(source)`
-- `Lighting.environmentRadiance(env, direction)`
-- `Lighting.environmentPDF(env, direction)`
-- `Lighting.sampleEnvironment(env, random)`
-- `Lighting.new(mesh, materials, options)`
-- `Lighting:environmentRadiance(direction)`
-- `Lighting:sample(point, random)`
-- `Lighting:pdf(point, direction, hit)`
+- `Lighting.surface(mesh: Types.Mesh, hit: Hit): SurfaceContext`
+- `Lighting.point(position: Vector3, intensity: Color3 | Vector3): PointLight`
+- `Lighting.directional(direction: Vector3, radiance: Color3 | Vector3): DirectionalLight`
+- `Lighting.environment(source: any?): EnvironmentLight`
+- `Lighting.environmentRadiance(env: EnvironmentLight, direction: Vector3): Vector3`
+- `Lighting.environmentPDF(env: EnvironmentLight, direction: Vector3): number`
+- `Lighting.sampleEnvironment(env: EnvironmentLight, random: Random): LightSample`
+- `Lighting.new(mesh: Types.Mesh, materials: { [number]: B.MaterialInput }, options: LightingOptions?): LightSet`
+- `Lighting:environmentRadiance(direction: Vector3): Vector3`
+- `Lighting:sample(point: Vector3, random: Random): LightSample?`
+- `Lighting:pdf(point: Vector3, direction: Vector3, hit: Hit?): number`
 
 ## Mesh
 
@@ -422,61 +422,61 @@ Source: [src/MeshEdit.luau](src/MeshEdit.luau)
 
 Source: [src/MeshRepair.luau](src/MeshRepair.luau)
 
-- `MeshRepair.splitIntersections(mesh, options)`
-- `MeshRepair.resolveIntersections(mesh, options)`
-- `MeshRepair.clean(mesh, options)`
-- `MeshRepair.orient(mesh, options)`
+- `MeshRepair.splitIntersections(mesh: Mesh, options: ArrangementOptions?): (Mesh, RepairReport)`
+- `MeshRepair.resolveIntersections(mesh: Mesh, options: ArrangementOptions?): (Mesh, RepairReport)`
+- `MeshRepair.clean(mesh: Mesh, options: CleanOptions?): (Mesh, RepairReport)`
+- `MeshRepair.orient(mesh: Mesh, options: OrientOptions?): (Mesh, RepairReport)`
 
 ## Modifiers
 
 Source: [src/Modifiers.luau](src/Modifiers.luau)
 
-- `Modifiers.bevel(mesh, width, options)`
-- `Modifiers.array(mesh, count, step)`
-- `Modifiers.mirror(mesh, axis, weldTolerance)`
-- `Modifiers.solidify(mesh, thickness, options)`
-- `Modifiers.shell(mesh, thickness, options)`
-- `Modifiers.clipPlane(mesh, point, normal, cap, options)`
-- `Modifiers.bevelConvex(mesh, width)`
-- `Modifiers.stack(mesh, operations)`
+- `Modifiers.bevel(mesh: Mesh, width: number, options: BevelOptions?): (Mesh, { [string]: any })`
+- `Modifiers.array(mesh: Mesh, count: number, step: CFrame): Mesh`
+- `Modifiers.mirror(mesh: Mesh, axis: string, weldTolerance: number?): Mesh`
+- `Modifiers.solidify(mesh: Mesh, thickness: number, options: any?)`
+- `Modifiers.shell(mesh: Mesh, thickness: number, options: any?)`
+- `Modifiers.clipPlane(mesh: Mesh, point: Vector3, normal: Vector3, cap: boolean?, options: { [string]: any }?)`
+- `Modifiers.bevelConvex(mesh: Mesh, width: number): Mesh`
+- `Modifiers.stack(mesh: Mesh, operations: { (Mesh) -> Mesh }): Mesh`
 
 ## Morph
 
 Source: [src/Morph.luau](src/Morph.luau)
 
-- `Morph.fromMeshes(base, target, name)`
-- `Morph.evaluate(base, targets, weights, options)`
-- `Morph.transfer(sourceBase, targetBase, target, options)`
+- `Morph.fromMeshes(base: Mesh, target: Mesh, name: string?): Shape`
+- `Morph.evaluate(base: Mesh, targets: { [number]: Shape }, weights: { [number]: number }?, options: EvaluateOptions?): Mesh`
+- `Morph.transfer(sourceBase: Mesh, targetBase: Mesh, target: Shape, options: TransferOptions?): (Shape, TransferReport)`
 
 ## NURBS
 
 Source: [src/NURBS.luau](src/NURBS.luau)
 
-- `NURBS.curve(points, degree, options)`
-- `NURBS.surface(control, degreeU, degreeV, options)`
-- `NURBS.evaluate(curve, t)`
-- `NURBS.derivatives(curve, t)`
-- `NURBS.compileCurve(curve)`
-- `NURBS.basisWeights(curve, t)`
-- `NURBS.clamp(curve)`
-- `NURBS.insertKnot(curve, t, count)`
-- `NURBS.split(curve, t)`
-- `NURBS.reverse(curve)`
-- `NURBS.evaluateSurface(surface, u, v)`
-- `NURBS.surfaceDerivatives(surface, u, v)`
-- `NURBS.compileSurface(surface)`
-- `NURBS.clampSurface(surface, axis)`
-- `NURBS.insertSurfaceKnot(surface, axis, t, count)`
-- `NURBS.splitSurface(surface, axis, t)`
-- `NURBS.reverseSurface(surface, axis)`
-- `NURBS.isoCurve(surface, axis, t)`
-- `NURBS.bezierSegments(curve)`
-- `NURBS.bezierPatches(surface)`
-- `NURBS.elevateDegree(curve, count)`
-- `NURBS.elevateSurfaceDegree(surface, axis, count)`
-- `NURBS.removeKnot(curve, t, count, options)`
-- `NURBS.removeSurfaceKnot(surface, axis, t, count, options)`
-- `NURBS.tessellate(surface, uSegments, vSegments, options)`
+- `NURBS.curve(points: { Vector3 }, degree: number, options: CurveOptions?): Curve`
+- `NURBS.surface(control: { { Vector3 } }, degreeU: number, degreeV: number, options: SurfaceOptions?): Surface`
+- `NURBS.evaluate(curve: Curve, t: number): Vector3`
+- `NURBS.derivatives(curve: Curve, t: number): CurveDerivatives`
+- `NURBS.compileCurve(curve: Curve): CurveEvaluator`
+- `NURBS.basisWeights(curve: Curve, t: number): { number }`
+- `NURBS.clamp(curve: Curve): Curve`
+- `NURBS.insertKnot(curve: Curve, t: number, count: number?): Curve`
+- `NURBS.split(curve: Curve, t: number): (Curve, Curve)`
+- `NURBS.reverse(curve: Curve): Curve`
+- `NURBS.evaluateSurface(surface: Surface, u: number, v: number): Vector3`
+- `NURBS.surfaceDerivatives(surface: Surface, u: number, v: number): SurfaceDerivatives`
+- `NURBS.compileSurface(surface: Surface): SurfaceEvaluator`
+- `NURBS.clampSurface(surface: Surface, axis: string): Surface`
+- `NURBS.insertSurfaceKnot(surface: Surface, axis: string, t: number, count: number?): Surface`
+- `NURBS.splitSurface(surface: Surface, axis: string, t: number): (Surface, Surface)`
+- `NURBS.reverseSurface(surface: Surface, axis: string): Surface`
+- `NURBS.isoCurve(surface: Surface, axis: string, t: number): Curve`
+- `NURBS.bezierSegments(curve: Curve): { BezierSegment }`
+- `NURBS.bezierPatches(surface: Surface): { BezierPatch }`
+- `NURBS.elevateDegree(curve: Curve, count: number?): Curve`
+- `NURBS.elevateSurfaceDegree(surface: Surface, axis: string, count: number?): Surface`
+- `NURBS.removeKnot(curve: Curve, t: number, count: number?, options: RemovalOptions?): (Curve, RemovalReport)`
+- `NURBS.removeSurfaceKnot(surface: Surface, axis: string, t: number, count: number?, options: RemovalOptions?): (Surface, RemovalReport)`
+- `NURBS.tessellate(surface: Surface, uSegments: number, vSegments: number, options: TessellateOptions?): (Types.Mesh, TessellateReport)`
 
 ## Normals
 
@@ -496,38 +496,38 @@ Source: [src/Normals.luau](src/Normals.luau)
 
 Source: [src/Particles.luau](src/Particles.luau)
 
-- `Particles.new(seed)`
-- `Particles:emit(count, initializer)`
-- `Particles:step(dt, force, drag)`
-- `Particles:instances(mesh, scale)`
+- `Particles.new(seed: number?): Particles`
+- `Particles:emit(count: number, initializer: (Random, number) -> ParticleInit): { number }`
+- `Particles:step(dt: number, force: ((Particle, number) -> Vector3)?, drag: number?): Particles`
+- `Particles:instances(mesh: Mesh, scale: number?): Mesh`
 
 ## PathTrace
 
 Source: [src/PathTrace.luau](src/PathTrace.luau)
 
-- `PathTrace.render(mesh, camera, materials, options)`
+- `PathTrace.render(mesh: Types.Mesh, camera: Types.Camera, materials: { [number]: PathMaterial }, options: PathTraceOptions?): (Types.Texture?, PathTraceReport)`
 
 ## Planar
 
 Source: [src/Planar.luau](src/Planar.luau)
 
-- `Planar.intersections(loops, options)`
-- `Planar.triangulate(outer, holes, options)`
-- `Planar.toMesh(domain, frame)`
-- `Planar.constrain(outer, holes, paths, options)`
+- `Planar.intersections(loops: { Loop }, options: Options?): ({ Hit }, HitStatus)`
+- `Planar.triangulate(outer: Loop, holes: { Loop }?, options: Options?): Domain`
+- `Planar.toMesh(domain: Domain, frame: CFrame?): Mesh.Mesh`
+- `Planar.constrain(outer: Loop, holes: { Loop }?, paths: any, options: any?)`
 
 ## Predicates
 
 Source: [src/Predicates.luau](src/Predicates.luau)
 
-- `Predicates.orient2D(a, b, c)`
-- `Predicates.orient3D(a, b, c, d)`
-- `Predicates.inCircle(a, b, c, d)`
-- `Predicates.inSphere(a, b, c, d, e)`
-- `Predicates.polygonOrientation(points)`
-- `Predicates.onSegment2D(point, a, b)`
-- `Predicates.pointInPolygon2D(point, points)`
-- `Predicates.intersectSegments2D(a, b, c, d)`
+- `Predicates.orient2D(a: Vector2, b: Vector2, c: Vector2): (number, number, ...boolean)`
+- `Predicates.orient3D(a: Vector3, b: Vector3, c: Vector3, d: Vector3): (number, number, ...boolean)`
+- `Predicates.inCircle(a: Vector2, b: Vector2, c: Vector2, d: Vector2): (number, number, ...boolean)`
+- `Predicates.inSphere(a: Vector3, b: Vector3, c: Vector3, d: Vector3, e: Vector3): (number, number, ...boolean)`
+- `Predicates.polygonOrientation(points: { Vector2 }): (number, number)`
+- `Predicates.onSegment2D(point: Vector2, a: Vector2, b: Vector2): boolean`
+- `Predicates.pointInPolygon2D(point: Vector2, points: { Vector2 }): (string, number)`
+- `Predicates.intersectSegments2D(a: Vector2, b: Vector2, c: Vector2, d: Vector2): Intersection`
 
 ## Primitives
 
@@ -543,72 +543,72 @@ Source: [src/Primitives.luau](src/Primitives.luau)
 
 Source: [src/Quaternion.luau](src/Quaternion.luau)
 
-- `Quaternion.new(x, y, z, w)`
-- `Quaternion.dot(a, b)`
-- `Quaternion.normalize(q)`
-- `Quaternion.conjugate(q)`
-- `Quaternion.inverse(q)`
-- `Quaternion.multiply(a, b)`
-- `Quaternion.fromAxisAngle(axis, angle)`
-- `Quaternion.toAxisAngle(q)`
-- `Quaternion.fromCFrame(cf)`
-- `Quaternion.toCFrame(q, position)`
-- `Quaternion.rotate(q, v)`
-- `Quaternion.slerp(a, b, t)`
-- `Quaternion.rotationVector(q)`
-- `Quaternion.fromRotationVector(v)`
-- `Quaternion.integrate(q, angularVelocity, dt, localSpace)`
-- `Quaternion.squad(a, controlA, controlB, b, t)`
+- `Quaternion.new(x: number, y: number, z: number, w: number): Quat`
+- `Quaternion.dot(a: Quat, b: Quat): number`
+- `Quaternion.normalize(q: Quat): Quat`
+- `Quaternion.conjugate(q: Quat): Quat`
+- `Quaternion.inverse(q: Quat): Quat`
+- `Quaternion.multiply(a: Quat, b: Quat): Quat`
+- `Quaternion.fromAxisAngle(axis: Vector3, angle: number): Quat`
+- `Quaternion.toAxisAngle(q: Quat): (Vector3, number)`
+- `Quaternion.fromCFrame(cf: CFrame): Quat`
+- `Quaternion.toCFrame(q: Quat, position: Vector3?): CFrame`
+- `Quaternion.rotate(q: Quat, v: Vector3): Vector3`
+- `Quaternion.slerp(a: Quat, b: Quat, t: number): Quat`
+- `Quaternion.rotationVector(q: Quat): Vector3`
+- `Quaternion.fromRotationVector(v: Vector3): Quat`
+- `Quaternion.integrate(q: Quat, angularVelocity: Vector3, dt: number, localSpace: boolean?): Quat`
+- `Quaternion.squad(a: Quat, controlA: Quat, controlB: Quat, b: Quat, t: number): Quat`
 
 ## Registration
 
 Source: [src/Registration.luau](src/Registration.luau)
 
-- `Registration.rotation(source, target, options)`
-- `Registration.fit(source, target, options)`
+- `Registration.rotation(source: { Vector3 }, target: { Vector3 }, options: Options?): (CFrame, RotationReport)`
+- `Registration.fit(source: { Vector3 }, target: { Vector3 }, options: Options?): FitResult`
 
 ## Remesh
 
 Source: [src/Remesh.luau](src/Remesh.luau)
 
-- `Remesh.quads(mesh, targetLength, options)`
-- `Remesh.fromField(field, lo, hi, cellSize, options)`
-- `Remesh.voxel(mesh, cellSize, options)`
-- `Remesh.boolean(a, b, operation, cellSize, options)`
+- `Remesh.quads(mesh: Mesh, targetLength: number, options: { [string]: any }?): (Mesh, any)`
+- `Remesh.fromField(field: ScalarField, lo: Vector3, hi: Vector3, cellSize: number, options: RemeshOptions?): Mesh`
+- `Remesh.voxel(mesh: Mesh, cellSize: number, options: RemeshOptions?): (Mesh, RemeshReport)`
+- `Remesh.boolean(a: Mesh, b: Mesh, operation: string, cellSize: number, options: RemeshOptions?): (Mesh, RemeshReport)`
 
 ## Render
 
 Source: [src/Render.luau](src/Render.luau)
 
-- `Render.render(mesh, camera, options)`
-- `Render.silhouette(mesh, camera)`
-- `Render.compareSilhouettes(a, b, threshold)`
+- `Render.render(mesh: Types.Mesh, camera: Types.Camera, options: RenderOptions?): (Types.Texture, buffer)`
+- `Render.silhouette(mesh: Types.Mesh, camera: Types.Camera): (Types.Texture, buffer)`
+- `Render.compareSilhouettes(a: Types.Texture, b: Types.Texture, threshold: number?): SilhouetteComparison`
 
 ## Rig
 
 Source: [src/Rig.luau](src/Rig.luau)
 
-- `Rig.new()`
-- `Rig:addBone(name, parentId, bindLocal)`
-- `Rig:worldTransforms(pose)`
-- `Rig:skin(mesh, pose)`
-- `Rig:skinDualQuaternion(mesh, pose, options)`
-- `Rig:automaticWeights(mesh, influences, power)`
-- `Rig.normalizeWeights(mesh, influences)`
-- `Rig.fabrik(points, target, iterations, tolerance)`
-- `Rig.blendShapes(base, shapes, weights)`
-- `Rig:solveIK(pose, chain, target, options)`
+- `Rig.new(): Rig`
+- `Rig:addBone(name: string, parentId: number?, bindLocal: CFrame?): number`
+- `Rig:worldTransforms(pose: Pose?): Pose`
+- `Rig:skin(mesh: Mesh, pose: Pose?): Mesh`
+- `Rig:skinDualQuaternion(mesh: Mesh, pose: Pose?, options: SkinOptions?): (Mesh, SkinReport)`
+- `Rig:automaticWeights(mesh: Mesh, influences: number?, power: number?): Mesh`
+- `Rig.normalizeWeights(mesh: Mesh, influences: number?): Mesh`
+- `Rig.fabrik(points: { Vector3 }, target: Vector3, iterations: number?, tolerance: number?): { Vector3 }`
+- `Rig.blendShapes(base: Mesh, shapes: { [string]: Mesh }, weights: { [string]: number }): Mesh`
+- `Rig:solveIK(pose: Pose?, chain: { number }, target: Vector3, options: IKOptions?): (Pose, IKReport)`
 
 ## RigidBody
 
 Source: [src/RigidBody.luau](src/RigidBody.luau)
 
-- `RigidBody.new(options)`
-- `RigidBody:addSphere(radius, mass, frame, options)`
-- `RigidBody:addCollider(field)`
-- `RigidBody:impulse(id, impulse, point)`
-- `RigidBody:frame(id)`
-- `RigidBody:step(dt, substeps, iterations)`
+- `RigidBody.new(options: WorldOptions?): World`
+- `RigidBody:addSphere(radius: number, mass: number, frame: CFrame?, options: SphereOptions?): number`
+- `RigidBody:addCollider(field: Field)`
+- `RigidBody:impulse(id: number, impulse: Vector3, point: Vector3?)`
+- `RigidBody:frame(id: number): CFrame`
+- `RigidBody:step(dt: number, substeps: number?, iterations: number?): World`
 
 ## Roblox
 
@@ -677,59 +677,59 @@ Source: [src/Simplify.luau](src/Simplify.luau)
 
 Source: [src/Simulation.luau](src/Simulation.luau)
 
-- `Simulation.new(options)`
-- `Simulation:addParticle(position, mass)`
-- `Simulation:pin(id, position)`
-- `Simulation:addDistance(a, b, compliance, restLength)`
-- `Simulation:addVolume(a, b, c, d, compliance)`
-- `Simulation:addCollider(field, clearance)`
-- `Simulation:step(dt, substeps, iterations)`
-- `Simulation.fromMesh(mesh, options)`
-- `Simulation:toMesh()`
+- `Simulation.new(options: SimOptions?): Simulation`
+- `Simulation:addParticle(position: Vector3, mass: number?): number`
+- `Simulation:pin(id: number, position: Vector3?)`
+- `Simulation:addDistance(a: number, b: number, compliance: number?, restLength: number?): DistanceConstraint`
+- `Simulation:addVolume(a: number, b: number, c: number, d: number, compliance: number?): VolumeConstraint`
+- `Simulation:addCollider(field: Field, clearance: number?)`
+- `Simulation:step(dt: number, substeps: number?, iterations: number?): Simulation`
+- `Simulation.fromMesh(mesh: Mesh, options: SimOptions?): Simulation`
+- `Simulation:toMesh(): Mesh`
 
 ## Spatial
 
 Source: [src/Spatial.luau](src/Spatial.luau)
 
-- `Spatial.new(mesh)`
-- `Spatial:closest(point, maxDistance)`
-- `Spatial:raycast(origin, direction, maxDistance)`
-- `Spatial:contains(point)`
-- `Spatial:signedDistance(point)`
+- `Spatial.new(mesh: Types.Mesh): Index`
+- `Spatial:closest(point: Vector3, maxDistance: number?): Hit?`
+- `Spatial:raycast(origin: Vector3, direction: Vector3, maxDistance: number?): Hit?`
+- `Spatial:contains(point: Vector3): boolean`
+- `Spatial:signedDistance(point: Vector3): number`
 - `Spatial.closestTriangle(point, a, b, c)`
 
 ## SplineFit
 
 Source: [src/SplineFit.luau](src/SplineFit.luau)
 
-- `SplineFit.curve(points, degree, controlCount, options)`
-- `SplineFit.interpolateCurve(points, degree, options)`
-- `SplineFit.surface(grid, degreeU, degreeV, controlsU, controlsV, options)`
-- `SplineFit.interpolateSurface(grid, degreeU, degreeV, options)`
-- `SplineFit.refineCurve(initial, points, options)`
-- `SplineFit.refineSurface(initial, points, options)`
+- `SplineFit.curve(points: { Vector3 }, degree: number, controlCount: number, options: CurveFitOptions?): (N.Curve, FitReport)`
+- `SplineFit.interpolateCurve(points: { Vector3 }, degree: number, options: CurveFitOptions?): (N.Curve, FitReport)`
+- `SplineFit.surface(grid: { { Vector3 } }, degreeU: number, degreeV: number, controlsU: number, controlsV: number, options: SurfaceFitOptions?): (N.Surface, FitReport)`
+- `SplineFit.interpolateSurface(grid: { { Vector3 } }, degreeU: number, degreeV: number, options: SurfaceFitOptions?): (N.Surface, FitReport)`
+- `SplineFit.refineCurve(initial: any, points: { Vector3 }, options: any)`
+- `SplineFit.refineSurface(initial: any, points: { Vector3 }, options: any)`
 
 ## SplineQuery
 
 Source: [src/SplineQuery.luau](src/SplineQuery.luau)
 
-- `SplineQuery.intersectCurveSurface(curve, surface, options)`
-- `SplineQuery.intersectSurfaces(surfaceA, surfaceB, options)`
-- `SplineQuery.length(curve, options)`
-- `SplineQuery.sample(curve, options)`
-- `SplineQuery.closestCurve(curve, point, options)`
-- `SplineQuery.closestSurface(surface, point, options)`
+- `SplineQuery.intersectCurveSurface(curve: Curve, surface: Surface, options: any): any`
+- `SplineQuery.intersectSurfaces(surfaceA: Surface, surfaceB: Surface, options: any): any`
+- `SplineQuery.length(curve: Curve, options: QueryOptions?): LengthReport`
+- `SplineQuery.sample(curve: Curve, options: SampleOptions?): ({ Vector3 }, SampleReport)`
+- `SplineQuery.closestCurve(curve: Curve, point: Vector3, options: QueryOptions?): CurveClosest`
+- `SplineQuery.closestSurface(surface: Surface, point: Vector3, options: QueryOptions?): SurfaceClosest`
 
 ## Stroke
 
 Source: [src/Stroke.luau](src/Stroke.luau)
 
-- `Stroke.path(points, closed)`
-- `Stroke:closest(point, normal, maxDistance)`
-- `Stroke:sample(arc)`
-- `Stroke.profile(distance, radius, kind)`
-- `Stroke.field(path, point, normal, options)`
-- `Stroke.sculpt(mesh, path, options)`
+- `Stroke.path(points: { Vector3 }, closed: boolean?): Path`
+- `Stroke:closest(point: Vector3, normal: Vector3?, maxDistance: number?): Hit?`
+- `Stroke:sample(arc: number): (Vector3, Vector3)`
+- `Stroke.profile(distance: number, radius: number, kind: string?): number`
+- `Stroke.field(path: Path, point: Vector3, normal: Vector3?, options: FieldOptions?): (number, Hit?)`
+- `Stroke.sculpt(mesh: Mesh, path: Path, options: SculptOptions?): (Mesh, SculptReport)`
 
 ## Subdivision
 
@@ -745,65 +745,65 @@ Source: [src/Subdivision.luau](src/Subdivision.luau)
 
 Source: [src/SurfaceAdaptive.luau](src/SurfaceAdaptive.luau)
 
-- `SurfaceAdaptive.bound(surface)`
-- `SurfaceAdaptive.tessellate(surface, options)`
+- `SurfaceAdaptive.bound(surface: Surface): PatchBound`
+- `SurfaceAdaptive.tessellate(surface: Surface, options: AdaptiveOptions?): (Types.Mesh, AdaptiveReport)`
 
 ## SurfaceDeform
 
 Source: [src/SurfaceDeform.luau](src/SurfaceDeform.luau)
 
-- `SurfaceDeform.bind(mesh, target, options)`
-- `SurfaceDeform:evaluate(target, options)`
+- `SurfaceDeform.bind(mesh: Mesh, target: Mesh, options: BindOptions?): (Binding, BindReport)`
+- `SurfaceDeform:evaluate(target: Mesh, options: EvaluateOptions?): (Mesh, EvaluateReport)`
 
 ## SurfaceEdit
 
 Source: [src/SurfaceEdit.luau](src/SurfaceEdit.luau)
 
-- `SurfaceEdit.select(surface, selector, options)`
-- `SurfaceEdit.map(surface, operation, options)`
-- `SurfaceEdit.transform(surface, frame, options)`
-- `SurfaceEdit.setWeights(surface, values, options)`
-- `SurfaceEdit.smooth(surface, iterations, options)`
-- `SurfaceEdit.deform(surface, operation, options)`
-- `SurfaceEdit.duplicate(surface, uRange, vRange, options)`
-- `SurfaceEdit.transpose(surface, options)`
-- `SurfaceEdit.setCyclic(surface, axis, enabled, options)`
-- `SurfaceEdit.extrude(surface, boundary, steps, operation, options)`
-- `SurfaceEdit.split(surface, axis, index, options)`
-- `SurfaceEdit.deleteRows(surface, axis, indices, options)`
-- `SurfaceEdit.deleteSegments(surface, axis, first, last, options)`
-- `SurfaceEdit.boundaryCurve(surface, boundary, options)`
-- `SurfaceEdit.spin(surface, boundary, origin, axis, angle, options)`
+- `SurfaceEdit.select(surface: Surface, selector: any, options: Options)`
+- `SurfaceEdit.map(surface: Surface, operation: (Vector3, number, number, number) -> (Vector3, number?), options: Options)`
+- `SurfaceEdit.transform(surface: Surface, frame: CFrame, options: Options)`
+- `SurfaceEdit.setWeights(surface: Surface, values: any, options: Options)`
+- `SurfaceEdit.smooth(surface: Surface, iterations: number?, options: Options)`
+- `SurfaceEdit.deform(surface: Surface, operation: (...any) -> ...any, options: Options)`
+- `SurfaceEdit.duplicate(surface: Surface, uRange: any, vRange: any, options: Options)`
+- `SurfaceEdit.transpose(surface: Surface, options: Options)`
+- `SurfaceEdit.setCyclic(surface: Surface, axis: string, enabled: boolean, options: Options)`
+- `SurfaceEdit.extrude(surface: Surface, boundary: string, steps: number?, operation: any, options: Options)`
+- `SurfaceEdit.split(surface: Surface, axis: string, index: number, options: Options)`
+- `SurfaceEdit.deleteRows(surface: Surface, axis: string, indices: any, options: Options)`
+- `SurfaceEdit.deleteSegments(surface: Surface, axis: string, first: number, last: number, options: Options)`
+- `SurfaceEdit.boundaryCurve(surface: Surface, boundary: string, options: Options)`
+- `SurfaceEdit.spin(surface: Surface, boundary: string, origin: Vector3, axis: Vector3, angle: number, options: Options)`
 
 ## SurfaceTrim
 
 Source: [src/SurfaceTrim.luau](src/SurfaceTrim.luau)
 
-- `SurfaceTrim.surface(surface, outer, holes, options)`
-- `SurfaceTrim.regions(surface, regions, options)`
-- `SurfaceTrim.classify(trimmed, uv)`
-- `SurfaceTrim.evaluate(trimmed, u, v)`
-- `SurfaceTrim.fromCurves(surface, outerCurve, holeCurves, options)`
-- `SurfaceTrim.tessellate(trimmed, options)`
-- `SurfaceTrim.adaptive(trimmed, options)`
+- `SurfaceTrim.surface(surface: Surface, outer: Loop, holes: { Loop }?, options: D.Options?): TrimmedSurface`
+- `SurfaceTrim.regions(surface: Surface, regions: any, options: RegionOptions?): (TrimmedSurfaceSet, any)`
+- `SurfaceTrim.classify(trimmed: Trimmed, uv: Vector2): string`
+- `SurfaceTrim.evaluate(trimmed: Trimmed, u: number, v: number): Vector3`
+- `SurfaceTrim.fromCurves(surface: Surface, outerCurve: Curve, holeCurves: { Curve }?, options: FromCurvesOptions?): (TrimmedSurface, FromCurvesReport)`
+- `SurfaceTrim.tessellate(trimmed: Trimmed, options: TessellateOptions?): (Types.Mesh, TessellationReport)`
+- `SurfaceTrim.adaptive(trimmed: Trimmed, options: AdaptiveTrimOptions?): (Types.Mesh, any)`
 
 ## Surfaces
 
 Source: [src/Surfaces.luau](src/Surfaces.luau)
 
-- `Surfaces.join(surfaceA, boundaryA, surfaceB, boundaryB, options)`
-- `Surfaces.arc(frame, radius, startAngle, endAngle)`
-- `Surfaces.compatible(curves, options)`
-- `Surfaces.extrude(curve, displacement)`
-- `Surfaces.ruled(first, second, options)`
-- `Surfaces.loft(sections, degree, options)`
-- `Surfaces.revolve(curve, origin, axis, angle, options)`
-- `Surfaces.coons(bottom, top, left, right, options)`
-- `Surfaces.plane(frame, size)`
-- `Surfaces.cylinder(frame, radius, height)`
-- `Surfaces.cone(frame, radius, height)`
-- `Surfaces.sphere(frame, radius)`
-- `Surfaces.torus(frame, majorRadius, minorRadius)`
+- `Surfaces.join(surfaceA: Surface, boundaryA: any, surfaceB: Surface, boundaryB: any, options: any): any`
+- `Surfaces.arc(frame: CFrame, radius: number, startAngle: number, endAngle: number): Curve`
+- `Surfaces.compatible(curves: { Curve }, options: CompatibleOptions?): { Curve }`
+- `Surfaces.extrude(curve: Curve, displacement: Vector3): Surface`
+- `Surfaces.ruled(first: Curve, second: Curve, options: CompatibleOptions?): Surface`
+- `Surfaces.loft(sections: { Curve }, degree: number?, options: LoftOptions?): (Surface, any)`
+- `Surfaces.revolve(curve: Curve, origin: Vector3, axis: Vector3, angle: number, options: RevolveOptions?): Surface`
+- `Surfaces.coons(bottom: Curve, top: Curve, left: Curve, right: Curve, options: any): (Surface, any)`
+- `Surfaces.plane(frame: CFrame, size: Vector2): Surface`
+- `Surfaces.cylinder(frame: CFrame, radius: number, height: number): Surface`
+- `Surfaces.cone(frame: CFrame, radius: number, height: number): Surface`
+- `Surfaces.sphere(frame: CFrame, radius: number): Surface`
+- `Surfaces.torus(frame: CFrame, majorRadius: number, minorRadius: number): Surface`
 
 ## Texture
 
@@ -830,28 +830,28 @@ Source: [src/Texture.luau](src/Texture.luau)
 
 Source: [src/Timeline.luau](src/Timeline.luau)
 
-- `Timeline.channel(path, times, values, options)`
-- `Timeline.sampleChannel(channel, time)`
-- `Timeline.clip(channels, name)`
-- `Timeline.sample(clip, time, options)`
-- `Timeline.layer(base, overlay, weight, additive)`
+- `Timeline.channel(path: string, times: { number }, values: { Tuple }, options: ChannelOptions?): Channel`
+- `Timeline.sampleChannel(channel: Channel, time: number): Tuple`
+- `Timeline.clip(channels: { Channel }, name: string?): Clip`
+- `Timeline.sample(clip: ClipInput, time: number, options: SampleOptions?): (Pose, number)`
+- `Timeline.layer(base: Pose, overlay: Pose, weight: number, additive: boolean?): Pose`
 
 ## Topology
 
 Source: [src/Topology.luau](src/Topology.luau)
 
-- `Topology.triangulate(mesh)`
-- `Topology.join(meshes)`
-- `Topology.extract(mesh, faces)`
-- `Topology.components(mesh)`
-- `Topology.reverse(mesh)`
-- `Topology.weld(mesh, tolerance)`
-- `Topology.extrude(mesh, selected, offset)`
-- `Topology.insetFaces(mesh, selected, fraction)`
-- `Topology.bridge(mesh, loopA, loopB)`
-- `Topology.fill(mesh, loop)`
-- `Topology.splitEdge(mesh, a, b, t)`
-- `Topology.dissolveEdge(mesh, a, b)`
+- `Topology.triangulate(mesh: Mesh): Mesh`
+- `Topology.join(meshes: { Mesh }): Mesh`
+- `Topology.extract(mesh: Mesh, faces: FaceSet): Mesh`
+- `Topology.components(mesh: Mesh): { Mesh }`
+- `Topology.reverse(mesh: Mesh): Mesh`
+- `Topology.weld(mesh: Mesh, tolerance: number): (Mesh, { [number]: number })`
+- `Topology.extrude(mesh: Mesh, selected: FaceSet, offset: Vector3): (Mesh, { [number]: number })`
+- `Topology.insetFaces(mesh: Mesh, selected: FaceSet, fraction: number): Mesh`
+- `Topology.bridge(mesh: Mesh, loopA: { number }, loopB: { number }): Mesh`
+- `Topology.fill(mesh: Mesh, loop: { number }): Mesh`
+- `Topology.splitEdge(mesh: Mesh, a: number, b: number, t: number?): (Mesh, number)`
+- `Topology.dissolveEdge(mesh: Mesh, a: number, b: number): Mesh`
 
 ## UV
 

@@ -1,17 +1,74 @@
+--!strict
 -- Detached directed-corner connectivity for polygon meshes; no mutable mesh references.
 local U = require(script.Parent.Util)
+-- Corner keys are "faceId:cornerIndex"; edge keys are Util.edge keys.
+export type Options = { maxElements: number?, checkpoint: ((fraction: number) -> ())? }
+export type CornerRecord = {
+	face: number,
+	index: number,
+	vertex: number,
+	to: number,
+	edge: string,
+	next: string,
+	previous: string,
+	twin: string?,
+}
+export type EdgeRecord = { a: number, b: number, corners: { string }, faces: { number } }
+export type VertexRecord = { position: Vector3, edges: { string }, corners: { string }, fans: { { string } } }
+export type FaceRecord = { vertices: { number }, corners: { string } }
+export type Index = {
+	vertices: { [number]: VertexRecord },
+	edges: { [string]: EdgeRecord },
+	faces: { [number]: FaceRecord },
+	corners: { [string]: CornerRecord },
+	boundary: { [string]: boolean },
+	duplicateFaces: { [number]: number },
+	elements: number,
+}
+export type BoundaryLoop = { vertices: { number }, edges: { string }, corners: { string }, closed: boolean }
+export type Component = {
+	vertices: { [number]: boolean },
+	edges: { [string]: boolean },
+	faces: { [number]: boolean },
+	boundaryLoops: number,
+	manifold: boolean,
+	consistentlyWound: boolean,
+	eulerCharacteristic: number,
+	genus: number?,
+}
+export type Analysis = {
+	vertices: number,
+	edges: number,
+	faces: number,
+	boundaryEdges: number,
+	nonmanifoldEdges: { [string]: boolean },
+	windingEdges: { [string]: boolean },
+	nonmanifoldVertices: { [number]: boolean },
+	looseVertices: { [number]: boolean },
+	zeroLengthEdges: { [string]: boolean },
+	duplicateFaces: { [number]: number },
+	components: { Component },
+	boundaryLoops: { BoundaryLoop },
+	ambiguousBoundaryVertices: { [number]: boolean },
+	eulerCharacteristic: number,
+	manifold: boolean,
+	consistentlyWound: boolean,
+	valid: boolean,
+	closed: boolean,
+}
+export type BoundaryReport = { complete: boolean, ambiguousVertices: { [number]: boolean } }
 local C = {}
-local function cornerKey(face, i)
+local function cornerKey(face: number, i: number): string
 	return face .. ":" .. i
 end
-local function canonical(vertices)
+local function canonical(vertices: { number }): string
 	local start = 1
 	for i, v in vertices do
 		if v < vertices[start] then
 			start = i
 		end
 	end
-	local forward, backward = {}, {}
+	local forward: { number }, backward: { number } = {}, {}
 	for j = 0, #vertices - 1 do
 		forward[j + 1] = vertices[(start + j - 1) % #vertices + 1]
 		backward[j + 1] = vertices[(start - j - 1) % #vertices + 1]
@@ -19,8 +76,9 @@ local function canonical(vertices)
 	local a, b = table.concat(forward, ":"), table.concat(backward, ":")
 	return a < b and a or b
 end
-function C.index(mesh, options)
-	options = options or {}
+-- Any table with `vertices` and polygon `faces` (validated at runtime) is accepted.
+function C.index(mesh: any, options: Options?): Index
+	local options: Options = options or {}
 	assert(type(options) == "table", "Connectivity options must be a table")
 	assert(type(mesh.vertices) == "table" and type(mesh.faces) == "table", "Connectivity requires a mesh")
 	local limit = U.integer(options.maxElements or 2000000, 1)
@@ -42,14 +100,16 @@ function C.index(mesh, options)
 	if options.checkpoint then
 		options.checkpoint(0)
 	end
-	local index = { vertices = {}, edges = {}, faces = {}, corners = {}, boundary = {}, duplicateFaces = {} }
+	-- `elements` is filled in once the walk finishes.
+	local index: Index =
+		{ vertices = {}, edges = {}, faces = {}, corners = {}, boundary = {}, duplicateFaces = {} } :: any
 	for _, id in U.keys(mesh.vertices) do
 		visit()
 		U.integer(id, 1)
 		assert(U.vector(mesh.vertices[id]), "Connectivity requires finite vertex positions")
 		index.vertices[id] = { position = mesh.vertices[id], edges = {}, corners = {}, fans = {} }
 	end
-	local faceKeys = {}
+	local faceKeys: { [string]: number } = {}
 	for _, fid in U.keys(mesh.faces) do
 		visit()
 		U.integer(fid, 1)
@@ -58,9 +118,9 @@ function C.index(mesh, options)
 			type(source.vertices) == "table" and #source.vertices >= 3,
 			"Connectivity requires polygon faces"
 		)
-		local face = { vertices = table.clone(source.vertices), corners = {} }
+		local face: FaceRecord = { vertices = table.clone(source.vertices), corners = {} }
 		index.faces[fid] = face
-		local seen = {}
+		local seen: { [number]: boolean } = {}
 		for i, v in face.vertices do
 			visit()
 			assert(index.vertices[v] and not seen[v], "Connectivity face has missing or repeated vertex")
@@ -109,11 +169,11 @@ function C.index(mesh, options)
 	end
 	for v, entry in index.vertices do
 		table.sort(entry.edges)
-		local seen = {}
+		local seen: { [string]: boolean } = {}
 		for _, seed in entry.corners do
 			if not seen[seed] then
 				local fan, cursor = { seed }, 1
-				local seenEdges = {}
+				local seenEdges: { [string]: boolean } = {}
 				seen[seed] = true
 				while cursor <= #fan do
 					local h = index.corners[fan[cursor]]
@@ -139,8 +199,9 @@ function C.index(mesh, options)
 	index.elements = work
 	return index
 end
-local function traceBoundaries(index)
-	local outgoing, incoming, ambiguous = {}, {}, {}
+local function traceBoundaries(index: Index): ({ BoundaryLoop }, { [number]: boolean })
+	local outgoing: { [number]: { CornerRecord } }, incoming: { [number]: { CornerRecord } }, ambiguous: { [number]: boolean } =
+		{}, {}, {}
 	for key in index.boundary do
 		local h = index.corners[index.edges[key].corners[1]]
 		outgoing[h.vertex] = outgoing[h.vertex] or {}
@@ -161,10 +222,10 @@ local function traceBoundaries(index)
 	if next(ambiguous) then
 		return {}, ambiguous
 	end
-	local seen, loops = {}, {}
+	local seen: { [string]: boolean }, loops: { BoundaryLoop } = {}, {}
 	for _, seed in U.keys(index.boundary) do
 		if not seen[seed] then
-			local loop = { vertices = {}, edges = {}, corners = {}, closed = true }
+			local loop: BoundaryLoop = { vertices = {}, edges = {}, corners = {}, closed = true }
 			local h = index.corners[index.edges[seed].corners[1]]
 			repeat
 				seen[h.edge] = true
@@ -179,8 +240,9 @@ local function traceBoundaries(index)
 	end
 	return loops, ambiguous
 end
-local function analysis(index)
-	local result = {
+local function analysis(index: Index): Analysis
+	-- The remaining summary fields are filled in below.
+	local result: Analysis = {
 		vertices = U.count(index.vertices),
 		edges = U.count(index.edges),
 		faces = U.count(index.faces),
@@ -192,7 +254,7 @@ local function analysis(index)
 		zeroLengthEdges = {},
 		duplicateFaces = U.copy(index.duplicateFaces),
 		components = {},
-	}
+	} :: any
 	for key, e in index.edges do
 		if #e.faces > 2 then
 			result.nonmanifoldEdges[key] = true
@@ -221,17 +283,18 @@ local function analysis(index)
 		end
 	end
 	result.boundaryLoops, result.ambiguousBoundaryVertices = traceBoundaries(index)
-	local visited, faceComponents = {}, {}
+	local visited: { [number]: boolean }, faceComponents: { [number]: number } = {}, {}
 	for _, seed in U.keys(index.faces) do
 		if not visited[seed] then
-			local component = {
+			-- eulerCharacteristic is filled in after the flood fill.
+			local component: Component = {
 				vertices = {},
 				edges = {},
 				faces = {},
 				boundaryLoops = 0,
 				manifold = true,
 				consistentlyWound = true,
-			}
+			} :: any
 			local queue, cursor = { seed }, 1
 			visited[seed] = true
 			while cursor <= #queue do
@@ -292,10 +355,10 @@ local function analysis(index)
 	result.closed = result.valid and result.faces > 0 and result.boundaryEdges == 0
 	return result
 end
-function C.analyze(mesh, options)
+function C.analyze(mesh: any, options: Options?): Analysis
 	return analysis(C.index(mesh, options))
 end
-function C.boundaries(mesh, options)
+function C.boundaries(mesh: any, options: Options?): ({ BoundaryLoop }, BoundaryReport)
 	local loops, ambiguous = traceBoundaries(C.index(mesh, options))
 	return loops, { complete = next(ambiguous) == nil, ambiguousVertices = ambiguous }
 end

@@ -1,3 +1,4 @@
+--!strict
 -- Periodic rational splines store each control exactly once. Expanded NURBS are copies.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
@@ -5,10 +6,56 @@ local N = require(script.Parent.NURBS)
 local deferredRequire = require :: any
 local C = {}
 
-local function periodicKnots(count, degree, intervals)
+type Curve = N.Curve
+type Surface = N.Surface
+export type CyclicCurve = {
+	kind: string, -- "cyclicCurve"
+	points: { Vector3 },
+	weights: { number },
+	degree: number,
+	intervals: { number },
+	-- Descriptors double as options when revalidated, so a carried budget is honored.
+	maxControls: number?,
+}
+export type CyclicCurveOptions = {
+	intervals: { number }?,
+	weights: { number }?,
+	maxControls: number?,
+}
+export type CyclicSurface = {
+	kind: string, -- "cyclicSurface"
+	control: { { Vector3 } },
+	weights: { { number } },
+	degreeU: number,
+	degreeV: number,
+	cyclicU: boolean,
+	cyclicV: boolean,
+	intervalsU: { number }?,
+	intervalsV: { number }?,
+	knotsU: { number }?,
+	knotsV: { number }?,
+	clampedU: boolean,
+	clampedV: boolean,
+	-- Descriptors double as options when revalidated, so a carried budget is honored.
+	maxControls: number?,
+}
+export type CyclicSurfaceOptions = {
+	cyclicU: boolean?,
+	cyclicV: boolean?,
+	intervalsU: { number }?,
+	intervalsV: { number }?,
+	knotsU: { number }?,
+	knotsV: { number }?,
+	clampedU: boolean?,
+	clampedV: boolean?,
+	weights: { { number } }?,
+	maxControls: number?,
+}
+
+local function periodicKnots(count: number, degree: number, intervals: { number }?): ({ number }, { number })
 	U.integer(degree, 1)
 	assert(degree <= 8 and count > degree, "Periodic degree must be 1..8 and below unique control count")
-	intervals = intervals or table.create(count, 1)
+	local intervals: { number } = intervals or table.create(count, 1)
 	assert(#intervals == count, "One knot interval per unique control required")
 	local sum, zeroRun = 0, 0
 	for i = 1, count + degree do
@@ -21,7 +68,7 @@ local function periodicKnots(count, degree, intervals)
 		end
 	end
 	assert(sum > 0 and U.finite(sum), "Nonempty periodic domain required")
-	local knots = { [degree + 1] = 0 }
+	local knots: { number } = { [degree + 1] = 0 }
 	for i = 1, count + degree do
 		knots[degree + 1 + i] = knots[degree + i] + intervals[(i - 1) % count + 1]
 	end
@@ -31,10 +78,10 @@ local function periodicKnots(count, degree, intervals)
 	return knots, table.clone(intervals)
 end
 
-function C.curve(points, degree, options)
-	options = options or {}
+function C.curve(points: { Vector3 }, degree: number, options: CyclicCurveOptions?): CyclicCurve
+	local options: CyclicCurveOptions = options or {}
 	local knots, intervals = periodicKnots(#points, degree, options.intervals)
-	local p, w = {}, {}
+	local p: { Vector3 }, w: { number } = {}, {}
 	local weights = options.weights or table.create(#points, 1)
 	assert(#weights == #points, "Weight count mismatch")
 	assert(#points + degree <= (options.maxControls or 10000), "Expanded periodic control budget exceeded")
@@ -52,10 +99,10 @@ function C.curve(points, degree, options)
 	}
 end
 
-function C.toNURBS(curve)
+function C.toNURBS(curve: CyclicCurve): Curve
 	assert(curve.kind == "cyclicCurve", "Cyclic curve required")
 	local c = C.curve(curve.points, curve.degree, curve)
-	local points, weights = {}, {}
+	local points: { Vector3 }, weights: { number } = {}, {}
 	for i = 1, #c.points + c.degree do
 		local j = (i - 1) % #c.points + 1
 		points[i], weights[i] = c.points[j], c.weights[j]
@@ -67,17 +114,17 @@ function C.toNURBS(curve)
 	)
 end
 
-function C.evaluate(curve, t)
+function C.evaluate(curve: CyclicCurve, t: number): Vector3
 	return N.evaluate(C.toNURBS(curve), t)
 end
-function C.derivatives(curve, t)
+function C.derivatives(curve: CyclicCurve, t: number): N.CurveDerivatives
 	return N.derivatives(C.toNURBS(curve), t)
 end
 
-function C.rotateSeam(curve, offset)
+function C.rotateSeam(curve: CyclicCurve, offset: number): CyclicCurve
 	local c = C.curve(curve.points, curve.degree, curve)
 	assert(U.finite(offset) and offset % 1 == 0, "Integer control offset required")
-	local p, w, d = {}, {}, {}
+	local p: { Vector3 }, w: { number }, d: { number } = {}, {}, {}
 	for i = 1, #c.points do
 		local j = (i + offset - 1) % #c.points + 1
 		p[i], w[i], d[i] = c.points[j], c.weights[j], c.intervals[j]
@@ -85,9 +132,9 @@ function C.rotateSeam(curve, offset)
 	return C.curve(p, c.degree, { weights = w, intervals = d })
 end
 
-function C.reverse(curve)
+function C.reverse(curve: CyclicCurve): CyclicCurve
 	local c = C.curve(curve.points, curve.degree, curve)
-	local p, w, d = {}, {}, {}
+	local p: { Vector3 }, w: { number }, d: { number } = {}, {}, {}
 	for i = 1, #c.points do
 		local j = (c.degree - i) % #c.points + 1
 		p[i], w[i], d[i] = c.points[j], c.weights[j], c.intervals[#c.points - i + 1]
@@ -95,17 +142,17 @@ function C.reverse(curve)
 	return C.curve(p, c.degree, { weights = w, intervals = d })
 end
 
-function C.insertKnot(curve, t, count)
+function C.insertKnot(curve: CyclicCurve, t: number, count: number?): CyclicCurve
 	local c = C.curve(curve.points, curve.degree, curve)
 	assert(
 		U.finite(t) and t > 0 and t < 1,
 		"Insert strictly within one period; rotate the seam for boundary edits"
 	)
-	count = count or 1
+	local count: number = count or 1
 	U.integer(count, 0)
 	assert(count <= c.degree)
 	for _ = 1, count do
-		local n, p, w, d = #c.points, {}, {}, {}
+		local n, p: { Vector3 }, w: { number }, d: { number } = #c.points, {}, {}, {}
 		-- Insert corresponding knots over three periods, then retain the middle control cycle.
 		for i = 1, 3 * n + c.degree do
 			local j = (i - 1) % n + 1
@@ -119,7 +166,7 @@ function C.insertKnot(curve, t, count)
 		for period = 0, 2 do
 			long = N.insertKnot(long, (period + t) / 3)
 		end
-		local points, weights = {}, {}
+		local points: { Vector3 }, weights: { number } = {}, {}
 		for i = 1, n + 1 do
 			points[i], weights[i] = long.points[n + 1 + i], long.weights[n + 1 + i]
 		end
@@ -127,7 +174,7 @@ function C.insertKnot(curve, t, count)
 		for _, v in c.intervals do
 			total += v
 		end
-		local u, accumulated, split = t * total, 0, nil
+		local u, accumulated, split = t * total, 0, nil :: number?
 		for i, v in c.intervals do
 			if u >= accumulated and u < accumulated + v then
 				split = i
@@ -144,19 +191,24 @@ function C.insertKnot(curve, t, count)
 	return c
 end
 
-function C.surface(control, degreeU, degreeV, options)
-	options = options or {}
+function C.surface(
+	control: { { Vector3 } },
+	degreeU: number,
+	degreeV: number,
+	options: CyclicSurfaceOptions?
+): CyclicSurface
+	local options: CyclicSurfaceOptions = options or {}
 	local nu, nv = #control, #control > 0 and #control[1] or 0
 	local cyclicU, cyclicV = options.cyclicU ~= false, options.cyclicV ~= false
 	assert(cyclicU or cyclicV, "Use NURBS.surface for two open directions")
-	local ku, kv, iu, iv = options.knotsU, options.knotsV, nil, nil
+	local ku, kv, iu, iv = options.knotsU, options.knotsV, nil :: { number }?, nil :: { number }?
 	if cyclicU then
 		ku, iu = periodicKnots(nu, degreeU, options.intervalsU)
 	end
 	if cyclicV then
 		kv, iv = periodicKnots(nv, degreeV, options.intervalsV)
 	end
-	local points, weights = {}, {}
+	local points: { { Vector3 } }, weights: { { number } } = {}, {}
 	local eu, ev = nu + (cyclicU and degreeU or 0), nv + (cyclicV and degreeV or 0)
 	assert(eu * ev <= (options.maxControls or 10000), "Expanded periodic surface control budget exceeded")
 	if options.weights then
@@ -185,7 +237,7 @@ function C.surface(control, degreeU, degreeV, options)
 		clampedV = not cyclicV and options.clampedV ~= false,
 		maxControls = options.maxControls,
 	})
-	local p, w = {}, {}
+	local p: { { Vector3 } }, w: { { number } } = {}, {}
 	for i = 1, nu do
 		p[i], w[i] = {}, {}
 		for j = 1, nv do
@@ -209,10 +261,10 @@ function C.surface(control, degreeU, degreeV, options)
 	}
 end
 
-function C.surfaceToNURBS(surface)
+function C.surfaceToNURBS(surface: CyclicSurface): Surface
 	assert(surface.kind == "cyclicSurface", "Cyclic surface required")
 	local s = C.surface(surface.control, surface.degreeU, surface.degreeV, surface)
-	local p, w = {}, {}
+	local p: { { Vector3 } }, w: { { number } } = {}, {}
 	local nu, nv = #s.control, #s.control[1]
 	for i = 1, nu + (s.cyclicU and s.degreeU or 0) do
 		p[i], w[i] = {}, {}
@@ -229,31 +281,38 @@ function C.surfaceToNURBS(surface)
 		clampedV = s.clampedV,
 	})
 end
-function C.evaluateSurface(surface, u, v)
+function C.evaluateSurface(surface: CyclicSurface, u: number, v: number): Vector3
 	return N.evaluateSurface(C.surfaceToNURBS(surface), u, v)
 end
-function C.surfaceDerivatives(surface, u, v)
+function C.surfaceDerivatives(surface: CyclicSurface, u: number, v: number): N.SurfaceDerivatives
 	return N.surfaceDerivatives(C.surfaceToNURBS(surface), u, v)
 end
 
-local function editDirection(surface, axis, operation, argument, count)
+local function editDirection(
+	surface: CyclicSurface,
+	axis: string,
+	operation: string,
+	argument: number?,
+	count: number?
+): CyclicSurface
 	local s = C.surface(surface.control, surface.degreeU, surface.degreeV, surface)
 	assert(axis == "U" or axis == "V", "Axis must be U or V")
 	local alongU = axis == "U"
 	local periodic = if alongU then s.cyclicU else s.cyclicV
-	local curves = {}
+	-- Lines are cyclic or open NURBS curves depending on the direction.
+	local curves: { any } = {}
 	for j = 1, (alongU and #s.control[1] or #s.control) do
-		local p, w = {}, {}
+		local p: { Vector3 }, w: { number } = {}, {}
 		for i = 1, (alongU and #s.control or #s.control[1]) do
 			p[i], w[i] =
 				if alongU then s.control[i][j] else s.control[j][i],
 				if alongU then s.weights[i][j] else s.weights[j][i]
 		end
 		local degree = alongU and s.degreeU or s.degreeV
-		local c
+		local c: any
 		if periodic then
 			c = C.curve(p, degree, { weights = w, intervals = alongU and s.intervalsU or s.intervalsV })
-			c = C[operation](c, argument, count)
+			c = (C :: any)[operation](c, argument, count)
 		else
 			assert(operation ~= "rotateSeam", "Cannot rotate the seam of an open direction")
 			c = N.curve(p, degree, {
@@ -261,11 +320,11 @@ local function editDirection(surface, axis, operation, argument, count)
 				knots = alongU and s.knotsU or s.knotsV,
 				clamped = if alongU then s.clampedU else s.clampedV,
 			})
-			c = N[operation](c, argument, count)
+			c = (N :: any)[operation](c, argument, count)
 		end
 		curves[j] = c
 	end
-	local p, w = {}, {}
+	local p: { { Vector3 } }, w: { { number } } = {}, {}
 	if alongU then
 		for i = 1, #curves[1].points do
 			p[i], w[i] = {}, {}
@@ -279,30 +338,38 @@ local function editDirection(surface, axis, operation, argument, count)
 		end
 	end
 	local options = table.clone(s)
-	options.weights = w
-	options[alongU and "intervalsU" or "intervalsV"] = curves[1].intervals
-	options[alongU and "knotsU" or "knotsV"] = curves[1].knots
+	options.weights = w;
+	(options :: any)[alongU and "intervalsU" or "intervalsV"] = curves[1].intervals;
+	(options :: any)[alongU and "knotsU" or "knotsV"] = curves[1].knots
 	return C.surface(p, s.degreeU, s.degreeV, options)
 end
-function C.insertSurfaceKnot(surface, axis, t, count)
+function C.insertSurfaceKnot(surface: CyclicSurface, axis: string, t: number, count: number?): CyclicSurface
 	return editDirection(surface, axis, "insertKnot", t, count)
 end
-function C.reverseSurface(surface, axis)
+function C.reverseSurface(surface: CyclicSurface, axis: string): CyclicSurface
 	return editDirection(surface, axis, "reverse")
 end
-function C.rotateSurfaceSeam(surface, axis, offset)
+function C.rotateSurfaceSeam(surface: CyclicSurface, axis: string, offset: number): CyclicSurface
 	return editDirection(surface, axis, "rotateSeam", offset)
 end
-function C.elevateDegree(curve, count, options)
+-- Degree/removal edits live in CyclicEdit (not strict yet); options and results pass through untyped.
+function C.elevateDegree(curve: CyclicCurve, count: number?, options: any)
 	return deferredRequire(script.Parent.CyclicEdit).curve(curve, "elevate", nil, count or 1, options)
 end
-function C.removeKnot(curve, t, count, options)
+function C.removeKnot(curve: CyclicCurve, t: number, count: number?, options: any)
 	return deferredRequire(script.Parent.CyclicEdit).curve(curve, "remove", t, count or 1, options)
 end
-function C.elevateSurfaceDegree(surface, axis, count, options)
-	return deferredRequire(script.Parent.CyclicEdit).surface(surface, axis, "elevate", nil, count or 1, options)
+function C.elevateSurfaceDegree(surface: CyclicSurface, axis: string, count: number?, options: any)
+	return deferredRequire(script.Parent.CyclicEdit).surface(
+		surface,
+		axis,
+		"elevate",
+		nil,
+		count or 1,
+		options
+	)
 end
-function C.removeSurfaceKnot(surface, axis, t, count, options)
+function C.removeSurfaceKnot(surface: CyclicSurface, axis: string, t: number, count: number?, options: any)
 	return deferredRequire(script.Parent.CyclicEdit).surface(surface, axis, "remove", t, count or 1, options)
 end
 return C

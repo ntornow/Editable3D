@@ -1,14 +1,40 @@
+--!strict
 -- Exact rational construction and homogeneous section interpolation.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
 local QR = require(script.Parent.DenseQR)
 local S = {}
 
-function S.join(surfaceA, boundaryA, surfaceB, boundaryB, options)
+-- Curve and surface descriptors come from NURBS (typed separately); treated as opaque here.
+type Curve = any
+type Surface = any
+export type ProgressCheckpoint = (progress: number) -> ()
+export type CompatibleOptions = {
+	maxSections: number?,
+	maxControls: number?,
+	checkpoint: ProgressCheckpoint?,
+}
+export type LoftOptions = {
+	maxSections: number?,
+	maxControls: number?,
+	maxMatrixEntries: number?,
+	maxWork: number?,
+	parameters: { number }?,
+	rankTolerance: number?,
+	checkpoint: ProgressCheckpoint?,
+}
+export type RevolveOptions = {
+	startAngle: number?,
+	maxControls: number?,
+	checkpoint: ProgressCheckpoint?,
+}
+
+-- Options and boundaries are forwarded to SurfaceJoin, which defines their shape.
+function S.join(surfaceA: Surface, boundaryA: any, surfaceB: Surface, boundaryB: any, options: any): any
 	return require(script.Parent.SurfaceJoin)(surfaceA, boundaryA, surfaceB, boundaryB, options)
 end
 
-function S.arc(frame, radius, startAngle, endAngle)
+function S.arc(frame: CFrame, radius: number, startAngle: number, endAngle: number): Curve
 	assert(
 		typeof(frame) == "CFrame" and U.finite(radius) and radius > 0,
 		"Frame and positive radius required"
@@ -20,7 +46,7 @@ function S.arc(frame, radius, startAngle, endAngle)
 		"Arc sweep must be nonzero and at most one turn"
 	)
 	local segments = math.ceil(math.abs(angle) / (math.pi / 2))
-	local points, weights, knots = {}, {}, { 0, 0, 0 }
+	local points: { Vector3 }, weights: { number }, knots: { number } = {}, {}, { 0, 0, 0 }
 	for i = 0, segments do
 		local a = startAngle + angle * i / segments
 		local endpoint = frame:PointToWorldSpace(Vector3.new(radius * math.cos(a), radius * math.sin(a), 0))
@@ -51,19 +77,19 @@ function S.arc(frame, radius, startAngle, endAngle)
 	return N.curve(points, 2, { weights = weights, knots = knots })
 end
 
-function S.compatible(curves, options)
-	options = options or {}
+function S.compatible(curves: { Curve }, options: CompatibleOptions?): { Curve }
+	local options: CompatibleOptions = options or {}
 	assert(#curves >= 2 and #curves <= (options.maxSections or 128), "Two or more bounded sections required")
-	local out, degree = {}, 1
+	local out: { Curve }, degree = {}, 1
 	for i, c in curves do
 		out[i] = N.clamp(c)
 		degree = math.max(degree, c.degree)
 	end
-	local multiplicities = {}
+	local multiplicities: { [number]: number } = {}
 	for i, c in out do
 		c = N.elevateDegree(c, degree - c.degree)
 		local a, b = c.knots[1], c.knots[#c.knots]
-		local k, w, maximum = {}, {}, 0
+		local k: { number }, w: { number }, maximum = {}, {}, 0
 		for j, knot in c.knots do
 			k[j] = (knot - a) / (b - a)
 		end
@@ -75,7 +101,7 @@ function S.compatible(curves, options)
 		end
 		c = N.curve(c.points, degree, { knots = k, weights = w })
 		out[i] = c
-		local seen = {}
+		local seen: { [number]: number } = {}
 		for _, knot in k do
 			if knot > 0 and knot < 1 then
 				seen[knot] = (seen[knot] or 0) + 1
@@ -110,7 +136,7 @@ function S.compatible(curves, options)
 	return out
 end
 
-function S.extrude(curve, displacement)
+function S.extrude(curve: Curve, displacement: Vector3): Surface
 	assert(U.vector(displacement) and displacement.Magnitude > 0, "Nonzero finite extrusion vector required")
 	local c = N.clamp(curve)
 	local p, w = {}, {}
@@ -121,7 +147,7 @@ function S.extrude(curve, displacement)
 	return N.surface(p, c.degree, 1, { weights = w, knotsU = c.knots })
 end
 
-function S.ruled(first, second, options)
+function S.ruled(first: Curve, second: Curve, options: CompatibleOptions?): Surface
 	local curves = S.compatible({ first, second }, options)
 	local a, b = curves[1], curves[2]
 	local p, w = {}, {}
@@ -132,11 +158,11 @@ function S.ruled(first, second, options)
 	return N.surface(p, a.degree, 1, { weights = w, knotsU = a.knots })
 end
 
-function S.loft(sections, degree, options)
-	options = options or {}
+function S.loft(sections: { Curve }, degree: number?, options: LoftOptions?): (Surface, any)
+	local options: LoftOptions = options or {}
 	local curves = S.compatible(sections, options)
 	local n, nu = #curves, #curves[1].points
-	degree = degree or math.min(3, n - 1)
+	local degree: number = degree or math.min(3, n - 1)
 	U.integer(degree, 1)
 	assert(degree <= 8 and degree < n)
 	assert(n * nu <= (options.maxControls or 10000), "Loft control budget exceeded")
@@ -145,7 +171,7 @@ function S.loft(sections, degree, options)
 		"Loft matrix allocation budget exceeded"
 	)
 	assert(n * n * (n + nu * 4) <= (options.maxWork or 50000000), "Loft solve work budget exceeded")
-	local params = options.parameters or {}
+	local params: { number } = options.parameters or {}
 	if not options.parameters then
 		for i = 1, n do
 			params[i] = (i - 1) / (n - 1)
@@ -155,7 +181,7 @@ function S.loft(sections, degree, options)
 	for i, t in params do
 		assert(U.finite(t) and (i == 1 or t > params[i - 1]), "Strictly increasing loft parameters required")
 	end
-	local knots = {}
+	local knots: { number } = {}
 	for _ = 1, degree + 1 do
 		table.insert(knots, 0)
 	end
@@ -170,7 +196,7 @@ function S.loft(sections, degree, options)
 		table.insert(knots, 1)
 	end
 	local basis = N.curve(table.create(n, Vector3.zero), degree, { knots = knots })
-	local matrix, rhs = {}, {}
+	local matrix: { { number } }, rhs: { { number } } = {}, {}
 	local origin = curves[1].points[1]
 	for j, c in curves do
 		matrix[j] = N.basisWeights(basis, params[j])
@@ -189,9 +215,9 @@ function S.loft(sections, degree, options)
 			"Positive rank tolerance required"
 		)
 	end
-	local solved, report = QR(matrix, rhs, n, options)
+	local solved: any, report: any = QR(matrix, rhs, n, options)
 	assert(solved, "Loft interpolation is rank deficient")
-	local p, w = {}, {}
+	local p: { { Vector3 } }, w: { { number } } = {}, {}
 	for i = 1, nu do
 		p[i], w[i] = {}, {}
 		for j = 1, n do
@@ -215,8 +241,14 @@ function S.loft(sections, degree, options)
 		report
 end
 
-function S.revolve(curve, origin, axis, angle, options)
-	options = options or {}
+function S.revolve(
+	curve: Curve,
+	origin: Vector3,
+	axis: Vector3,
+	angle: number,
+	options: RevolveOptions?
+): Surface
+	local options: RevolveOptions = options or {}
 	assert(
 		U.vector(origin) and U.vector(axis) and axis.Magnitude > 1e-12,
 		"Finite origin and nonzero axis required"
@@ -224,7 +256,7 @@ function S.revolve(curve, origin, axis, angle, options)
 	axis = axis.Unit
 	local c = N.clamp(curve)
 	local arc = S.arc(CFrame.identity, 1, options.startAngle or 0, (options.startAngle or 0) + angle)
-	local points, weights = {}, {}
+	local points: { { Vector3 } }, weights: { { number } } = {}, {}
 	assert(#c.points * #arc.points <= (options.maxControls or 10000), "Revolution control budget exceeded")
 	for i, p in c.points do
 		points[i], weights[i] = {}, {}
@@ -243,7 +275,8 @@ function S.revolve(curve, origin, axis, angle, options)
 	return N.surface(points, c.degree, 2, { weights = weights, knotsU = c.knots, knotsV = arc.knots })
 end
 
-function S.coons(bottom, top, left, right, options)
+-- Boundaries and options are forwarded to CoonsSurface, which defines their shape; returnReport is read here.
+function S.coons(bottom: Curve, top: Curve, left: Curve, right: Curve, options: any): (Surface, any)
 	options = table.clone(options or {})
 	local surface, report = require(script.Parent.CoonsSurface)(bottom, top, left, right, options)
 	if options.returnReport then
@@ -252,7 +285,7 @@ function S.coons(bottom, top, left, right, options)
 	return surface
 end
 
-function S.plane(frame, size)
+function S.plane(frame: CFrame, size: Vector2): Surface
 	assert(
 		typeof(frame) == "CFrame"
 			and typeof(size) == "Vector2"
@@ -261,7 +294,7 @@ function S.plane(frame, size)
 			and size.X > 0
 			and size.Y > 0
 	)
-	local p = {}
+	local p: { { Vector3 } } = {}
 	for i = 1, 2 do
 		p[i] = {}
 		for j = 1, 2 do
@@ -270,14 +303,14 @@ function S.plane(frame, size)
 	end
 	return N.surface(p, 1, 1)
 end
-function S.cylinder(frame, radius, height)
+function S.cylinder(frame: CFrame, radius: number, height: number): Surface
 	assert(U.finite(height) and height > 0)
 	return S.extrude(
 		S.arc(frame, radius, 0, 2 * math.pi),
 		frame:VectorToWorldSpace(Vector3.new(0, 0, height))
 	)
 end
-function S.cone(frame, radius, height)
+function S.cone(frame: CFrame, radius: number, height: number): Surface
 	assert(U.finite(radius) and radius > 0 and U.finite(height) and height > 0)
 	local c = N.curve({
 		frame:PointToWorldSpace(Vector3.new(radius, 0, 0)),
@@ -285,7 +318,7 @@ function S.cone(frame, radius, height)
 	}, 1)
 	return S.revolve(N.reverse(c), frame.Position, frame:VectorToWorldSpace(Vector3.zAxis), 2 * math.pi)
 end
-function S.sphere(frame, radius)
+function S.sphere(frame: CFrame, radius: number): Surface
 	local meridian = frame * CFrame.fromMatrix(Vector3.zero, Vector3.zAxis, Vector3.xAxis, Vector3.yAxis)
 	return S.revolve(
 		S.arc(meridian, radius, 0, math.pi),
@@ -294,7 +327,7 @@ function S.sphere(frame, radius)
 		2 * math.pi
 	)
 end
-function S.torus(frame, majorRadius, minorRadius)
+function S.torus(frame: CFrame, majorRadius: number, minorRadius: number): Surface
 	assert(
 		U.finite(majorRadius) and U.finite(minorRadius) and majorRadius > minorRadius and minorRadius > 0,
 		"Ring torus radii required"

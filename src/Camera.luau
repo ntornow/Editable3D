@@ -1,5 +1,17 @@
+--!strict
+local Types = require(script.Parent.Types)
+export type Camera = Types.Camera
+export type Landmark = { point: Vector3, pixel: Vector2, weight: number? }
+export type CompareReport = { rms: number, errors: { number }, iterations: number? }
+export type FitOptions = {
+	fitFov: boolean?,
+	damping: number?,
+	iterations: number?,
+	positionEpsilon: number?,
+	tolerance: number?,
+}
 local Camera = {}
-function Camera.new(frame, fov, width, height)
+function Camera.new(frame: CFrame, fov: number, width: number, height: number): Camera
 	assert(fov > 0 and fov < 179 and width > 0 and height > 0)
 	return {
 		frame = frame,
@@ -9,7 +21,7 @@ function Camera.new(frame, fov, width, height)
 		principal = Vector2.new(width / 2, height / 2),
 	}
 end
-function Camera.project(camera, point)
+function Camera.project(camera: Camera, point: Vector3): (Vector2?, number)
 	local p = camera.frame:PointToObjectSpace(point)
 	if p.Z >= -1e-8 then
 		return nil, -p.Z
@@ -17,14 +29,14 @@ function Camera.project(camera, point)
 	local focal = camera.height / (2 * math.tan(math.rad(camera.fov) / 2))
 	return camera.principal + Vector2.new(p.X, -p.Y) * focal / -p.Z, -p.Z
 end
-function Camera.ray(camera, pixel)
+function Camera.ray(camera: Camera, pixel: Vector2): (Vector3, Vector3)
 	local focal = camera.height / (2 * math.tan(math.rad(camera.fov) / 2))
 	local p = pixel - camera.principal
 	return camera.frame.Position,
 		camera.frame:VectorToWorldSpace(Vector3.new(p.X / focal, -p.Y / focal, -1).Unit)
 end
-function Camera.compare(camera, landmarks)
-	local total, weight, errors = 0, 0, {}
+function Camera.compare(camera: Camera, landmarks: { Landmark }): CompareReport
+	local total, weight, errors: { number } = 0, 0, {}
 	for i, l in landmarks do
 		local p = Camera.project(camera, l.point)
 		local w = l.weight or 1
@@ -35,7 +47,7 @@ function Camera.compare(camera, landmarks)
 	end
 	return { rms = math.sqrt(total / math.max(weight, 1e-12)), errors = errors }
 end
-local function solve(matrix, rhs)
+local function solve(matrix: { { number } }, rhs: { number }): { number }?
 	local n = #rhs
 	for col = 1, n do
 		local pivot = col
@@ -66,13 +78,13 @@ local function solve(matrix, rhs)
 	end
 	return rhs
 end
-function Camera.fit(initial, landmarks, options)
-	options = options or {}
+function Camera.fit(initial: Camera, landmarks: { Landmark }, options: FitOptions?): (Camera, CompareReport)
+	local options: FitOptions = options or {}
 	assert(#landmarks >= 4, "Camera fit needs at least four nondegenerate correspondences")
 	local camera = table.clone(initial)
 	local dimension = options.fitFov == false and 6 or 7
 	local lambda = options.damping or 0.01
-	local function move(c, d)
+	local function move(c: Camera, d: { number }): Camera
 		local r = table.clone(c)
 		r.frame = CFrame.new(d[1] or 0, d[2] or 0, d[3] or 0)
 			* c.frame
@@ -80,8 +92,8 @@ function Camera.fit(initial, landmarks, options)
 		r.fov = math.clamp(c.fov + (d[7] or 0), 5, 150)
 		return r
 	end
-	local function residual(c)
-		local r = {}
+	local function residual(c: Camera): { number }
+		local r: { number } = {}
 		for _, l in landmarks do
 			local p = Camera.project(c, l.point)
 			local diff = p and p - l.pixel or Vector2.new(100000, 100000)
@@ -95,7 +107,7 @@ function Camera.fit(initial, landmarks, options)
 	for step = 1, options.iterations or 40 do
 		iterations = step
 		local r = residual(camera)
-		local jac = {}
+		local jac: { { number } } = {}
 		for k = 1, dimension do
 			local delta = table.create(7, 0)
 			local epsilon = k <= 3 and (options.positionEpsilon or 0.001) or k <= 6 and 0.0001 or 0.001
@@ -106,7 +118,7 @@ function Camera.fit(initial, landmarks, options)
 				jac[k][i] = (perturbed[i] - value) / epsilon
 			end
 		end
-		local matrix, rhs = {}, {}
+		local matrix: { { number } }, rhs: { number } = {}, {}
 		for a = 1, dimension do
 			matrix[a] = {}
 			rhs[a] = 0

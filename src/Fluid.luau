@@ -1,9 +1,37 @@
+--!strict
 -- Small CPU SPH solver. All-pairs neighbors; caller controls CFL timestep and substeps.
 local U = require(script.Parent.Util)
+export type FluidOptions = {
+	radius: number?,
+	restDensity: number?,
+	stiffness: number?,
+	viscosity: number?,
+	gravity: Vector3?,
+	mass: number?,
+	bounds: { Vector3 }?,
+	maxParticles: number?,
+}
+export type FluidParticle = { position: Vector3, velocity: Vector3, density: number, pressure: number }
+export type Fluid = {
+	particles: { FluidParticle },
+	radius: number,
+	restDensity: number,
+	stiffness: number,
+	viscosity: number,
+	gravity: Vector3,
+	mass: number,
+	-- { lower, upper } corners of an axis-aligned box.
+	bounds: { Vector3 }?,
+	maxParticles: number,
+	add: (Fluid, Vector3, Vector3?) -> number,
+	step: (Fluid, number, number?) -> Fluid,
+	field: (Fluid, number?) -> (Vector3) -> number,
+}
+type Self = Fluid
 local Fluid = {}
 Fluid.__index = Fluid
-function Fluid.new(options)
-	options = options or {}
+function Fluid.new(options: FluidOptions?): Fluid
+	local options: FluidOptions = options or {}
 	local h = options.radius or 0.25
 	local rho = options.restDensity or 1000
 	assert(h > 0 and rho > 0)
@@ -17,9 +45,9 @@ function Fluid.new(options)
 		mass = options.mass or rho * h ^ 3 / 8,
 		bounds = options.bounds,
 		maxParticles = options.maxParticles or 1000,
-	}, Fluid)
+	}, Fluid) :: any
 end
-function Fluid:add(position, velocity)
+function Fluid.add(self: Self, position: Vector3, velocity: Vector3?): number
 	assert(#self.particles < self.maxParticles and U.vector(position))
 	table.insert(
 		self.particles,
@@ -27,9 +55,9 @@ function Fluid:add(position, velocity)
 	)
 	return #self.particles
 end
-function Fluid:step(dt, substeps)
+function Fluid.step(self: Self, dt: number, substeps: number?): Fluid
 	assert(dt > 0)
-	substeps = substeps or 4
+	local substeps: number = substeps or 4
 	U.integer(substeps, 1)
 	local step = dt / substeps
 	local h = self.radius
@@ -50,7 +78,7 @@ function Fluid:step(dt, substeps)
 			a.density = math.max(density, 1e-8)
 			a.pressure = self.stiffness * math.max(a.density - self.restDensity, 0)
 		end
-		local accelerations = {}
+		local accelerations: { Vector3 } = {}
 		for i, a in self.particles do
 			local force = Vector3.zero
 			for j, b in self.particles do
@@ -70,11 +98,12 @@ function Fluid:step(dt, substeps)
 			a.velocity += accelerations[i] * step
 			a.position += a.velocity * step
 			if self.bounds then
-				local lo, hi = self.bounds[1], self.bounds[2]
-				local p, v = {}, {}
+				local lo: any, hi: any = self.bounds[1], self.bounds[2] -- indexed by axis name below
+				local position: any, velocity: any = a.position, a.velocity
+				local p: { [string]: number }, v: { [string]: number } = {}, {}
 				for _, axis in { "X", "Y", "Z" } do
-					p[axis] = math.clamp(a.position[axis], lo[axis], hi[axis])
-					v[axis] = a.position[axis] ~= p[axis] and -a.velocity[axis] * 0.1 or a.velocity[axis]
+					p[axis] = math.clamp(position[axis], lo[axis], hi[axis])
+					v[axis] = position[axis] ~= p[axis] and -velocity[axis] * 0.1 or velocity[axis]
 				end
 				a.position = Vector3.new(p.X, p.Y, p.Z)
 				a.velocity = Vector3.new(v.X, v.Y, v.Z)
@@ -84,13 +113,13 @@ function Fluid:step(dt, substeps)
 	end
 	return self
 end
-function Fluid:field(radius)
-	radius = radius or self.radius * 0.6
-	local centers = {}
+function Fluid.field(self: Self, radius: number?): (Vector3) -> number
+	local radius: number = radius or self.radius * 0.6
+	local centers: { Vector3 } = {}
 	for i, p in self.particles do
 		centers[i] = p.position
 	end
-	return function(p)
+	return function(p: Vector3): number
 		local d = math.huge
 		for _, c in centers do
 			d = math.min(d, (p - c).Magnitude - radius)

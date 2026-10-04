@@ -1,9 +1,28 @@
+--!strict
 -- Editable cubic Bezier chains with explicit handle-pair modes and segment durations.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
 local B = {}
-local modes = { free = true, aligned = true, vector = true, auto = true }
-local function checked(curve)
+
+-- Handle modes: "free" | "aligned" | "vector" | "auto".
+export type BezierNode = { position: Vector3, left: Vector3, right: Vector3, mode: string }
+export type BezierCurve = {
+	kind: string, -- "bezier"
+	closed: boolean,
+	nodes: { BezierNode },
+	durations: { number },
+}
+export type BezierOptions = {
+	closed: boolean?,
+	maxNodes: number?,
+	left: { Vector3 }?,
+	right: { Vector3 }?,
+	mode: string?,
+	durations: { number }?,
+}
+
+local modes: { [string]: boolean } = { free = true, aligned = true, vector = true, auto = true }
+local function checked(curve: BezierCurve): BezierCurve
 	assert(
 		type(curve) == "table" and curve.kind == "bezier" and type(curve.closed) == "boolean",
 		"Bezier descriptor required"
@@ -13,7 +32,7 @@ local function checked(curve)
 		#curve.durations == #curve.nodes - (curve.closed and 0 or 1),
 		"Bezier segment duration count mismatch"
 	)
-	local out =
+	local out: BezierCurve =
 		{ kind = "bezier", closed = curve.closed, nodes = {}, durations = table.clone(curve.durations) }
 	local sum = 0
 	for _, d in out.durations do
@@ -30,7 +49,7 @@ local function checked(curve)
 	end
 	return out
 end
-local function resolve(curve)
+local function resolve(curve: BezierCurve): BezierCurve
 	local n = #curve.nodes
 	for i, node in curve.nodes do
 		local p = node.position
@@ -60,18 +79,19 @@ local function resolve(curve)
 	end
 	return checked(curve)
 end
-local function nodeAt(curve, index)
+local function nodeAt(curve: BezierCurve, index: number): BezierNode
 	U.integer(index, 1)
 	return assert(curve.nodes[index], "Unknown Bezier node")
 end
-function B.new(points, options)
-	options = options or {}
+function B.new(points: { Vector3 }, options: BezierOptions?): BezierCurve
+	local options: BezierOptions = options or {}
 	assert(options.closed == nil or type(options.closed) == "boolean", "Bezier closure must be boolean")
 	U.integer(options.maxNodes or 3333, 2)
 	assert(not options.left or #options.left == #points, "Left handle count mismatch")
 	assert(not options.right or #options.right == #points, "Right handle count mismatch")
 	assert(#points >= 2 and #points <= (options.maxNodes or 3333), "Bezier node budget exceeded")
-	local curve = { kind = "bezier", nodes = {}, closed = options.closed == true, durations = {} }
+	local curve: BezierCurve =
+		{ kind = "bezier", nodes = {}, closed = options.closed == true, durations = {} }
 	assert(options.mode == nil or modes[options.mode], "Unknown Bezier handle mode")
 	for i, p in points do
 		assert(U.vector(p), "Finite Bezier positions required")
@@ -87,7 +107,7 @@ function B.new(points, options)
 	curve.durations = options.durations and table.clone(options.durations) or table.create(segments, 1)
 	return resolve(checked(curve))
 end
-function B.setPoint(curve, index, position)
+function B.setPoint(curve: BezierCurve, index: number, position: Vector3): BezierCurve
 	assert(U.vector(position), "Finite Bezier position required")
 	local out = checked(curve)
 	local node = nodeAt(out, index)
@@ -95,13 +115,13 @@ function B.setPoint(curve, index, position)
 	node.position, node.left, node.right = position, node.left + delta, node.right + delta
 	return resolve(out)
 end
-function B.setMode(curve, index, mode)
+function B.setMode(curve: BezierCurve, index: number, mode: string): BezierCurve
 	assert(modes[mode], "Unknown Bezier handle mode")
 	local out = checked(curve)
 	nodeAt(out, index).mode = mode
 	return resolve(out)
 end
-function B.setHandle(curve, index, side, position)
+function B.setHandle(curve: BezierCurve, index: number, side: string, position: Vector3): BezierCurve
 	assert(side == "left" or side == "right", "Handle side must be left or right")
 	assert(U.vector(position), "Finite handle position required")
 	local out = checked(curve)
@@ -111,18 +131,20 @@ function B.setHandle(curve, index, side, position)
 	elseif node.mode == "vector" then
 		node.mode = "free"
 	end
-	node[side] = position
+	-- The same node table, indexed by handle side ("left" or "right", asserted above).
+	local handles: { [string]: Vector3 } = node :: any
+	handles[side] = position
 	if node.mode == "aligned" then
 		local other = side == "left" and "right" or "left"
 		local delta = position - node.position
 		if delta.Magnitude > 0 then
-			node[other] = node.position - delta.Unit * (node[other] - node.position).Magnitude
+			handles[other] = node.position - delta.Unit * (handles[other] - node.position).Magnitude
 		end
 	end
 	-- Other nodes are unchanged. A zero moved handle has no tangent direction.
 	return checked(out)
 end
-function B.split(curve, segment, t)
+function B.split(curve: BezierCurve, segment: number, t: number): BezierCurve
 	assert(type(t) == "number" and U.finite(t) and t > 0 and t < 1, "Interior split parameter required")
 	local out = checked(curve)
 	U.integer(segment, 1)
@@ -140,7 +162,7 @@ function B.split(curve, segment, t)
 	table.insert(out.durations, segment + 1, duration * (1 - t))
 	return checked(out)
 end
-function B.reverse(curve)
+function B.reverse(curve: BezierCurve): BezierCurve
 	local source, out = checked(curve), checked(curve)
 	local n = #source.nodes
 	for i = 1, n do
@@ -154,9 +176,9 @@ function B.reverse(curve)
 	end
 	return out
 end
-function B.toNURBS(curve)
+function B.toNURBS(curve: BezierCurve): N.Curve
 	curve = checked(curve)
-	local points, knots = {}, { 0, 0, 0, 0 }
+	local points: { Vector3 }, knots: { number } = {}, { 0, 0, 0, 0 }
 	local sum, elapsed = 0, 0
 	for _, d in curve.durations do
 		sum += d
@@ -178,10 +200,10 @@ function B.toNURBS(curve)
 	end
 	return N.curve(points, 3, { knots = knots })
 end
-function B.evaluate(curve, t)
+function B.evaluate(curve: BezierCurve, t: number): Vector3
 	return N.evaluate(B.toNURBS(curve), t)
 end
-function B.derivatives(curve, t)
+function B.derivatives(curve: BezierCurve, t: number): N.CurveDerivatives
 	return N.derivatives(B.toNURBS(curve), t)
 end
 return B

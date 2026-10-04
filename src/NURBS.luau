@@ -1,20 +1,120 @@
+--!strict
 -- Positive-weight rational B-spline curves and tensor-product surfaces.
 -- Original implementation; no services, scene mutation or network access.
 local U = require(script.Parent.Util)
 local Mesh = require(script.Parent.Mesh)
+local Types = require(script.Parent.Types)
 local N = {}
 
-local function knotsFor(n, degree, knots, clamped)
+-- Descriptors are plain tables; every public operation revalidates and copies them.
+export type Curve = {
+	kind: string, -- "curve"
+	clamped: boolean,
+	points: { Vector3 },
+	degree: number,
+	knots: { number },
+	weights: { number },
+}
+export type Surface = {
+	kind: string, -- "surface"
+	clampedU: boolean,
+	clampedV: boolean,
+	control: { { Vector3 } },
+	weights: { { number } },
+	degreeU: number,
+	degreeV: number,
+	knotsU: { number },
+	knotsV: { number },
+}
+export type CurveOptions = {
+	knots: { number }?,
+	weights: { number }?,
+	clamped: boolean?,
+	maxControls: number?,
+}
+export type SurfaceOptions = {
+	knotsU: { number }?,
+	knotsV: { number }?,
+	weights: { { number } }?,
+	clampedU: boolean?,
+	clampedV: boolean?,
+	maxControls: number?,
+}
+export type CurveDerivatives = {
+	position: Vector3,
+	first: Vector3,
+	second: Vector3,
+	regular: boolean,
+	curvature: number?,
+}
+export type SurfaceDerivatives = {
+	position: Vector3,
+	du: Vector3,
+	dv: Vector3,
+	duu: Vector3,
+	duv: Vector3,
+	dvv: Vector3,
+	normal: Vector3?,
+	regular: boolean,
+	meanCurvature: number?,
+	gaussianCurvature: number?,
+}
+export type CurveEvaluator = {
+	evaluate: (t: number) -> Vector3,
+	derivatives: (t: number) -> CurveDerivatives,
+}
+export type SurfaceEvaluator = {
+	evaluate: (u: number, v: number) -> Vector3,
+	derivatives: (u: number, v: number) -> SurfaceDerivatives,
+}
+export type BezierSegment = { curve: Curve, first: number, last: number }
+export type BezierPatch = { surface: Surface, u0: number, u1: number, v0: number, v1: number }
+export type RemovalOptions = {
+	tolerance: number?,
+	checkpoint: ((fraction: number) -> ())?,
+}
+export type RemovalReport = {
+	requested: number,
+	removed: number,
+	errorBound: number,
+	tolerance: number,
+	reason: string?,
+	rejectedErrorBound: number?,
+	complete: boolean?,
+}
+export type TessellateOptions = {
+	maxVertices: number?,
+	closedU: boolean?,
+	closedV: boolean?,
+	seamTolerance: number?,
+	collapsePoles: boolean?,
+	map: ((position: Vector3, uv: Vector2, derivatives: SurfaceDerivatives) -> Vector3)?,
+	checkpoint: ((fraction: number) -> ())?,
+	material: number?,
+}
+export type TessellateReport = {
+	poles: { [string]: boolean },
+	collapsedQuads: number,
+	closedU: boolean,
+	closedV: boolean,
+}
+type Homogeneous = { number }
+type TessellateRecord = { position: Vector3, normal: Vector3, uv: Vector2 }
+-- SplineBasis is not strict yet: basis(n, p, knots, t) -> (values, first, second).
+type BasisFn = (n: number, p: number, knots: { number }, t: number) -> ({ number }, { number }, { number })
+
+local function knotsFor(n: number, degree: number, knots: { number }?, clamped: boolean?): { number }
 	U.integer(degree, 1)
 	assert(degree <= 17 and n > degree, "Degree must be 1..17 and below control count")
 	if not knots then
 		knots = {}
 		for i = 1, n + degree + 1 do
-			knots[i] = if clamped == false
+			((knots :: any) :: { number })[i] = if clamped == false
 				then (i - degree - 1) / (n - degree)
 				else i <= degree + 1 and 0 or i >= n + 1 and 1 or (i - degree - 1) / (n - degree)
 		end
 	end
+	local knots = knots :: { number }
 	assert(#knots == n + degree + 1, "Knot count mismatch")
 	local a, b = knots[degree + 1], knots[n + 1]
 	assert(U.finite(a) and U.finite(b) and b > a and U.finite(b - a), "Nonempty finite knot domain required")
@@ -33,15 +133,15 @@ local function knotsFor(n, degree, knots, clamped)
 	return table.clone(knots)
 end
 
-local function parameter(t)
+local function parameter(t: number): number
 	assert(U.finite(t) and t >= 0 and t <= 1, "Normalized parameter must be in [0,1]")
 	return t
 end
 
-local basis = require(script.Parent.SplineBasis)
+local basis: BasisFn = require(script.Parent.SplineBasis) :: any
 
-function N.curve(points, degree, options)
-	options = options or {}
+function N.curve(points: { Vector3 }, degree: number, options: CurveOptions?): Curve
+	local options: CurveOptions = options or {}
 	assert(#points <= (options.maxControls or 10000), "Curve control budget exceeded")
 	local knots = knotsFor(#points, degree, options.knots, options.clamped)
 	local weights = options.weights or table.create(#points, 1)
@@ -62,14 +162,19 @@ function N.curve(points, degree, options)
 	}
 end
 
-function N.surface(control, degreeU, degreeV, options)
-	options = options or {}
+function N.surface(
+	control: { { Vector3 } },
+	degreeU: number,
+	degreeV: number,
+	options: SurfaceOptions?
+): Surface
+	local options: SurfaceOptions = options or {}
 	local nu, nv = #control, #control > 0 and #control[1] or 0
 	assert(nu * nv <= (options.maxControls or 10000), "Surface control budget exceeded")
 	local ku, kv =
 		knotsFor(nu, degreeU, options.knotsU, options.clampedU),
 		knotsFor(nv, degreeV, options.knotsV, options.clampedV)
-	local weights, points = {}, {}
+	local weights: { { number } }, points: { { Vector3 } } = {}, {}
 	if options.weights then
 		assert(#options.weights == nu, "Surface weight rows mismatch")
 	end
@@ -101,11 +206,11 @@ function N.surface(control, degreeU, degreeV, options)
 	}
 end
 
-local function checkedCurve(c)
+local function checkedCurve(c: Curve): Curve
 	assert(c.kind == "curve", "NURBS curve required")
 	return N.curve(c.points, c.degree, { knots = c.knots, weights = c.weights, clamped = c.clamped })
 end
-local function checkedSurface(s)
+local function checkedSurface(s: Surface): Surface
 	assert(s.kind == "surface", "NURBS surface required")
 	return N.surface(s.control, s.degreeU, s.degreeV, {
 		knotsU = s.knotsU,
@@ -115,20 +220,20 @@ local function checkedSurface(s)
 		clampedV = s.clampedV,
 	})
 end
-local function accum(h, p, weight, origin)
+local function accum(h: Homogeneous, p: Vector3, weight: number, origin: Vector3)
 	h[1] += (p.X - origin.X) * weight
 	h[2] += (p.Y - origin.Y) * weight
 	h[3] += (p.Z - origin.Z) * weight
 	h[4] += weight
 end
-local function xyz(h)
+local function xyz(h: Homogeneous): Vector3
 	return Vector3.new(h[1], h[2], h[3])
 end
-local function zero()
+local function zero(): Homogeneous
 	return { 0, 0, 0, 0 }
 end
 
-local function curveDerivatives(c, t)
+local function curveDerivatives(c: Curve, t: number): CurveDerivatives
 	local b, d, dd = basis(#c.points, c.degree, c.knots, t)
 	local h, hd, hdd = zero(), zero(), zero()
 	local origin, maximum = c.points[1], 0
@@ -156,15 +261,15 @@ local function curveDerivatives(c, t)
 		curvature = speed > 1e-12 and first:Cross(second).Magnitude / (speed ^ 3) or nil,
 	}
 end
-function N.evaluate(curve, t)
+function N.evaluate(curve: Curve, t: number): Vector3
 	return curveDerivatives(checkedCurve(curve), t).position
 end
-function N.derivatives(curve, t)
+function N.derivatives(curve: Curve, t: number): CurveDerivatives
 	return curveDerivatives(checkedCurve(curve), t)
 end
 
 -- Prepared evaluators own a validated snapshot; repeated calls avoid copying controls.
-function N.compileCurve(curve)
+function N.compileCurve(curve: Curve): CurveEvaluator
 	local c = checkedCurve(curve)
 	return table.freeze({
 		evaluate = function(t)
@@ -176,7 +281,7 @@ function N.compileCurve(curve)
 	})
 end
 
-function N.basisWeights(curve, t)
+function N.basisWeights(curve: Curve, t: number): { number }
 	local c = checkedCurve(curve)
 	local values = basis(#c.points, c.degree, c.knots, t)
 	local maximum, denominator = 0, 0
@@ -194,10 +299,10 @@ function N.basisWeights(curve, t)
 	return values
 end
 
-local function insertOnce(c, t, rawParameter, boundary)
+local function insertOnce(c: Curve, t: number, rawParameter: number?, boundary: boolean?): Curve
 	parameter(t)
 	assert(boundary or (t > 0 and t < 1), "Insert knots strictly inside the domain")
-	local n, p, k, s = #c.points, c.degree, nil, 0
+	local n, p, k, s = #c.points, c.degree, nil :: number?, 0
 	local u = rawParameter or (c.knots[p + 1] + t * (c.knots[n + 1] - c.knots[p + 1]))
 	assert(
 		boundary or (u > c.knots[p + 1] and u < c.knots[n + 1]),
@@ -212,7 +317,7 @@ local function insertOnce(c, t, rawParameter, boundary)
 		end
 	end
 	assert(k and s < (boundary and p + 1 or p), "Knot multiplicity cannot exceed its limit")
-	local points, weights = {}, {}
+	local points: { Vector3 }, weights: { number } = {}, {}
 	for i = 1, k - p do
 		points[i], weights[i] = c.points[i], c.weights[i]
 	end
@@ -236,7 +341,7 @@ local function insertOnce(c, t, rawParameter, boundary)
 	return N.curve(points, p, { knots = knots, weights = weights, clamped = c.clamped })
 end
 -- Extract the active knot domain without moving it or changing its parameterization.
-function N.clamp(curve)
+function N.clamp(curve: Curve): Curve
 	local c = checkedCurve(curve)
 	if c.clamped then
 		return c
@@ -260,7 +365,7 @@ function N.clamp(curve)
 	while c.knots[last] > b do
 		last -= 1
 	end
-	local knots, points, weights = {}, {}, {}
+	local knots: { number }, points: { Vector3 }, weights: { number } = {}, {}, {}
 	for i = first, last do
 		table.insert(knots, c.knots[i])
 	end
@@ -271,9 +376,9 @@ function N.clamp(curve)
 	return N.curve(points, c.degree, { knots = knots, weights = weights })
 end
 
-function N.insertKnot(curve, t, count)
+function N.insertKnot(curve: Curve, t: number, count: number?): Curve
 	local c = checkedCurve(curve)
-	count = count or 1
+	local count: number = count or 1
 	U.integer(count, 0)
 	assert(count <= 17)
 	parameter(t)
@@ -283,7 +388,7 @@ function N.insertKnot(curve, t, count)
 	end
 	return c
 end
-function N.split(curve, t)
+function N.split(curve: Curve, t: number): (Curve, Curve)
 	local c = checkedCurve(curve)
 	parameter(t)
 	assert(t > 0 and t < 1, "Split strictly inside the domain")
@@ -295,7 +400,7 @@ function N.split(curve, t)
 		end
 	end
 	c = N.insertKnot(c, t, c.degree - multiplicity)
-	local k
+	local k: number?
 	for i, v in c.knots do
 		if v == u then
 			k = i
@@ -303,7 +408,8 @@ function N.split(curve, t)
 	end
 	assert(k, "Split knot missing")
 	local shared = k - c.degree
-	local ap, aw, bp, bw, ak, bk = {}, {}, {}, {}, {}, { u }
+	local ap: { Vector3 }, aw: { number }, bp: { Vector3 }, bw: { number }, ak: { number }, bk: { number } =
+		{}, {}, {}, {}, {}, { u }
 	for i = 1, shared do
 		table.insert(ap, c.points[i])
 		table.insert(aw, c.weights[i])
@@ -322,9 +428,9 @@ function N.split(curve, t)
 	return N.curve(ap, c.degree, { knots = ak, weights = aw, clamped = c.clamped }),
 		N.curve(bp, c.degree, { knots = bk, weights = bw, clamped = c.clamped })
 end
-function N.reverse(curve)
+function N.reverse(curve: Curve): Curve
 	local c = checkedCurve(curve)
-	local points, weights, knots = {}, {}, {}
+	local points: { Vector3 }, weights: { number }, knots: { number } = {}, {}, {}
 	for i = #c.points, 1, -1 do
 		table.insert(points, c.points[i])
 		table.insert(weights, c.weights[i])
@@ -336,7 +442,7 @@ function N.reverse(curve)
 	return N.curve(points, c.degree, { knots = knots, weights = weights, clamped = c.clamped })
 end
 
-local function surfaceDerivatives(s, u, v)
+local function surfaceDerivatives(s: Surface, u: number, v: number): SurfaceDerivatives
 	local a, ad, add = basis(#s.control, s.degreeU, s.knotsU, u)
 	local b, bd, bdd = basis(#s.control[1], s.degreeV, s.knotsV, v)
 	local h, hu, hv, huu, huv, hvv = zero(), zero(), zero(), zero(), zero(), zero()
@@ -369,11 +475,12 @@ local function surfaceDerivatives(s, u, v)
 	local cross = du:Cross(dv)
 	local regular = cross.Magnitude > 1e-12
 	local normal = regular and cross.Unit or nil
-	local mean, gaussian
+	local mean: number?, gaussian: number?
 	if regular then
 		local e, f, g = du:Dot(du), du:Dot(dv), dv:Dot(dv)
 		local determinant = cross:Dot(cross)
-		local l, m, n = normal:Dot(duu), normal:Dot(duv), normal:Dot(dvv)
+		local l, m, n =
+			(normal :: Vector3):Dot(duu), (normal :: Vector3):Dot(duv), (normal :: Vector3):Dot(dvv)
 		mean = (e * n - 2 * f * m + g * l) / (2 * determinant)
 		gaussian = (l * n - m * m) / determinant
 	end
@@ -390,14 +497,14 @@ local function surfaceDerivatives(s, u, v)
 		gaussianCurvature = gaussian,
 	}
 end
-function N.evaluateSurface(surface, u, v)
+function N.evaluateSurface(surface: Surface, u: number, v: number): Vector3
 	return surfaceDerivatives(checkedSurface(surface), u, v).position
 end
-function N.surfaceDerivatives(surface, u, v)
+function N.surfaceDerivatives(surface: Surface, u: number, v: number): SurfaceDerivatives
 	return surfaceDerivatives(checkedSurface(surface), u, v)
 end
 
-function N.compileSurface(surface)
+function N.compileSurface(surface: Surface): SurfaceEvaluator
 	local s = checkedSurface(surface)
 	return table.freeze({
 		evaluate = function(u, v)
@@ -409,11 +516,11 @@ function N.compileSurface(surface)
 	})
 end
 
-local function lines(s, axis)
+local function lines(s: Surface, axis: string): { Curve }
 	assert(axis == "U" or axis == "V", "Axis must be U or V")
-	local out = {}
+	local out: { Curve } = {}
 	for j = 1, (axis == "U" and #s.control[1] or #s.control) do
-		local p, w = {}, {}
+		local p: { Vector3 }, w: { number } = {}, {}
 		for i = 1, (axis == "U" and #s.control or #s.control[1]) do
 			p[i] = axis == "U" and s.control[i][j] or s.control[j][i]
 			w[i] = axis == "U" and s.weights[i][j] or s.weights[j][i]
@@ -426,8 +533,8 @@ local function lines(s, axis)
 	end
 	return out
 end
-local function fromLines(s, axis, curves)
-	local p, w = {}, {}
+local function fromLines(s: Surface, axis: string, curves: { Curve }): Surface
+	local p: { { Vector3 } }, w: { { number } } = {}, {}
 	if axis == "U" then
 		for i = 1, #curves[1].points do
 			p[i], w[i] = {}, {}
@@ -453,7 +560,7 @@ local function fromLines(s, axis, curves)
 		}
 	)
 end
-function N.clampSurface(surface, axis)
+function N.clampSurface(surface: Surface, axis: string): Surface
 	local s = checkedSurface(surface)
 	local curves = lines(s, axis)
 	for i, c in curves do
@@ -462,7 +569,7 @@ function N.clampSurface(surface, axis)
 	return fromLines(s, axis, curves)
 end
 
-function N.insertSurfaceKnot(surface, axis, t, count)
+function N.insertSurfaceKnot(surface: Surface, axis: string, t: number, count: number?): Surface
 	local s = checkedSurface(surface)
 	local curves = lines(s, axis)
 	for i, c in curves do
@@ -470,15 +577,15 @@ function N.insertSurfaceKnot(surface, axis, t, count)
 	end
 	return fromLines(s, axis, curves)
 end
-function N.splitSurface(surface, axis, t)
+function N.splitSurface(surface: Surface, axis: string, t: number): (Surface, Surface)
 	local s = checkedSurface(surface)
-	local a, b = {}, {}
+	local a: { Curve }, b: { Curve } = {}, {}
 	for i, c in lines(s, axis) do
 		a[i], b[i] = N.split(c, t)
 	end
 	return fromLines(s, axis, a), fromLines(s, axis, b)
 end
-function N.reverseSurface(surface, axis)
+function N.reverseSurface(surface: Surface, axis: string): Surface
 	local s = checkedSurface(surface)
 	local curves = lines(s, axis)
 	for i, c in curves do
@@ -486,12 +593,12 @@ function N.reverseSurface(surface, axis)
 	end
 	return fromLines(s, axis, curves)
 end
-function N.isoCurve(surface, axis, t)
+function N.isoCurve(surface: Surface, axis: string, t: number): Curve
 	-- Axis selects the varying coordinate; t fixes the other coordinate.
 	local s = checkedSurface(surface)
 	assert(axis == "U" or axis == "V", "Axis must be U or V")
 	local opposite = axis == "U" and "V" or "U"
-	local p, w = {}, {}
+	local p: { Vector3 }, w: { number } = {}, {}
 	local maximum = 0
 	for _, row in s.weights do
 		for _, weight in row do
@@ -515,10 +622,10 @@ function N.isoCurve(surface, axis, t)
 	})
 end
 -- Convert each knot span to a Bezier segment using homogeneous insertion.
-local function bezierPieces(curve)
+local function bezierPieces(curve: Curve): ({ BezierSegment }, { number })
 	local c = N.clamp(curve)
 	local a, b = c.knots[c.degree + 1], c.knots[#c.points + 1]
-	local breaks, multiplicities = { a }, {}
+	local breaks: { number }, multiplicities: { [number]: number } = { a }, {}
 	for _, knot in c.knots do
 		if knot > a and knot < b then
 			if not multiplicities[knot] then
@@ -536,9 +643,9 @@ local function bezierPieces(curve)
 			end
 		end
 	end
-	local segments = {}
+	local segments: { BezierSegment } = {}
 	for k = 1, #breaks - 1 do
-		local p, w = {}, {}
+		local p: { Vector3 }, w: { number } = {}, {}
 		for i = 1, c.degree + 1 do
 			local index = (k - 1) * c.degree + i
 			p[i], w[i] = c.points[index], c.weights[index]
@@ -552,19 +659,19 @@ local function bezierPieces(curve)
 	return segments, breaks
 end
 
-function N.bezierSegments(curve)
+function N.bezierSegments(curve: Curve): { BezierSegment }
 	local segments = bezierPieces(curve)
 	return segments
 end
 
-function N.bezierPatches(surface)
+function N.bezierPatches(surface: Surface): { BezierPatch }
 	local s = N.clampSurface(N.clampSurface(surface, "U"), "V")
-	local breaks = {}
+	local breaks: { [string]: { number } } = {}
 	for _, axis in { "U", "V" } do
 		local knots = axis == "U" and s.knotsU or s.knotsV
 		local degree = axis == "U" and s.degreeU or s.degreeV
 		local a, b = knots[1], knots[#knots]
-		local values, counts = { a }, {}
+		local values: { number }, counts: { [number]: number } = { a }, {}
 		for _, knot in knots do
 			if knot > a and knot < b then
 				if not counts[knot] then
@@ -592,10 +699,10 @@ function N.bezierPatches(surface)
 		end
 		breaks[axis] = values
 	end
-	local patches = {}
+	local patches: { BezierPatch } = {}
 	for i = 1, #breaks.U - 1 do
 		for j = 1, #breaks.V - 1 do
-			local points, weights = {}, {}
+			local points: { { Vector3 } }, weights: { { number } } = {}, {}
 			for a = 1, s.degreeU + 1 do
 				points[a], weights[a] = {}, {}
 				for b = 1, s.degreeV + 1 do
@@ -615,16 +722,16 @@ function N.bezierPatches(surface)
 	return patches
 end
 
-function N.elevateDegree(curve, count)
+function N.elevateDegree(curve: Curve, count: number?): Curve
 	local c = checkedCurve(curve)
-	count = count or 1
+	local count: number = count or 1
 	U.integer(count, 0)
 	assert(c.degree + count <= 17, "Elevated degree exceeds supported degree 17")
 	if count == 0 then
 		return c
 	end
 	local segments, breaks = bezierPieces(c)
-	local points, weights, knots = {}, {}, {}
+	local points: { Vector3 }, weights: { number }, knots: { number } = {}, {}, {}
 	for k, segment in segments do
 		local p, w, degree = segment.curve.points, segment.curve.weights, c.degree
 		for _ = 1, count do
@@ -652,7 +759,7 @@ function N.elevateDegree(curve, count)
 	return N.curve(points, degree, { knots = knots, weights = weights })
 end
 
-function N.elevateSurfaceDegree(surface, axis, count)
+function N.elevateSurfaceDegree(surface: Surface, axis: string, count: number?): Surface
 	local s = checkedSurface(surface)
 	local curves = lines(s, axis)
 	for i, c in curves do
@@ -663,7 +770,7 @@ end
 
 -- Small overdetermined four-RHS solve used to invert a knot insertion.
 -- Givens QR avoids squaring the condition number through normal equations.
-local function smallQR(matrix, rhs, columns)
+local function smallQR(matrix: { { number } }, rhs: { Homogeneous }, columns: number): { Homogeneous }?
 	for column = 1, columns do
 		for row = #matrix, column + 1, -1 do
 			local a, b = matrix[row - 1][column], matrix[row][column]
@@ -684,7 +791,7 @@ local function smallQR(matrix, rhs, columns)
 			return nil
 		end
 	end
-	local solution = {}
+	local solution: { Homogeneous } = {}
 	for i = columns, 1, -1 do
 		solution[i] = {}
 		for channel = 1, 4 do
@@ -698,8 +805,8 @@ local function smallQR(matrix, rhs, columns)
 	return solution
 end
 
-local function removalCandidate(c, knot)
-	local knots, occurrence = table.clone(c.knots), nil
+local function removalCandidate(c: Curve, knot: number): (Curve?, string?)
+	local knots, occurrence = table.clone(c.knots), nil :: number?
 	for i, v in knots do
 		if v == knot then
 			occurrence = i
@@ -709,7 +816,7 @@ local function removalCandidate(c, knot)
 		return nil, "Knot is not present"
 	end
 	table.remove(knots, occurrence)
-	local n, p, span, multiplicity = #c.points - 1, c.degree, nil, 0
+	local n, p, span, multiplicity = #c.points - 1, c.degree, nil :: number?, 0
 	if n <= p then
 		return nil, "Removal would leave too few controls"
 	end
@@ -723,7 +830,7 @@ local function removalCandidate(c, knot)
 	end
 	assert(span, "Interior knot span missing")
 	local first, last = span - p, span - multiplicity
-	local points, weights = {}, {}
+	local points: { Vector3 }, weights: { number } = {}, {}
 	for i = 1, first do
 		points[i], weights[i] = c.points[i], c.weights[i]
 	end
@@ -735,13 +842,13 @@ local function removalCandidate(c, knot)
 		maximum = math.max(maximum, w)
 	end
 	local origin = c.points[1]
-	local function homogeneous(point, weight)
+	local function homogeneous(point: Vector3, weight: number): Homogeneous
 		local w = weight / maximum
 		return { (point.X - origin.X) * w, (point.Y - origin.Y) * w, (point.Z - origin.Z) * w, w }
 	end
 	local unknowns = last - first - 1
 	if unknowns > 0 then
-		local matrix, rhs = {}, {}
+		local matrix: { { number } }, rhs: { Homogeneous } = {}, {}
 		for i = first + 1, last do
 			local row = i - first
 			matrix[row] = table.create(unknowns, 0)
@@ -780,7 +887,12 @@ end
 
 -- A conservative uniform rational error bound for two equal-basis control nets.
 -- Positive basis functions form a partition of unity, so this applies between samples.
-local function controlError(pointsA, weightsA, pointsB, weightsB)
+local function controlError(
+	pointsA: { Vector3 },
+	weightsA: { number },
+	pointsB: { Vector3 },
+	weightsB: { number }
+): number
 	local maximum, radius = 0, 0
 	for i, w in weightsA do
 		maximum = math.max(maximum, w, weightsB[i])
@@ -800,21 +912,27 @@ local function controlError(pointsA, weightsA, pointsB, weightsB)
 	return minimum > 0 and (deltaH + radius * deltaW) / minimum or math.huge
 end
 
-local function removalOptions(t, count, options)
+local function removalOptions(t: number, count: number?, options: RemovalOptions?): (number, number)
 	parameter(t)
 	assert(t > 0 and t < 1, "Remove knots strictly inside the domain")
-	count = count or 1
+	local count: number = count or 1
 	U.integer(count, 0)
-	local tolerance = (options or {}).tolerance or 1e-5
+	local tolerance = ((options or {}) :: RemovalOptions).tolerance or 1e-5
 	assert(U.finite(tolerance) and tolerance >= 0, "Finite nonnegative removal tolerance required")
 	return count, tolerance
 end
 
-function N.removeKnot(curve, t, count, options)
+function N.removeKnot(
+	curve: Curve,
+	t: number,
+	count: number?,
+	options: RemovalOptions?
+): (Curve, RemovalReport)
 	local c = checkedCurve(curve)
 	local requested, tolerance = removalOptions(t, count, options)
 	local knot = c.knots[c.degree + 1] + t * (c.knots[#c.points + 1] - c.knots[c.degree + 1])
-	local report = { requested = requested, removed = 0, errorBound = 0, tolerance = tolerance }
+	local report: RemovalReport =
+		{ requested = requested, removed = 0, errorBound = 0, tolerance = tolerance }
 	for _ = 1, requested do
 		if options and options.checkpoint then
 			options.checkpoint(report.removed / requested)
@@ -837,18 +955,26 @@ function N.removeKnot(curve, t, count, options)
 	return c, report
 end
 
-function N.removeSurfaceKnot(surface, axis, t, count, options)
+function N.removeSurfaceKnot(
+	surface: Surface,
+	axis: string,
+	t: number,
+	count: number?,
+	options: RemovalOptions?
+): (Surface, RemovalReport)
 	local s = checkedSurface(surface)
 	local requested, tolerance = removalOptions(t, count, options)
 	local initialLines = lines(s, axis)
 	local c = initialLines[1]
 	local knot = c.knots[c.degree + 1] + t * (c.knots[#c.points + 1] - c.knots[c.degree + 1])
-	local report = { requested = requested, removed = 0, errorBound = 0, tolerance = tolerance }
+	local report: RemovalReport =
+		{ requested = requested, removed = 0, errorBound = 0, tolerance = tolerance }
 	for _ = 1, requested do
 		if options and options.checkpoint then
 			options.checkpoint(report.removed / requested)
 		end
-		local candidates, a, aw, b, bw = {}, {}, {}, {}, {}
+		local candidates: { Curve }, a: { Vector3 }, aw: { number }, b: { Vector3 }, bw: { number } =
+			{}, {}, {}, {}, {}
 		for i, line in lines(s, axis) do
 			local candidate, reason = removalCandidate(line, knot)
 			if not candidate then
@@ -881,8 +1007,13 @@ function N.removeSurfaceKnot(surface, axis, t, count, options)
 	return s, report
 end
 
-function N.tessellate(surface, uSegments, vSegments, options)
-	options = options or {}
+function N.tessellate(
+	surface: Surface,
+	uSegments: number,
+	vSegments: number,
+	options: TessellateOptions?
+): (Types.Mesh, TessellateReport)
+	local options: TessellateOptions = options or {}
 	local s = checkedSurface(surface)
 	U.integer(uSegments, 1)
 	U.integer(vSegments, 1)
@@ -894,9 +1025,12 @@ function N.tessellate(surface, uSegments, vSegments, options)
 	assert(not options.closedV or vSegments >= 3, "Closed V direction needs at least three segments")
 	local tolerance = options.seamTolerance or 1e-6
 	assert(U.finite(tolerance) and tolerance >= 0, "Finite nonnegative seam tolerance required")
-	local poles = {}
+	local poles: { [string]: boolean } = {}
 	if options.collapsePoles then
-		for _, edge in { { "U0", "V", 0 }, { "U1", "V", 1 }, { "V0", "U", 0 }, { "V1", "U", 1 } } do
+		-- Rows mix names, axes and fractions: { pole, varying axis, fixed parameter }.
+		for _, edge in
+			{ { "U0", "V", 0 }, { "U1", "V", 1 }, { "V0", "U", 0 }, { "V1", "U", 1 } } :: { { any } }
+		do
 			local curve = N.isoCurve(s, edge[2], edge[3])
 			local collapsed = true
 			for _, p in curve.points do
@@ -908,7 +1042,8 @@ function N.tessellate(surface, uSegments, vSegments, options)
 			poles[edge[1]] = collapsed
 		end
 	end
-	local records, parents, rows = {}, {}, {}
+	local records: { TessellateRecord }, parents: { number }, rows: { [number]: { [number]: number } } =
+		{}, {}, {}
 	for i = 0, uSegments do
 		rows[i] = {}
 		for j = 0, vSegments do
@@ -939,20 +1074,20 @@ function N.tessellate(surface, uSegments, vSegments, options)
 			local id = #records + 1
 			rows[i][j] = id
 			parents[id] = id
-			records[id] = { position = p, normal = normal, uv = Vector2.new(u, v) }
+			records[id] = { position = p, normal = normal :: Vector3, uv = Vector2.new(u, v) }
 		end
 		if options.checkpoint then
 			options.checkpoint(i / uSegments)
 		end
 	end
-	local function root(id)
+	local function root(id: number): number
 		while parents[id] ~= id do
 			parents[id] = parents[parents[id]]
 			id = parents[id]
 		end
 		return id
 	end
-	local function merge(a, b)
+	local function merge(a: number, b: number)
 		assert(
 			(records[a].position - records[b].position).Magnitude <= tolerance,
 			"Requested seam or pole positions do not coincide"
@@ -986,26 +1121,29 @@ function N.tessellate(surface, uSegments, vSegments, options)
 			end
 		end
 	end
-	local mesh, vertexIds = Mesh.new(), {}
+	local mesh, vertexIds: { [number]: number } = Mesh.new(), {}
 	for id, r in records do
 		local representative = root(id)
 		if not vertexIds[representative] then
 			vertexIds[representative] = mesh:addVertex(records[representative].position)
 		end
 	end
-	local report = {
+	local report: TessellateReport = {
 		poles = poles,
 		collapsedQuads = 0,
 		closedU = options.closedU == true,
 		closedV = options.closedV == true,
 	}
-	local function mergedCorner(a, b)
-		local normal = a.normal + b.normal
-		return { uv = (a.uv + b.uv) * 0.5, normal = normal.Magnitude > 1e-12 and normal.Unit or a.normal }
+	local function mergedCorner(a: Types.Corner, b: Types.Corner): Types.Corner
+		local normal = (a.normal :: Vector3) + (b.normal :: Vector3)
+		return {
+			uv = ((a.uv :: Vector2) + (b.uv :: Vector2)) * 0.5,
+			normal = normal.Magnitude > 1e-12 and normal.Unit or a.normal,
+		}
 	end
 	for i = 0, uSegments - 1 do
 		for j = 0, vSegments - 1 do
-			local vertices, corners = {}, {}
+			local vertices: { number }, corners: { Types.Corner } = {}, {}
 			for _, id in { rows[i][j], rows[i + 1][j], rows[i + 1][j + 1], rows[i][j + 1] } do
 				local vertex = vertexIds[root(id)]
 				local r = records[id]

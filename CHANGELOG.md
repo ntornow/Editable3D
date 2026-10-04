@@ -1,6 +1,8 @@
 # Editable3D changes
 
-## Unreleased
+## 0.77.0 — 2026-10-04
+
+Every public namespace is now strict: 76 strict modules, up from 5 in 0.76.0 (55 namespaces were promoted after the first 21). Callers get typed signatures and exported types across the API, including GLTF scenes and nodes, NURBS/Cyclic/Bezier descriptors, Convex/Dynamics/RigidBody/Simulation/Fluid/Particles bodies, Rig/Timeline/Animation/Morph/Constraints, BSDF/Lighting/Integrator/PathTrace/Camera/Render, Boolean/Topology/MeshRepair/Remesh, SplineQuery/Surfaces/SurfaceTrim/SurfaceAdaptive/ArcLength, and Spatial/Connectivity/Planar/Predicates/Deform/ARAP/Laplacian/Registration/SurfaceDeform/Conformal/Fields/Geometry/Modifiers. Values that pass through to internal modules that are not strict yet remain open tables or `any`. `tools/type_erased_diff.py` lists the functions a typing change actually altered after erasing types.
 
 Runs the full regression suite in CI. `tools/headless.luau` mirrors the package tree under Lune with deterministic stand-ins for HttpService JSON, Random and the look-at CFrame constructors; `tools/run_headless.py` runs all 104 suites in parallel and enforces `tests/headless-baseline.json`. Every push now runs 88 suites (about 1,470 tests; previously 78 tests), and a sharded full-suite workflow runs all 1,784 weekly, on version tags and on demand; 68 tests that need native editable or asset APIs and one that relies on engine Vector3 key semantics are tracked explicitly and still run in the Studio release gate.
 

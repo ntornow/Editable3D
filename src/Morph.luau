@@ -1,10 +1,25 @@
+--!strict
 -- Sparse per-vertex and per-corner additive shape keys; weights need not sum to one.
 local U = require(script.Parent.Util)
 local Spatial = require(script.Parent.Spatial)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+type Corner = Types.Corner
+-- Per-corner attribute deltas keyed by attribute name; values are polymorphic
+-- (Vector3 for normal/tangent/color, Vector2 for uv/uv1, number for alpha).
+export type CornerDelta = { [string]: any }
+export type Shape = {
+	name: string?,
+	positions: { [number]: Vector3 },
+	corners: { [number]: { [number]: CornerDelta } },
+}
+export type EvaluateOptions = { recalculateNormals: boolean?, normalAngle: number? }
+export type TransferOptions = { maxDistance: number? }
+export type TransferReport = { maxSourceDistance: number }
 local M = {}
-local vectorFields = { normal = true, tangent = true, uv = true, uv1 = true }
-local function deltaCorner(a, b)
-	local d = {}
+local vectorFields: { [string]: boolean } = { normal = true, tangent = true, uv = true, uv1 = true }
+local function deltaCorner(a: Corner, b: Corner): CornerDelta
+	local d: CornerDelta = {}
 	for key in vectorFields do
 		assert((a[key] ~= nil) == (b[key] ~= nil), "Shape attribute layout differs")
 		if a[key] and b[key] then
@@ -20,12 +35,12 @@ local function deltaCorner(a, b)
 	end
 	return d
 end
-function M.fromMeshes(base, target, name)
+function M.fromMeshes(base: Mesh, target: Mesh, name: string?): Shape
 	assert(
 		U.count(base.vertices) == U.count(target.vertices) and U.count(base.faces) == U.count(target.faces),
 		"Shape topology differs"
 	)
-	local result = { name = name, positions = {}, corners = {} }
+	local result: Shape = { name = name, positions = {}, corners = {} }
 	for id, p in base.vertices do
 		result.positions[id] = assert(target.vertices[id], "Shape vertex missing") - p
 	end
@@ -41,9 +56,14 @@ function M.fromMeshes(base, target, name)
 	end
 	return result
 end
-function M.evaluate(base, targets, weights, options)
-	options = options or {}
-	weights = weights or {}
+function M.evaluate(
+	base: Mesh,
+	targets: { [number]: Shape },
+	weights: { [number]: number }?,
+	options: EvaluateOptions?
+): Mesh
+	local options: EvaluateOptions = options or {}
+	local weights: { [number]: number } = weights or {}
 	for index, weight in weights do
 		assert(type(index) == "number" and index % 1 == 0 and targets[index], "Morph weight has no target")
 		assert(type(weight) == "number" and U.finite(weight), "Nonfinite morph weight")
@@ -53,11 +73,11 @@ function M.evaluate(base, targets, weights, options)
 		local weight = weights[index] or 0
 		assert(type(weight) == "number" and U.finite(weight), "Nonfinite morph weight")
 		if weight ~= 0 then
-			for id, delta in target.positions or {} do
+			for id, delta in (target.positions or {}) :: { [number]: Vector3 } do
 				assert(out.vertices[id] and U.vector(delta), "Invalid morph vertex")
 				out.vertices[id] += delta * weight
 			end
-			for fid, corners in target.corners or {} do
+			for fid, corners in target.corners or {} :: { [number]: { [number]: CornerDelta } } do
 				local face = assert(out.faces[fid], "Invalid morph face")
 				for i, delta in corners do
 					local c = assert(face.corners[i], "Invalid morph corner")
@@ -125,10 +145,15 @@ function M.evaluate(base, targets, weights, options)
 	out.revision += 1
 	return out
 end
-function M.transfer(sourceBase, targetBase, target, options)
-	options = options or {}
+function M.transfer(
+	sourceBase: Mesh,
+	targetBase: Mesh,
+	target: Shape,
+	options: TransferOptions?
+): (Shape, TransferReport)
+	local options: TransferOptions = options or {}
 	local index = Spatial.new(sourceBase)
-	local result = { name = target.name, positions = {}, corners = {} }
+	local result: Shape = { name = target.name, positions = {}, corners = {} }
 	local maximum = 0
 	for id, p in targetBase.vertices do
 		local hit = index:closest(p)

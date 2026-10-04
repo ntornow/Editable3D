@@ -1,19 +1,51 @@
+--!strict
 -- Least-squares Cauchy-Riemann parameterization with fixed boundary pins.
 -- Original implementation of the LSCM formulation (Levy et al., SIGGRAPH 2002).
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Boundary vertex id to pinned UV.
+export type Pins = { [number]: Vector2 }
+export type Options = {
+	maxVertices: number?,
+	pins: Pins?,
+	tolerance: number?,
+	iterations: number?,
+	cancelled: (() -> boolean)?,
+	yieldEvery: number?,
+}
+export type DistortionReport = {
+	maxAngleRadians: number,
+	meanAngleRadians: number,
+	positiveTriangles: number,
+	negativeTriangles: number,
+	flippedTriangles: number,
+	degenerateTriangles: number,
+}
+export type Report = {
+	iterations: number,
+	residual: number,
+	relativeResidual: number,
+	converged: boolean,
+	pins: Pins,
+	conformalEnergy: number,
+	distortion: DistortionReport,
+}
+type Row = { indices: { number }, values: { number }, rhs: number }
 local C = {}
-local function dot(a, b)
+local function dot(a: { number }, b: { number }): number
 	local total = 0
 	for i, v in a do
 		total += v * b[i]
 	end
 	return total
 end
-local function disk(mesh)
+local function disk(mesh: Mesh): { [number]: boolean }
 	local report = mesh:validate()
 	assert(report.valid and report.windingErrors == 0, "LSCM requires a consistently oriented manifold chart")
 	local topology = mesh:topology()
-	local boundary, nextVertex, used = {}, {}, {}
+	local boundary: { [number]: boolean }, nextVertex: { [number]: number }, used: { [number]: boolean } =
+		{}, {}, {}
 	for _, f in mesh.faces do
 		for _, id in f.vertices do
 			used[id] = true
@@ -33,14 +65,14 @@ local function disk(mesh)
 	end
 	assert(U.count(boundary) >= 3, "Closed chart needs seams before LSCM")
 	local start = U.keys(boundary)[1]
-	local seen, id = {}, start
+	local seen: { [number]: boolean }, id: number = {}, start
 	repeat
 		assert(id and not seen[id], "Broken boundary")
 		seen[id] = true
 		id = nextVertex[id]
 	until id == start
 	assert(U.count(seen) == U.count(boundary), "LSCM expects one boundary loop")
-	local visited, queue = { [start] = true }, { start }
+	local visited: { [number]: boolean }, queue: { number } = { [start] = true }, { start }
 	local cursor = 1
 	while cursor <= #queue do
 		local v = queue[cursor]
@@ -59,10 +91,10 @@ local function disk(mesh)
 	)
 	return boundary
 end
-local function defaultPins(mesh, boundary)
+local function defaultPins(mesh: Mesh, boundary: { [number]: boolean }): Pins
 	local ids = U.keys(boundary)
 	local a = ids[1]
-	local function farthest(v)
+	local function farthest(v: number): (number, number)
 		local best, distance = v, -1
 		for _, other in ids do
 			local d = (mesh.vertices[v] - mesh.vertices[other]).Magnitude
@@ -77,14 +109,14 @@ local function defaultPins(mesh, boundary)
 	assert(distance > 1e-10, "Collapsed chart")
 	return { [a] = Vector2.zero, [b] = Vector2.new(distance, 0) }
 end
-function C.lscm(mesh, options)
-	options = options or {}
+function C.lscm(mesh: Mesh, options: Options?): (Mesh, Report)
+	local options: Options = options or {}
 	local boundary = disk(mesh)
 	local ids = U.keys(mesh.vertices)
 	assert(#ids <= (options.maxVertices or 20000), "LSCM vertex budget exceeded")
 	local pins = options.pins or defaultPins(mesh, boundary)
 	assert(U.count(pins) >= 2, "LSCM requires at least two pins")
-	local first, separated = nil, false
+	local first: Vector2?, separated = nil, false
 	for id, uv in pins do
 		assert(mesh.vertices[id] and boundary[id], "Pin must name a boundary vertex")
 		assert(typeof(uv) == "Vector2" and U.finite(uv.X) and U.finite(uv.Y), "Pin UV must be finite")
@@ -95,16 +127,16 @@ function C.lscm(mesh, options)
 		end
 	end
 	assert(separated, "Pins must not all coincide")
-	local index, unknown = {}, 0
+	local index: { [number]: number }, unknown = {}, 0
 	for _, id in ids do
 		if not pins[id] then
 			index[id] = unknown + 1
 			unknown += 2
 		end
 	end
-	local rows = {}
-	local function row(vertices, uc, vc)
-		local r = { indices = {}, values = {}, rhs = 0 }
+	local rows: { Row } = {}
+	local function row(vertices: { number }, uc: { number }, vc: { number })
+		local r: Row = { indices = {}, values = {}, rhs = 0 }
 		for i, id in vertices do
 			if pins[id] then
 				r.rhs -= uc[i] * pins[id].X + vc[i] * pins[id].Y
@@ -140,7 +172,7 @@ function C.lscm(mesh, options)
 			diagonal[id] += value * value
 		end
 	end
-	local function multiply(x)
+	local function multiply(x: { number }): { number }
 		local out = table.create(unknown, 0)
 		for _, r in rows do
 			local v = 0
@@ -153,7 +185,8 @@ function C.lscm(mesh, options)
 		end
 		return out
 	end
-	local x, r, z, p = table.create(unknown, 0), table.clone(rhs), {}, {}
+	local x: { number }, r: { number }, z: { number }, p: { number } =
+		table.create(unknown, 0), table.clone(rhs), {}, {}
 	for i = 1, unknown do
 		assert(diagonal[i] > 1e-20, "Singular LSCM chart")
 		z[i] = r[i] / diagonal[i]
@@ -205,7 +238,7 @@ function C.lscm(mesh, options)
 		end
 		rz = nextRz
 	end
-	local uv = {}
+	local uv: { [number]: Vector2 } = {}
 	for _, id in ids do
 		uv[id] = pins[id] or Vector2.new(x[index[id]], x[index[id] + 1])
 	end
@@ -235,12 +268,12 @@ function C.lscm(mesh, options)
 			distortion = distortion,
 		}
 end
-function C.distortion(mesh)
+function C.distortion(mesh: Mesh): DistortionReport
 	local maxAngle, sumAngle, count = 0, 0, 0
 	local positive, negative, degenerate = 0, 0, 0
 	for _, t in mesh:triangles() do
 		local f = mesh.faces[t.face]
-		local uv = {}
+		local uv: { Vector2 } = {}
 		for i = 1, 3 do
 			uv[i] = assert(f.corners[t.corners[i]].uv, "Missing UV")
 		end

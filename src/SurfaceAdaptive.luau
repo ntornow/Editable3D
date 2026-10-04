@@ -1,23 +1,55 @@
+--!strict
 -- Parameter-conforming adaptive rational patches with Bernstein control error bounds.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
 local Mesh = require(script.Parent.Mesh)
+local Types = require(script.Parent.Types)
 local A = {}
+
+-- Surface descriptors come from NURBS (typed separately); treated as opaque here.
+type Surface = any
+export type PatchBound = { errorBound: number, rationalDeviation: number, twist: number }
+export type MeshCheckpoint = (info: { [string]: any }) -> ()
+export type AdaptiveOptions = {
+	tolerance: number?,
+	maxLeaves: number?,
+	maxDepth: number?,
+	seamTolerance: number?,
+	closedU: boolean?,
+	closedV: boolean?,
+	collapsePoles: boolean?,
+	maxVertices: number?,
+	maxTriangles: number?,
+	material: number?,
+	checkpoint: MeshCheckpoint?,
+}
+export type AdaptiveReport = {
+	converged: boolean,
+	errorBound: number,
+	leaves: number,
+	refinements: number,
+	triangles: number,
+	poles: { [string]: boolean },
+	reason: string?,
+}
+type PatchLeaf = { surface: Surface, u0: number, u1: number, v0: number, v1: number }
+-- Line tables map a fixed parameter to a set of values, later replaced by sorted value lists.
+type Lines = { [number]: { [number]: any } }
 
 local patchBound = require(script.Parent.SurfacePatchBound)
 
-function A.bound(surface)
-	local patches = N.bezierPatches(surface)
+function A.bound(surface: Surface): PatchBound
+	local patches: { any } = N.bezierPatches(surface)
 	assert(#patches == 1, "Bound requires one Bezier patch; use NURBS.bezierPatches first")
 	local error, rational, twist = patchBound(patches[1].surface)
 	return { errorBound = error, rationalDeviation = rational, twist = twist }
 end
 
-local function addLine(lines, fixed, value)
+local function addLine(lines: Lines, fixed: number, value: number)
 	lines[fixed] = lines[fixed] or {}
 	lines[fixed][value] = true
 end
-local function range(values, lo, hi, reverse)
+local function range(values: { number }, lo: number, hi: number, reverse: boolean): { number }
 	local first, last = 1, #values + 1
 	while first < last do
 		local middle = math.floor((first + last) / 2)
@@ -27,14 +59,14 @@ local function range(values, lo, hi, reverse)
 			last = middle
 		end
 	end
-	local result = {}
+	local result: { number } = {}
 	local i = first
 	while i <= #values and values[i] <= hi do
 		table.insert(result, values[i])
 		i += 1
 	end
 	if reverse then
-		local flipped = {}
+		local flipped: { number } = {}
 		for j = #result, 1, -1 do
 			table.insert(flipped, result[j])
 		end
@@ -43,14 +75,14 @@ local function range(values, lo, hi, reverse)
 	return result
 end
 
-function A.tessellate(surface, options)
-	options = options or {}
+function A.tessellate(surface: Surface, options: AdaptiveOptions?): (Types.Mesh, AdaptiveReport)
+	local options: AdaptiveOptions = options or {}
 	local seamTolerance = options.seamTolerance or 1e-6
 	assert(U.finite(seamTolerance) and seamTolerance >= 0)
-	local prepared = N.compileSurface(surface)
-	local leaves, refinement = require(script.Parent.SurfacePartition)(surface, options)
+	local prepared: any = N.compileSurface(surface)
+	local leaves: { PatchLeaf }, refinement: any = require(script.Parent.SurfacePartition)(surface, options)
 	local maximum, converged, visited = refinement.errorBound, refinement.converged, refinement.refinements
-	local vertical, horizontal = {}, {}
+	local vertical: Lines, horizontal: Lines = {}, {}
 	for _, node in leaves do
 		for _, u in { node.u0, node.u1 } do
 			for _, v in { node.v0, node.v1 } do
@@ -59,8 +91,8 @@ function A.tessellate(surface, options)
 			end
 		end
 	end
-	local function synchronize(lines, a, b)
-		local both = {}
+	local function synchronize(lines: Lines, a: number, b: number)
+		local both: { [number]: boolean } = {}
 		for value in lines[a] do
 			both[value] = true
 		end
@@ -81,10 +113,13 @@ function A.tessellate(surface, options)
 	for key, values in horizontal do
 		horizontal[key] = U.keys(values)
 	end
-	local poles = {}
+	local poles: { [string]: boolean } = {}
 	if options.collapsePoles then
-		for _, edge in { { "U0", "V", 0 }, { "U1", "V", 1 }, { "V0", "U", 0 }, { "V1", "U", 1 } } do
-			local curve = N.isoCurve(surface, edge[2], edge[3])
+		-- Each edge is a mixed (name, axis, value) tuple.
+		for _, edge in
+			{ { "U0", "V", 0 }, { "U1", "V", 1 }, { "V0", "U", 0 }, { "V1", "U", 1 } } :: { { any } }
+		do
+			local curve: any = N.isoCurve(surface, edge[2], edge[3])
 			local collapse = true
 			for _, p in curve.points do
 				if (p - curve.points[1]).Magnitude > seamTolerance then
@@ -95,10 +130,10 @@ function A.tessellate(surface, options)
 			poles[edge[1]] = collapse
 		end
 	end
-	local mesh, vertices = Mesh.new(), {}
+	local mesh, vertices: { [string]: number } = Mesh.new(), {}
 	local triangleCount = 0
-	local function corner(u, v, evaluator, node)
-		local d =
+	local function corner(u: number, v: number, evaluator: any, node: PatchLeaf): (number, Types.Corner)
+		local d: any =
 			evaluator.derivatives((u - node.u0) / (node.u1 - node.u0), (v - node.v0) / (node.v1 - node.v0))
 		if options.closedU and (u == 0 or u == 1) then
 			assert(
@@ -137,7 +172,7 @@ function A.tessellate(surface, options)
 		if options.closedV and cv == 1 then
 			cv = 0
 		end
-		local key
+		local key: string
 		if u == 0 and poles.U0 then
 			key = "poleU0"
 		elseif u == 1 and poles.U1 then
@@ -163,7 +198,7 @@ function A.tessellate(surface, options)
 		return id, { uv = Vector2.new(u, v), normal = normal }
 	end
 	for index, node in leaves do
-		local boundary = {}
+		local boundary: { { number } } = {}
 		for _, u in range(horizontal[node.v0], node.u0, node.u1, false) do
 			table.insert(boundary, { u, node.v0 })
 		end
@@ -182,10 +217,10 @@ function A.tessellate(surface, options)
 				table.insert(boundary, { node.u0, v })
 			end
 		end
-		local evaluator = N.compileSurface(node.surface)
+		local evaluator: any = N.compileSurface(node.surface)
 		local center, centerCorner =
 			corner((node.u0 + node.u1) * 0.5, (node.v0 + node.v1) * 0.5, evaluator, node)
-		local ids, corners = {}, {}
+		local ids: { number }, corners: { Types.Corner } = {}, {}
 		for i, uv in boundary do
 			ids[i], corners[i] = corner(uv[1], uv[2], evaluator, node)
 		end

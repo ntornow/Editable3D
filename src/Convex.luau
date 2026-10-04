@@ -1,28 +1,99 @@
+--!strict
 -- Original convex-polyhedron construction, SAT manifolds, and volume integrals.
 -- No service access or native physics dependency. See DYNAMICS.md for conventions.
 local Mesh = require(script.Parent.Mesh)
 local Primitives = require(script.Parent.Primitives)
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Symmetric 3x3 tensor stored by its six unique components.
+export type Tensor = { xx: number, yy: number, zz: number, xy: number, xz: number, yz: number }
+export type ConvexFace = { vertices: { number }, normal: Vector3, plane: number }
+export type ConvexEdge = { a: number, b: number, direction: Vector3 }
+export type Shape = {
+	vertices: { Vector3 },
+	faces: { ConvexFace },
+	edges: { ConvexEdge },
+	tolerance: number,
+	lower: Vector3,
+	upper: Vector3,
+}
+export type MassProperties = {
+	volume: number,
+	mass: number,
+	center: Vector3,
+	inertia: Tensor,
+	inverseInertia: Tensor,
+}
+export type ShapeOptions = { tolerance: number? }
+export type HullOptions = { tolerance: number?, maxPoints: number?, maxFaces: number? }
+export type ContactOptions = {
+	tolerance: number?,
+	maxAxes: number?,
+	maxContacts: number?,
+	parallelTolerance: number?,
+}
+export type ContactPoint = {
+	position: Vector3,
+	pointA: Vector3,
+	pointB: Vector3,
+	penetration: number,
+	-- Written by Dynamics after solving.
+	normalImpulse: number?,
+	tangentImpulse: Vector2?,
+}
+export type SeparatedContact = {
+	overlap: false,
+	normal: Vector3,
+	separation: number,
+	axisCount: number,
+}
+export type OverlapContact = {
+	overlap: true,
+	normal: Vector3,
+	penetration: number,
+	contacts: { ContactPoint },
+	feature: string,
+	axisCount: number,
+	-- Set by Dynamics.collisions.
+	bodyA: number?,
+	bodyB: number?,
+}
+export type Contact = SeparatedContact | OverlapContact
+type PlaneGroup = { normal: Vector3, plane: number, ids: { [number]: boolean } }
+type HullPoint = { id: number, x: number, y: number }
+type HullFace = { [number]: number, normal: Vector3, plane: number }
+type WorldShape = {
+	vertices: { Vector3 },
+	faces: { { vertices: { number }, normal: Vector3 } },
+	edges: { ConvexEdge },
+}
+type Feature = { kind: string, owner: string?, directionA: Vector3?, directionB: Vector3? }
 local C = {}
-local function optionsFor(options, scale)
-	options = options or {}
+local function optionsFor(options: ShapeOptions?, scale: number?): number
+	local options: ShapeOptions = options or {}
 	local tolerance = options.tolerance or math.max(scale or 1, 1) * 1e-6
 	assert(tolerance > 0 and U.finite(tolerance), "Positive finite tolerance required")
 	return tolerance
 end
-local function polygonHull(ids, vertices, normal, epsilon)
+local function polygonHull(
+	ids: { number },
+	vertices: { Vector3 },
+	normal: Vector3,
+	epsilon: number
+): { number }
 	local x, y = U.frame(normal)
-	local points = {}
+	local points: { HullPoint } = {}
 	for _, id in ids do
 		table.insert(points, { id = id, x = vertices[id]:Dot(x), y = vertices[id]:Dot(y) })
 	end
 	table.sort(points, function(a, b)
 		return a.x == b.x and (a.y == b.y and a.id < b.id or a.y < b.y) or a.x < b.x
 	end)
-	local function turn(a, b, c)
+	local function turn(a: HullPoint, b: HullPoint, c: HullPoint): number
 		return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
 	end
-	local ring = {}
+	local ring: { HullPoint } = {}
 	for _, p in points do
 		while #ring >= 2 and turn(ring[#ring - 1], ring[#ring], p) <= epsilon * epsilon do
 			table.remove(ring)
@@ -38,14 +109,14 @@ local function polygonHull(ids, vertices, normal, epsilon)
 		table.insert(ring, p)
 	end
 	table.remove(ring)
-	local result = {}
+	local result: { number } = {}
 	for _, p in ring do
 		table.insert(result, p.id)
 	end
 	assert(#result >= 3, "Degenerate planar face")
 	return result
 end
-function C.fromMesh(mesh, options)
+function C.fromMesh(mesh: Mesh, options: ShapeOptions?): Shape
 	local report = mesh:validate()
 	assert(report.closed, "Convex shape requires a closed consistently wound manifold")
 	local lo, hi = mesh:bounds()
@@ -60,12 +131,12 @@ function C.fromMesh(mesh, options)
 		signedVolume += a:Dot(b:Cross(c)) / 6
 	end
 	local sign = signedVolume >= 0 and 1 or -1
-	local vertices, map = {}, {}
+	local vertices: { Vector3 }, map: { [number]: number } = {}, {}
 	for _, id in U.keys(mesh.vertices) do
 		map[id] = #vertices + 1
 		table.insert(vertices, mesh.vertices[id])
 	end
-	local groups = {}
+	local groups: { PlaneGroup } = {}
 	for _, fid in U.keys(mesh.faces) do
 		local f = mesh.faces[fid]
 		local normal = mesh:faceNormal(fid) * sign
@@ -76,7 +147,7 @@ function C.fromMesh(mesh, options)
 		for _, id in f.vertices do
 			assert(math.abs(normal:Dot(mesh.vertices[id]) - plane) <= epsilon, "Faces must be planar")
 		end
-		local group
+		local group: PlaneGroup?
 		for _, candidate in groups do
 			if normal:Dot(candidate.normal) > 1 - 1e-8 and math.abs(plane - candidate.plane) <= epsilon then
 				group = candidate
@@ -85,13 +156,13 @@ function C.fromMesh(mesh, options)
 		end
 		if not group then
 			group = { normal = normal, plane = plane, ids = {} }
-			table.insert(groups, group)
+			table.insert(groups, group :: any) -- analyzer keeps the `not group` nil refinement
 		end
 		for _, id in f.vertices do
-			group.ids[map[id]] = true
+			(group :: PlaneGroup).ids[map[id]] = true
 		end
 	end
-	local faces, edgeMap, edges = {}, {}, {}
+	local faces: { ConvexFace }, edgeMap: { [string]: boolean }, edges: { ConvexEdge } = {}, {}, {}
 	for _, g in groups do
 		local ids = polygonHull(U.keys(g.ids), vertices, g.normal, epsilon)
 		table.insert(faces, { vertices = ids, normal = g.normal, plane = g.plane })
@@ -104,16 +175,16 @@ function C.fromMesh(mesh, options)
 			end
 		end
 	end
-	local shape =
+	local shape: Shape =
 		{ vertices = vertices, faces = faces, edges = edges, tolerance = epsilon, lower = lo, upper = hi }
 	local volume = C.massProperties(shape, 1).volume
 	assert(volume > epsilon ^ 3, "Shape must enclose positive volume")
 	return shape
 end
-function C.box(size)
+function C.box(size: Vector3): Shape
 	return C.fromMesh(Primitives.box(size))
 end
-function C.toMesh(shape)
+function C.toMesh(shape: Shape): Mesh
 	local mesh = Mesh.new()
 	for _, p in shape.vertices do
 		mesh:addVertex(p)
@@ -125,8 +196,8 @@ function C.toMesh(shape)
 	return mesh:recalculateNormals(0)
 end
 -- Incremental 3D hull; interior and coplanar input points are discarded.
-function C.hull(points, options)
-	options = options or {}
+function C.hull(points: { Vector3 }, options: HullOptions?): Shape
+	local options: HullOptions = options or {}
 	assert(
 		#points >= 4 and #points <= (options.maxPoints or 512),
 		"Hull point budget exceeded or fewer than four points"
@@ -139,7 +210,7 @@ function C.hull(points, options)
 		hi = hi:Max(p)
 	end
 	local epsilon = optionsFor(options, (hi - lo).Magnitude)
-	local vertices = {}
+	local vertices: { Vector3 } = {}
 	for _, p in points do
 		local duplicate = false
 		for _, q in vertices do
@@ -153,7 +224,7 @@ function C.hull(points, options)
 		end
 	end
 	assert(#vertices >= 4, "Hull points are degenerate")
-	local a, b, c, d, best = 1, nil, nil, nil, 0
+	local a: number, b: number?, c: number?, d: number?, best: number = 1, nil, nil, nil, 0
 	for i = 2, #vertices do
 		local dist = (vertices[i] - vertices[a]).Magnitude
 		if dist > best then
@@ -180,7 +251,7 @@ function C.hull(points, options)
 	end
 	assert(d and best > epsilon, "Hull points are coplanar")
 	local inside = (vertices[a] + vertices[b] + vertices[c] + vertices[d]) / 4
-	local function face(i, j, k)
+	local function face(i: number, j: number, k: number): HullFace
 		local n = (vertices[j] - vertices[i]):Cross(vertices[k] - vertices[i])
 		assert(n.Magnitude > epsilon * epsilon, "Degenerate hull horizon")
 		if n:Dot(inside - vertices[i]) > 0 then
@@ -195,7 +266,7 @@ function C.hull(points, options)
 		if initial[id] then
 			continue
 		end
-		local horizon, remaining, visible = {}, {}, false
+		local horizon: { [string]: { number } }, remaining: { HullFace }, visible = {}, {}, false
 		for _, f in faces do
 			if f.normal:Dot(p) - f.plane > epsilon then
 				visible = true
@@ -231,21 +302,21 @@ function C.hull(points, options)
 	mesh:removeUnused()
 	return C.fromMesh(mesh, { tolerance = epsilon })
 end
-function C.support(shape, direction, frame)
+function C.support(shape: Shape, direction: Vector3, frame: CFrame?): (Vector3, number)
 	assert(U.vector(direction) and direction.Magnitude > 0)
-	frame = frame or CFrame.identity
+	local frame: CFrame = frame or CFrame.identity
 	local localDirection = frame:VectorToObjectSpace(direction)
-	local best, id = -math.huge, nil
+	local best, id: number? = -math.huge, nil
 	for i, p in shape.vertices do
 		local projection = p:Dot(localDirection)
 		if projection > best then
 			best, id = projection, i
 		end
 	end
-	return frame:PointToWorldSpace(shape.vertices[id]), id
+	return frame:PointToWorldSpace(shape.vertices[id :: number]), id :: number
 end
-function C.bounds(shape, frame)
-	frame = frame or CFrame.identity
+function C.bounds(shape: Shape, frame: CFrame?): (Vector3, Vector3)
+	local frame: CFrame = frame or CFrame.identity
 	local lo, hi =
 		Vector3.new(math.huge, math.huge, math.huge), Vector3.new(-math.huge, -math.huge, -math.huge)
 	for _, p in shape.vertices do
@@ -255,16 +326,16 @@ function C.bounds(shape, frame)
 	end
 	return lo, hi
 end
-function C.tensorMultiply(t, v)
+function C.tensorMultiply(t: Tensor, v: Vector3): Vector3
 	return Vector3.new(
 		t.xx * v.X + t.xy * v.Y + t.xz * v.Z,
 		t.xy * v.X + t.yy * v.Y + t.yz * v.Z,
 		t.xz * v.X + t.yz * v.Y + t.zz * v.Z
 	)
 end
-function C.tensorInverse(t)
+function C.tensorInverse(t: Tensor): Tensor
 	for _, key in { "xx", "yy", "zz", "xy", "xz", "yz" } do
-		assert(U.finite(t[key]), "Inertia must be finite")
+		assert(U.finite((t :: any)[key]), "Inertia must be finite")
 	end
 	assert(t.xx > 0 and t.xx * t.yy - t.xy * t.xy > 0, "Inertia tensor is not positive definite")
 	local a, b, c = t.yy * t.zz - t.yz * t.yz, t.xz * t.yz - t.xy * t.zz, t.xy * t.yz - t.xz * t.yy
@@ -279,10 +350,10 @@ function C.tensorInverse(t)
 		zz = (t.xx * t.yy - t.xy * t.xy) / determinant,
 	}
 end
-function C.massProperties(shape, mass)
+function C.massProperties(shape: Shape, mass: number): MassProperties
 	assert(mass >= 0 and U.finite(mass), "Finite nonnegative mass required")
 	local volume, first = 0, Vector3.zero
-	local q = { xx = 0, yy = 0, zz = 0, xy = 0, xz = 0, yz = 0 }
+	local q: { [string]: number } = { xx = 0, yy = 0, zz = 0, xy = 0, xz = 0, yz = 0 }
 	-- Shift the tetrahedron origin near the shape to reduce cancellation after authoring translations.
 	local origin = (shape.lower + shape.upper) * 0.5
 	for _, f in shape.faces do
@@ -303,14 +374,16 @@ function C.massProperties(shape, mass)
 				}
 			do
 				local x, y = pair[2], pair[3]
-				q[pair[1]] += v / 20 * ((a[x] + b[x] + c[x]) * (a[y] + b[y] + c[y]) + a[x] * a[y] + b[x] * b[y] + c[x] * c[y])
+				-- Vector3 components are read by axis name.
+				local av: any, bv: any, cv: any = a, b, c
+				q[pair[1]] += v / 20 * ((av[x] + bv[x] + cv[x]) * (av[y] + bv[y] + cv[y]) + av[x] * av[y] + bv[x] * bv[y] + cv[x] * cv[y])
 			end
 		end
 	end
 	assert(volume > 0, "Positive volume required")
 	local center = first / volume
 	local density = mass / volume
-	local t = {
+	local t: Tensor = {
 		xx = (q.yy + q.zz) * density - mass * (center.Y ^ 2 + center.Z ^ 2),
 		yy = (q.xx + q.zz) * density - mass * (center.X ^ 2 + center.Z ^ 2),
 		zz = (q.xx + q.yy) * density - mass * (center.X ^ 2 + center.Y ^ 2),
@@ -326,8 +399,8 @@ function C.massProperties(shape, mass)
 		inverseInertia = mass > 0 and C.tensorInverse(t) or table.clone(t),
 	}
 end
-local function transformed(shape, frame)
-	local result = { vertices = {}, faces = {}, edges = {} }
+local function transformed(shape: Shape, frame: CFrame): WorldShape
+	local result: WorldShape = { vertices = {}, faces = {}, edges = {} }
 	for i, p in shape.vertices do
 		result.vertices[i] = frame:PointToWorldSpace(p)
 	end
@@ -339,7 +412,7 @@ local function transformed(shape, frame)
 	end
 	return result
 end
-local function interval(vertices, axis)
+local function interval(vertices: { Vector3 }, axis: Vector3): (number, number)
 	local lo, hi = math.huge, -math.huge
 	for _, p in vertices do
 		local v = p:Dot(axis)
@@ -347,7 +420,7 @@ local function interval(vertices, axis)
 	end
 	return lo, hi
 end
-local function closestSegments(a, b, c, d)
+local function closestSegments(a: Vector3, b: Vector3, c: Vector3, d: Vector3): (Vector3, Vector3)
 	local u, v, w = b - a, d - c, a - c
 	local aa, bb, cc, dd, ee = u:Dot(u), u:Dot(v), v:Dot(v), u:Dot(w), v:Dot(w)
 	local determinant = aa * cc - bb * bb
@@ -362,8 +435,8 @@ local function closestSegments(a, b, c, d)
 	end
 	return a + u * s, c + v * t
 end
-local function clipped(polygon, origin, normal, epsilon)
-	local out = {}
+local function clipped(polygon: { Vector3 }, origin: Vector3, normal: Vector3, epsilon: number): { Vector3 }
+	local out: { Vector3 } = {}
 	if #polygon == 0 then
 		return out
 	end
@@ -382,13 +455,13 @@ local function clipped(polygon, origin, normal, epsilon)
 	end
 	return out
 end
-local function reduceContacts(contacts, maximum)
+local function reduceContacts(contacts: { ContactPoint }, maximum: number): { ContactPoint }
 	if #contacts <= maximum then
 		return contacts
 	end
-	local selected, used = {}, {}
+	local selected: { ContactPoint }, used: { [number]: boolean } = {}, {}
 	for step = 1, maximum do
-		local best, score = nil, -math.huge
+		local best: number?, score = nil, -math.huge
 		for i, contact in contacts do
 			if used[i] then
 				continue
@@ -404,13 +477,19 @@ local function reduceContacts(contacts, maximum)
 				best, score = i, value
 			end
 		end
-		used[best] = true
-		table.insert(selected, contacts[best])
+		used[best :: number] = true
+		table.insert(selected, contacts[best :: number])
 	end
 	return selected
 end
-function C.contact(shapeA, frameA, shapeB, frameB, options)
-	options = options or {}
+function C.contact(
+	shapeA: Shape,
+	frameA: CFrame?,
+	shapeB: Shape,
+	frameB: CFrame?,
+	options: ContactOptions?
+): Contact
+	local options: ContactOptions = options or {}
 	local epsilon = options.tolerance or math.max(shapeA.tolerance, shapeB.tolerance)
 	assert(epsilon > 0 and U.finite(epsilon))
 	local maxAxes = U.integer(options.maxAxes or 100000, 1)
@@ -422,9 +501,11 @@ function C.contact(shapeA, frameA, shapeB, frameB, options)
 	)
 	local a, b =
 		transformed(shapeA, frameA or CFrame.identity), transformed(shapeB, frameB or CFrame.identity)
-	local depth, normal, feature, count = math.huge, nil, nil, 0
-	local separated
-	local function axisTest(axis, info)
+	-- normal and feature are always set by the first passing axis test before use.
+	local depth: number, normal: Vector3, feature: Feature, count: number =
+		math.huge, nil :: any, nil :: any, 0
+	local separated: SeparatedContact = nil :: any
+	local function axisTest(axis: Vector3, info: Feature): boolean
 		if axis.Magnitude < parallelTolerance then
 			return true
 		end
@@ -459,8 +540,8 @@ function C.contact(shapeA, frameA, shapeB, frameB, options)
 			return separated
 		end
 	end
-	local function directions(edges)
-		local out = {}
+	local function directions(edges: { ConvexEdge }): { Vector3 }
+		local out: { Vector3 } = {}
 		for _, edge in edges do
 			local duplicate = false
 			for _, d in out do
@@ -482,8 +563,8 @@ function C.contact(shapeA, frameA, shapeB, frameB, options)
 			end
 		end
 	end
-	local contacts = {}
-	local function add(pa, pb, penetration)
+	local contacts: { ContactPoint } = {}
+	local function add(pa: Vector3, pb: Vector3, penetration: number)
 		local p = (pa + pb) * 0.5
 		for _, existing in contacts do
 			if (p - existing.position).Magnitude <= epsilon * 2 then
@@ -496,8 +577,8 @@ function C.contact(shapeA, frameA, shapeB, frameB, options)
 		)
 	end
 	if feature.kind == "edge" then
-		local function supportEdge(shape, direction, axis)
-			local chosen, best = nil, -math.huge
+		local function supportEdge(shape: WorldShape, direction: Vector3, axis: Vector3): ConvexEdge
+			local chosen: ConvexEdge?, best = nil, -math.huge
 			for _, e in shape.edges do
 				if e.direction:Cross(direction).Magnitude < 1e-5 then
 					local score = axis:Dot(shape.vertices[e.a] + shape.vertices[e.b])
@@ -506,9 +587,11 @@ function C.contact(shapeA, frameA, shapeB, frameB, options)
 					end
 				end
 			end
-			return chosen
+			return chosen :: ConvexEdge
 		end
-		local ea, eb = supportEdge(a, feature.directionA, normal), supportEdge(b, feature.directionB, -normal)
+		local ea, eb =
+			supportEdge(a, feature.directionA :: Vector3, normal),
+			supportEdge(b, feature.directionB :: Vector3, -normal)
 		local pa, pb = closestSegments(a.vertices[ea.a], a.vertices[ea.b], b.vertices[eb.a], b.vertices[eb.b])
 		add(pa, pb, depth)
 	else
@@ -516,7 +599,8 @@ function C.contact(shapeA, frameA, shapeB, frameB, options)
 		if feature.owner == "b" then
 			ref, inc, outward = b, a, -normal
 		end
-		local reference, incident, best = nil, nil, -math.huge
+		local reference: { vertices: { number }, normal: Vector3 }, incident: { vertices: { number }, normal: Vector3 }, best =
+			nil :: any, nil :: any, -math.huge
 		for _, f in ref.faces do
 			local score = f.normal:Dot(outward)
 			if score > best then
@@ -530,7 +614,7 @@ function C.contact(shapeA, frameA, shapeB, frameB, options)
 				incident, best = f, score
 			end
 		end
-		local polygon = {}
+		local polygon: { Vector3 } = {}
 		for _, id in incident.vertices do
 			table.insert(polygon, inc.vertices[id])
 		end

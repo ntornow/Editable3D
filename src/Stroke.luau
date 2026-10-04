@@ -1,20 +1,55 @@
+--!strict
 -- Continuous polyline distance fields for masked surface strokes and cloth folds.
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+type Segment = { a: Vector3, b: Vector3, delta: Vector3, length: number, arc: number, index: number }
+type Node = { lo: Vector3, hi: Vector3, segments: { Segment }?, left: Node?, right: Node? }
+export type Hit = {
+	position: Vector3,
+	distance: number,
+	arc: number,
+	fraction: number,
+	tangent: Vector3,
+	segment: number,
+	t: number,
+	signedDistance: number?,
+}
+-- Custom profiles receive the normalized distance and the closest-point hit.
+export type ProfileFunction = (number, Hit) -> number
+export type FieldOptions = {
+	radius: number?,
+	width: ((fraction: number) -> number)?,
+	amplitude: ((fraction: number) -> number)?,
+	fadeStart: number?,
+	fadeEnd: number?,
+	signedProfile: boolean?,
+	profile: (string | ProfileFunction)?,
+}
+export type SculptOptions = FieldOptions & {
+	height: number?,
+	direction: (Vector3 | (position: Vector3, id: number) -> Vector3)?,
+	mask: { [number]: number }?,
+	normalAngle: number?,
+}
+export type SculptReport = { affectedVertices: number, maxDisplacement: number }
+type PathData = { segments: { Segment }, length: number, closed: boolean, tree: Node }
 local S = {}
 local Path = {}
 Path.__index = Path
-local function distanceBox(p, lo, hi)
+export type Path = typeof(setmetatable({} :: PathData, Path))
+local function distanceBox(p: Vector3, lo: Vector3, hi: Vector3): number
 	local q =
 		Vector3.new(math.clamp(p.X, lo.X, hi.X), math.clamp(p.Y, lo.Y, hi.Y), math.clamp(p.Z, lo.Z, hi.Z))
 	return (p - q):Dot(p - q)
 end
-local function build(segments)
+local function build(segments: { Segment }): Node
 	local lo, hi = Vector3.one * math.huge, Vector3.one * -math.huge
 	for _, s in segments do
 		lo = lo:Min(s.a):Min(s.b)
 		hi = hi:Max(s.a):Max(s.b)
 	end
-	local node = { lo = lo, hi = hi }
+	local node: Node = { lo = lo, hi = hi }
 	if #segments <= 8 then
 		node.segments = segments
 		return node
@@ -22,7 +57,7 @@ local function build(segments)
 	local span = hi - lo
 	local axis = span.X >= span.Y and span.X >= span.Z and "X" or (span.Y >= span.Z and "Y" or "Z")
 	table.sort(segments, function(a, b)
-		return a.a[axis] + a.b[axis] < b.a[axis] + b.b[axis]
+		return (a.a :: any)[axis] + (a.b :: any)[axis] < (b.a :: any)[axis] + (b.b :: any)[axis]
 	end)
 	local a, b = {}, {}
 	for i, s in segments do
@@ -31,7 +66,7 @@ local function build(segments)
 	node.left, node.right = build(a), build(b)
 	return node
 end
-function S.path(points, closed)
+function S.path(points: { Vector3 }, closed: boolean?): Path
 	assert(#points >= 2, "Stroke path needs at least two points")
 	points = table.clone(points)
 	for _, p in points do
@@ -40,7 +75,7 @@ function S.path(points, closed)
 	if closed and (points[1] - points[#points]).Magnitude > 1e-10 then
 		table.insert(points, points[1])
 	end
-	local segments, length = {}, 0
+	local segments: { Segment }, length = {}, 0
 	for i = 1, #points - 1 do
 		local delta = points[i + 1] - points[i]
 		local size = delta.Magnitude
@@ -54,18 +89,18 @@ function S.path(points, closed)
 	end
 	assert(#segments > 0, "Stroke path has zero length")
 	return setmetatable(
-		{ segments = segments, length = length, closed = closed == true, tree = build(table.clone(segments)) },
+		{ segments = segments, length = length, closed = closed == true, tree = build(table.clone(segments)) } :: PathData,
 		Path
 	)
 end
-function Path:closest(point, normal, maxDistance)
+function Path.closest(self: Path, point: Vector3, normal: Vector3?, maxDistance: number?): Hit?
 	assert(U.vector(point), "Invalid query position")
 	if normal then
 		assert(U.vector(normal) and normal.Magnitude > 1e-10, "Invalid surface normal")
 	end
 	assert(maxDistance == nil or (U.finite(maxDistance) and maxDistance >= 0), "Invalid maximum distance")
-	local best, bestSquared = nil, maxDistance and maxDistance ^ 2 or math.huge
-	local function visit(node)
+	local best: Hit?, bestSquared = nil, maxDistance and maxDistance ^ 2 or math.huge
+	local function visit(node: Node)
 		if distanceBox(point, node.lo, node.hi) > bestSquared then
 			return
 		end
@@ -94,7 +129,7 @@ function Path:closest(point, normal, maxDistance)
 				end
 			end
 		else
-			local a, b = node.left, node.right
+			local a, b = node.left :: Node, node.right :: Node
 			if distanceBox(point, a.lo, a.hi) > distanceBox(point, b.lo, b.hi) then
 				a, b = b, a
 			end
@@ -105,7 +140,7 @@ function Path:closest(point, normal, maxDistance)
 	visit(self.tree)
 	return best
 end
-function Path:sample(arc)
+function Path.sample(self: Path, arc: number): (Vector3, Vector3)
 	assert(U.finite(arc), "Invalid arc length")
 	arc = self.closed and arc % self.length or math.clamp(arc, 0, self.length)
 	local lo, hi = 1, #self.segments
@@ -120,7 +155,7 @@ function Path:sample(arc)
 	local s = self.segments[lo]
 	return s.a + s.delta * math.clamp((arc - s.arc) / s.length, 0, 1), s.delta / s.length
 end
-function S.profile(distance, radius, kind)
+function S.profile(distance: number, radius: number, kind: string?): number
 	assert(U.finite(radius) and radius > 0 and U.finite(distance), "Invalid stroke distance/radius")
 	local x = distance / radius
 	if math.abs(x) >= 1 then
@@ -137,8 +172,8 @@ function S.profile(distance, radius, kind)
 	end
 	error("Unknown stroke profile")
 end
-function S.field(path, point, normal, options)
-	options = options or {}
+function S.field(path: Path, point: Vector3, normal: Vector3?, options: FieldOptions?): (number, Hit?)
+	local options: FieldOptions = options or {}
 	local radius = options.radius or 1
 	assert(type(radius) == "number" and U.finite(radius) and radius > 0, "Positive radius required")
 	local hit = path:closest(point, normal, radius)
@@ -161,7 +196,7 @@ function S.field(path, point, normal, options)
 	assert(distance ~= nil, "Signed profile needs a surface normal")
 	local profile = options.profile or "ridge"
 	local value = type(profile) == "function" and profile(distance / (radius * width), hit)
-		or S.profile(distance, radius * width, profile)
+		or S.profile(distance, radius * width, profile :: string)
 	assert(type(value) == "number" and U.finite(value), "Nonfinite stroke profile")
 	-- Compact radial support also bounds custom signed profiles off the surface.
 	if hit.distance >= radius * width then
@@ -169,11 +204,11 @@ function S.field(path, point, normal, options)
 	end
 	return value * fade * amplitude, hit
 end
-function S.sculpt(mesh, path, options)
-	options = options or {}
+function S.sculpt(mesh: Mesh, path: Path, options: SculptOptions?): (Mesh, SculptReport)
+	local options: SculptOptions = options or {}
 	local height = options.height or 0.1
 	assert(type(height) == "number" and U.finite(height), "Finite stroke height required")
-	local normals = {}
+	local normals: { [number]: Vector3 } = {}
 	if not options.direction then
 		for fid, f in mesh.faces do
 			local n, area = mesh:faceNormal(fid)
@@ -183,12 +218,14 @@ function S.sculpt(mesh, path, options)
 		end
 	end
 	local out = mesh:clone()
-	local report = { affectedVertices = 0, maxDisplacement = 0 }
+	local report: SculptReport = { affectedVertices = 0, maxDisplacement = 0 }
 	for id, p in mesh.vertices do
 		local mask = U.weight(options.mask, id)
 		if mask > 0 then
 			local direction = options.direction
-			local n = type(direction) == "function" and direction(p, id) or direction or normals[id]
+			local n: Vector3 = type(direction) == "function" and direction(p, id)
+				or direction :: Vector3?
+				or normals[id]
 			assert(U.vector(n) and n.Magnitude > 1e-12, "Stroke needs a nonzero displacement direction")
 			n = n.Unit
 			local value = S.field(path, p, n, options) * height * mask

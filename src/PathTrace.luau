@@ -1,18 +1,45 @@
+--!strict
 -- CPU Monte Carlo path tracer for diffuse, ideal metal and dielectric materials.
 -- No GPU, denoiser or participating media. Linear radiance output, deterministic seed.
 local Spatial = require(script.Parent.Spatial)
 local Texture = require(script.Parent.Texture)
 local Camera = require(script.Parent.Camera)
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+export type PathMaterial = {
+	kind: string?,
+	-- Color3, or a function of the (Spatial) hit returning Color3.
+	albedo: any,
+	emission: Color3?,
+	ior: number?,
+}
+export type PathTraceOptions = {
+	samples: number?,
+	bounces: number?,
+	seed: number?,
+	-- Color3, or a function of the ray direction returning Color3.
+	environment: any,
+	bias: number?,
+	cancelled: (() -> boolean)?,
+	progress: ((number) -> ())?,
+	yieldEvery: number?,
+}
+export type PathTraceReport =
+	{ cancelled: boolean, completedRows: number?, samples: number?, bounces: number? }
 local P = {}
-local function mul(a, b)
+local function mul(a: Vector3, b: Vector3): Vector3
 	return Vector3.new(a.X * b.X, a.Y * b.Y, a.Z * b.Z)
 end
-local function color(c)
+local function color(c: Color3): Vector3
 	return Vector3.new(c.R, c.G, c.B)
 end
-function P.render(mesh, camera, materials, options)
-	options = options or {}
+function P.render(
+	mesh: Types.Mesh,
+	camera: Types.Camera,
+	materials: { [number]: PathMaterial },
+	options: PathTraceOptions?
+): (Types.Texture?, PathTraceReport)
+	local options: PathTraceOptions = options or {}
 	local samples = options.samples or 16
 	local bounces = options.bounces or 8
 	U.integer(samples, 1)
@@ -20,7 +47,7 @@ function P.render(mesh, camera, materials, options)
 	local index = Spatial.new(mesh)
 	local random = Random.new(options.seed or 0)
 	local image = Texture.new(camera.width, camera.height)
-	local function radiance(origin, direction)
+	local function radiance(origin: Vector3, direction: Vector3): Vector3
 		local throughput = Vector3.one
 		local light = Vector3.zero
 		for bounce = 1, bounces do
@@ -33,7 +60,7 @@ function P.render(mesh, camera, materials, options)
 				light += mul(throughput, color(c))
 				break
 			end
-			local material = materials[mesh.faces[hit.face].material]
+			local material: PathMaterial = materials[mesh.faces[hit.face].material]
 				or { kind = "diffuse", albedo = Color3.new(0.8, 0.8, 0.8) }
 			local emitted = material.emission or Color3.new()
 			light += mul(throughput, color(emitted))

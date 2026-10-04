@@ -1,3 +1,4 @@
+--!strict
 -- CPU reference renderer with BSDF/light multiple importance sampling.
 -- Returns unclamped linear radiance, not Roblox viewport output.
 local B = require(script.Parent.BSDF)
@@ -6,14 +7,40 @@ local Spatial = require(script.Parent.Spatial)
 local Camera = require(script.Parent.Camera)
 local Texture = require(script.Parent.Texture)
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+export type IntegratorOptions = Lighting.LightingOptions & {
+	seed: number?,
+	bounces: number?,
+	bias: number?,
+	directLighting: boolean?,
+	rouletteDepth: number?,
+	samples: number?,
+	yieldEvery: number?,
+	cancelled: (() -> boolean)?,
+	progress: ((number) -> ())?,
+}
+export type Scene = {
+	mesh: Types.Mesh,
+	index: Spatial.Index,
+	materials: { [number]: B.MaterialInput },
+	lights: Lighting.LightSet,
+}
+export type TraceStats = { rays: number, shadowRays: number, bounces: number }
+export type RenderReport = {
+	samples: number,
+	completedRows: number,
+	rays: number,
+	shadowRays: number,
+	cancelled: boolean,
+}
 local I = {}
-local function multiply(a, b)
+local function multiply(a: Vector3, b: Vector3): Vector3
 	return Vector3.new(a.X * b.X, a.Y * b.Y, a.Z * b.Z)
 end
-local function maximum(v)
+local function maximum(v: Vector3): number
 	return math.max(v.X, v.Y, v.Z)
 end
-function I.powerHeuristic(a, b)
+function I.powerHeuristic(a: number, b: number): number
 	assert(a >= 0 and b >= 0)
 	if a == 0 then
 		return 0
@@ -21,9 +48,13 @@ function I.powerHeuristic(a, b)
 	local ratio = b / a
 	return 1 / (1 + ratio * ratio)
 end
-function I.prepare(mesh, materials, options)
+function I.prepare(
+	mesh: Types.Mesh,
+	materials: { [number]: B.MaterialInput }?,
+	options: IntegratorOptions?
+): Scene
 	local index = Spatial.new(mesh)
-	materials = materials or { B.diffuse() }
+	local materials: { [number]: B.MaterialInput } = materials or { B.diffuse() }
 	return {
 		mesh = index.mesh,
 		index = index,
@@ -31,23 +62,29 @@ function I.prepare(mesh, materials, options)
 		lights = Lighting.new(index.mesh, materials, options),
 	}
 end
-function I.trace(scene, origin, direction, options, random)
-	options = options or {}
-	random = random or Random.new(options.seed or 0)
+function I.trace(
+	scene: Scene,
+	origin: Vector3,
+	direction: Vector3,
+	options: IntegratorOptions?,
+	random: Random?
+): (Vector3, TraceStats)
+	local options: IntegratorOptions = options or {}
+	local random: Random = random or Random.new(options.seed or 0)
 	local bounces, bias = options.bounces or 8, options.bias or 0.0001
 	U.integer(bounces, 0)
 	assert(U.vector(origin) and U.vector(direction) and direction.Magnitude > 0)
 	assert(bias > 0 and U.finite(bias))
 	direction = direction.Unit
 	local radiance, throughput = Vector3.zero, Vector3.one
-	local previousPosition, previousPDF, previousDelta = nil, 0, true
-	local stats = { rays = 0, shadowRays = 0, bounces = 0 }
+	local previousPosition: Vector3?, previousPDF, previousDelta = nil, 0, true
+	local stats: TraceStats = { rays = 0, shadowRays = 0, bounces = 0 }
 	local direct = options.directLighting ~= false
 	for depth = 0, bounces do
 		stats.rays += 1
 		local hit = scene.index:raycast(origin, direction)
-		local emitted
-		local surface, material, normal, entering
+		local emitted: Vector3
+		local surface: Lighting.SurfaceContext, material: B.Resolved, normal: Vector3, entering: boolean
 		if hit then
 			surface = Lighting.surface(scene.mesh, hit)
 			entering = direction:Dot(hit.normal) < 0
@@ -59,7 +96,8 @@ function I.trace(scene, origin, direction, options, random)
 		end
 		local weight = 1
 		if direct and not previousDelta then
-			weight = I.powerHeuristic(previousPDF, scene.lights:pdf(previousPosition, direction, hit))
+			weight =
+				I.powerHeuristic(previousPDF, scene.lights:pdf(previousPosition :: Vector3, direction, hit))
 		end
 		radiance += multiply(throughput, emitted) * weight
 		if not hit or depth == bounces then
@@ -120,8 +158,13 @@ function I.trace(scene, origin, direction, options, random)
 	end
 	return radiance, stats
 end
-function I.render(mesh, camera, materials, options)
-	options = options or {}
+function I.render(
+	mesh: Types.Mesh,
+	camera: Types.Camera,
+	materials: { [number]: B.MaterialInput }?,
+	options: IntegratorOptions?
+): (Types.Texture?, RenderReport)
+	local options: IntegratorOptions = options or {}
 	local samples = U.integer(options.samples or 16, 1)
 	U.integer(camera.width, 1)
 	U.integer(camera.height, 1)
@@ -131,7 +174,8 @@ function I.render(mesh, camera, materials, options)
 	local scene = I.prepare(mesh, materials, options)
 	local random = Random.new(options.seed or 0)
 	local image = Texture.new(camera.width, camera.height)
-	local report = { samples = samples, completedRows = 0, rays = 0, shadowRays = 0, cancelled = false }
+	local report: RenderReport =
+		{ samples = samples, completedRows = 0, rays = 0, shadowRays = 0, cancelled = false }
 	for y = 0, camera.height - 1 do
 		if options.cancelled and options.cancelled() then
 			report.cancelled = true
@@ -159,11 +203,11 @@ function I.render(mesh, camera, materials, options)
 	end
 	return image, report
 end
-function I.toneMap(image, exposure, method)
-	exposure, method = exposure or 0, method or "reinhard"
+function I.toneMap(image: Types.Texture, exposure: number?, method: string?): Types.Texture
+	local exposure: number, method: string = exposure or 0, method or "reinhard"
 	assert(U.finite(exposure) and (method == "reinhard" or method == "clamp"))
 	local scale = 2 ^ exposure
-	local function channel(x)
+	local function channel(x: number): number
 		x = math.max(0, x * scale)
 		return method == "reinhard" and x / (1 + x) or math.clamp(x, 0, 1)
 	end

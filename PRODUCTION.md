@@ -16,7 +16,7 @@ local options: E.Limits = {maxPixels = 1024 * 1024, maxSeconds = 5}
 local resized: E.Texture = texture:resize(512, 512, options)
 ```
 
-Twenty-one modules are strict: the root and contracts, the resource budget and publishing pipeline, and the core authoring API (`Util`, `Mesh`, `Primitives`, `Selection`, `Normals`, `Sculpt`, `IO`, `Simplify`, `Unwrap`, `MeshEdit`, `UV`, `Subdivision`, `Texture`, `Bake`, `Roblox`). Their public functions have parameter and return types, and `Roblox` uses the engine classes (`EditableMesh`, `MeshPart`, `Model`, `SurfaceAppearance`). Some option and report tables that are only forwarded to nonstrict modules are typed as open tables. The other namespaces are type-checked in nonstrict mode, so callers see their function shapes with mostly untyped parameters.
+Every public namespace is strict, along with the contracts, the resource budget and the publishing pipeline (76 modules; `STRICT_MODULES` in `tools/check_types.py`). Public functions have parameter and return types, and `Roblox` uses the engine classes (`EditableMesh`, `MeshPart`, `Model`, `SurfaceAppearance`). Where a namespace forwards options or results to an internal module that is not strict yet (for example the exact-arithmetic intersection, trimming and solver helpers), those tables are typed as open tables or `any`, so some report fields are untyped. The internal helpers themselves are type-checked in nonstrict mode with real Roblox types.
 
 The validation gate type-checks the whole package against the Roblox API definitions and rejects a set of invalid usages (for example a number passed as a vertex position, or a number to `IO.encode`). See [MAINTAINING.md](MAINTAINING.md).
 

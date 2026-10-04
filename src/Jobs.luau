@@ -1,20 +1,35 @@
+--!strict
 -- Cooperative cancellation/progress for long authoring tasks; no automatic workers.
 local Jobs = {}
-function Jobs.start(operation)
-	local job = { status = "Running", progress = 0, result = nil, error = nil, cancelRequested = false }
-	function job:cancel()
+export type Context = {
+	cancelled: () -> boolean,
+	progress: (value: number) -> (),
+	checkpoint: (value: number?) -> (),
+}
+export type Job = {
+	status: string,
+	progress: number,
+	result: any, -- whatever the operation returned
+	error: string?,
+	cancelRequested: boolean,
+	cancel: (self: Job) -> (),
+}
+function Jobs.start(operation: (Context) -> any): Job
+	local job: Job =
+		{ status = "Running", progress = 0, result = nil, error = nil, cancelRequested = false } :: any
+	function job.cancel(self: Job)
 		if self.status == "Running" then
 			self.cancelRequested = true
 		end
 	end
-	local context = {}
+	local context: Context = {} :: any
 	function context.cancelled()
 		return job.cancelRequested
 	end
-	function context.progress(value)
+	function context.progress(value: number)
 		job.progress = math.clamp(value, 0, 1)
 	end
-	function context.checkpoint(value)
+	function context.checkpoint(value: number?)
 		if value then
 			context.progress(value)
 		end
@@ -40,7 +55,7 @@ function Jobs.start(operation)
 	end)
 	return job
 end
-function Jobs.await(job, timeout)
+function Jobs.await(job: Job, timeout: number?): (any, string?)
 	local start = os.clock()
 	while job.status == "Running" do
 		if timeout and os.clock() - start > timeout then

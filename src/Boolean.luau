@@ -1,10 +1,66 @@
+--!strict
 -- BSP and audited triangle-arrangement solid operations with source correspondence.
 local Mesh = require(script.Parent.Mesh)
 local U = require(script.Parent.Util)
 local A = require(script.Parent.AttributeCore)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+export type BooleanOptions = {
+	method: string?,
+	epsilon: number?,
+	weldEpsilon: number?,
+	maxDepth: number?,
+	maxWork: number?,
+	maxPolygons: number?,
+	materialOffsetB: number?,
+	allowInvalid: boolean?,
+	vertexBlend: string?,
+	checkIntersections: boolean?,
+	intersectionOptions: { [string]: any }?,
+	cancelled: (() -> boolean)?,
+	yieldEvery: number?,
+	-- Arrangement-method settings (windingRule, tolerance, regularization, ...) pass through.
+	[string]: any,
+}
+-- Reports carry method-specific fields (maps, inputMaps, validation, work, intersections, ...).
+export type BooleanReport = { [string]: any }
+-- Correspondence maps per domain: target ID -> { { sourceRef, weight } }, plus identity flags.
+export type CorrespondenceMaps = { [string]: { [any]: any } }
+-- { sourceRef, weight }
+type Ref = { any }
+-- Corner attribute bags are blended field-by-field, including nested tables.
+type Attributes = { [any]: any }
+type BVertex = {
+	p: Vector3,
+	corner: Attributes,
+	weights: { [any]: number },
+	groups: { [any]: number },
+	vertexRefs: { Ref },
+	cornerRefs: { Ref },
+	sourceEdges: { [any]: boolean },
+}
+type Polygon = {
+	vertices: { BVertex },
+	normal: Vector3,
+	distance: number,
+	material: number,
+	source: any, -- source face reference from BooleanSources
+}
+type Plane = { normal: Vector3, distance: number }
+type Context = {
+	epsilon: number,
+	work: number,
+	maxWork: number,
+	maxPolygons: number,
+	maxDepth: number,
+	cancelled: (() -> boolean)?,
+	yieldEvery: number?,
+}
+type KdPoint = { id: number, p: Vector3 }
+type KdNode = { value: KdPoint, axis: string, left: KdNode?, right: KdNode? }
 local B = {}
 
-local function attributes(a, b, t)
+local function attributes(a: Attributes, b: Attributes, t: number): Attributes
 	local out = U.copy(a)
 	for k, value in b do
 		local av = a[k]
@@ -21,8 +77,8 @@ local function attributes(a, b, t)
 	end
 	return out
 end
-local function scalarMap(a, b, t)
-	local out = {}
+local function scalarMap(a: { [any]: number }, b: { [any]: number }, t: number): { [any]: number }
+	local out: { [any]: number } = {}
 	for k, v in a do
 		out[k] = v * (1 - t)
 	end
@@ -31,15 +87,15 @@ local function scalarMap(a, b, t)
 	end
 	return out
 end
-local function mixReferences(a, b, t)
-	local values = {}
+local function mixReferences(a: { Ref }, b: { Ref }, t: number): { Ref }
+	local values: { [any]: number } = {}
 	for _, entry in a do
 		values[entry[1]] = (values[entry[1]] or 0) + entry[2] * (1 - t)
 	end
 	for _, entry in b do
 		values[entry[1]] = (values[entry[1]] or 0) + entry[2] * t
 	end
-	local refs = {}
+	local refs: { Ref } = {}
 	for _, id in U.keys(values) do
 		if values[id] > 0 then
 			table.insert(refs, { id, values[id] })
@@ -47,12 +103,12 @@ local function mixReferences(a, b, t)
 	end
 	return refs
 end
-local function interpolate(a, b, t)
+local function interpolate(a: BVertex, b: BVertex, t: number): BVertex
 	local corner = attributes(a.corner, b.corner, t)
 	if corner.normal then
 		corner.normal = U.unit(corner.normal)
 	end
-	local sourceEdges = {}
+	local sourceEdges: { [any]: boolean } = {}
 	for edge in a.sourceEdges do
 		if b.sourceEdges[edge] then
 			sourceEdges[edge] = true
@@ -68,8 +124,8 @@ local function interpolate(a, b, t)
 		sourceEdges = sourceEdges,
 	}
 end
-local function polygon(vertices, material, source, epsilon)
-	local clean = {}
+local function polygon(vertices: { BVertex }, material: number, source: any, epsilon: number): Polygon?
+	local clean: { BVertex } = {}
 	for _, v in vertices do
 		if #clean == 0 or (clean[#clean].p - v.p).Magnitude > epsilon then
 			table.insert(clean, v)
@@ -97,8 +153,8 @@ local function polygon(vertices, material, source, epsilon)
 		source = source,
 	}
 end
-local function flip(poly)
-	local vs = {}
+local function flip(poly: Polygon)
+	local vs: { BVertex } = {}
 	for i = #poly.vertices, 1, -1 do
 		local v = U.copy(poly.vertices[i])
 		if v.corner.normal then
@@ -111,7 +167,15 @@ local function flip(poly)
 	end
 	poly.vertices, poly.normal, poly.distance = vs, -poly.normal, -poly.distance
 end
-local function split(plane, poly, copFront, copBack, front, back, context)
+local function split(
+	plane: Plane,
+	poly: Polygon,
+	copFront: { Polygon },
+	copBack: { Polygon },
+	front: { Polygon },
+	back: { Polygon },
+	context: Context
+)
 	context.work += 1
 	assert(context.work <= context.maxWork, "Boolean work budget exceeded")
 	if context.work % 2048 == 0 then
@@ -120,7 +184,7 @@ local function split(plane, poly, copFront, copBack, front, back, context)
 			task.wait()
 		end
 	end
-	local types, both = {}, 0
+	local types: { number }, both = {}, 0
 	for i, v in poly.vertices do
 		local d = plane.normal:Dot(v.p) - plane.distance
 		local kind = d > context.epsilon and 1 or (d < -context.epsilon and 2 or 0)
@@ -133,7 +197,7 @@ local function split(plane, poly, copFront, copBack, front, back, context)
 	elseif both == 2 then
 		table.insert(back, poly)
 	else
-		local fv, bv = {}, {}
+		local fv: { BVertex }, bv: { BVertex } = {}, {}
 		for i, a in poly.vertices do
 			local j = i % #poly.vertices + 1
 			local b, ta, tb = poly.vertices[j], types[i], types[j]
@@ -160,13 +224,25 @@ local function split(plane, poly, copFront, copBack, front, back, context)
 		end
 	end
 end
+type Node = {
+	polygons: { Polygon },
+	context: Context,
+	plane: Plane?,
+	front: Node?,
+	back: Node?,
+	build: (self: Node, polys: { Polygon }, depth: number?) -> (),
+	all: (self: Node, out: { Polygon }?) -> { Polygon },
+	invert: (self: Node) -> (),
+	clip: (self: Node, polys: { Polygon }) -> { Polygon },
+	clipTo: (self: Node, other: Node) -> (),
+}
 local Node = {}
 Node.__index = Node
-function Node.new(context)
-	return setmetatable({ polygons = {}, context = context }, Node)
+function Node.new(context: Context): Node
+	return setmetatable({ polygons = {}, context = context }, Node) :: any
 end
-function Node:build(polys, depth)
-	depth = depth or 0
+function Node.build(self: Node, polys: { Polygon }, depth: number?)
+	local depth: number = depth or 0
 	assert(depth <= self.context.maxDepth, "Boolean BSP depth budget exceeded")
 	if #polys == 0 then
 		return
@@ -204,19 +280,21 @@ function Node:build(polys, depth)
 	end
 	local front, back = {}, {}
 	for _, p in polys do
-		split(self.plane, p, self.polygons, self.polygons, front, back, self.context)
+		split(self.plane :: Plane, p, self.polygons, self.polygons, front, back, self.context)
 	end
 	if #front > 0 then
 		self.front = self.front or Node.new(self.context)
-		self.front:build(front, depth + 1)
+		local frontNode = self.front :: Node
+		frontNode:build(front, depth + 1)
 	end
 	if #back > 0 then
 		self.back = self.back or Node.new(self.context)
-		self.back:build(back, depth + 1)
+		local backNode = self.back :: Node
+		backNode:build(back, depth + 1)
 	end
 end
-function Node:all(out)
-	out = out or {}
+function Node.all(self: Node, out: { Polygon }?): { Polygon }
+	local out: { Polygon } = out or {}
 	for _, p in self.polygons do
 		table.insert(out, p)
 	end
@@ -228,7 +306,7 @@ function Node:all(out)
 	end
 	return out
 end
-function Node:invert()
+function Node.invert(self: Node)
 	for _, p in self.polygons do
 		flip(p)
 	end
@@ -244,13 +322,13 @@ function Node:invert()
 	end
 	self.front, self.back = self.back, self.front
 end
-function Node:clip(polys)
+function Node.clip(self: Node, polys: { Polygon }): { Polygon }
 	if not self.plane then
 		return table.clone(polys)
 	end
-	local front, back = {}, {}
+	local front: { Polygon }, back: { Polygon } = {}, {}
 	for _, p in polys do
-		split(self.plane, p, front, back, front, back, self.context)
+		split(self.plane :: Plane, p, front, back, front, back, self.context)
 	end
 	if self.front then
 		front = self.front:clip(front)
@@ -261,7 +339,7 @@ function Node:clip(polys)
 	end
 	return front
 end
-function Node:clipTo(other)
+function Node.clipTo(self: Node, other: Node)
 	self.polygons = other:clip(self.polygons)
 	if self.front then
 		self.front:clipTo(other)
@@ -270,17 +348,24 @@ function Node:clipTo(other)
 		self.back:clipTo(other)
 	end
 end
-local function polygons(mesh, origin, mapping, offset, epsilon)
+-- mapping is a BooleanSources forward map ({ vertex, edge, face, corner } -> joined IDs).
+local function polygons(
+	mesh: Mesh,
+	origin: Vector3,
+	mapping: any,
+	offset: number,
+	epsilon: number
+): { Polygon }
 	local report = mesh:validate()
 	assert(
 		report.valid and report.closed and report.windingErrors == 0,
 		"Boolean input must be a closed, consistently oriented manifold"
 	)
-	local out = {}
+	local out: { Polygon } = {}
 	for _, t in mesh:triangles() do
-		local f, vs = mesh.faces[t.face], {}
+		local f, vs: { BVertex } = mesh.faces[t.face], {}
 		for i = 1, 3 do
-			local groups = {}
+			local groups: { [any]: number } = {}
 			for name, values in mesh.groups do
 				if values[t[i]] then
 					groups[name] = values[t[i]]
@@ -319,16 +404,16 @@ local function polygons(mesh, origin, mapping, offset, epsilon)
 	end
 	return out
 end
-local function kdBuild(points, axis)
+local function kdBuild(points: { KdPoint }, axis: number): KdNode?
 	if #points == 0 then
 		return nil
 	end
 	local name = ({ "X", "Y", "Z" })[axis]
 	table.sort(points, function(a, b)
-		return a.p[name] < b.p[name]
+		return (a.p :: any)[name] < (b.p :: any)[name]
 	end)
 	local middle = math.ceil(#points / 2)
-	local left, right = {}, {}
+	local left: { KdPoint }, right: { KdPoint } = {}, {}
 	for i = 1, middle - 1 do
 		left[i] = points[i]
 	end
@@ -342,7 +427,7 @@ local function kdBuild(points, axis)
 		right = kdBuild(right, axis % 3 + 1),
 	}
 end
-local function kdQuery(node, lo, hi, out)
+local function kdQuery(node: KdNode?, lo: Vector3, hi: Vector3, out: { KdPoint })
 	if not node then
 		return
 	end
@@ -350,24 +435,29 @@ local function kdQuery(node, lo, hi, out)
 	if p.X >= lo.X and p.Y >= lo.Y and p.Z >= lo.Z and p.X <= hi.X and p.Y <= hi.Y and p.Z <= hi.Z then
 		table.insert(out, node.value)
 	end
-	if lo[node.axis] <= p[node.axis] then
+	if (lo :: any)[node.axis] <= (p :: any)[node.axis] then
 		kdQuery(node.left, lo, hi, out)
 	end
-	if hi[node.axis] >= p[node.axis] then
+	if (hi :: any)[node.axis] >= (p :: any)[node.axis] then
 		kdQuery(node.right, lo, hi, out)
 	end
 end
-local function output(polys, origin, epsilon, source)
-	local out, hash, points = Mesh.new(), {}, {}
-	local maps = {
+local function output(
+	polys: { Polygon },
+	origin: Vector3,
+	epsilon: number,
+	source: Mesh
+): (Mesh, number, CorrespondenceMaps)
+	local out, hash: { [string]: { number } }, points: { [number]: KdPoint } = Mesh.new(), {}, {}
+	local maps: CorrespondenceMaps = {
 		vertex = {},
 		edge = {},
 		face = {},
 		corner = {},
 		identity = { vertex = false, edge = false, face = false, corner = false },
 	}
-	local edgeSources = {}
-	local function face(vs, cs, records, poly)
+	local edgeSources: { [string]: { [any]: boolean } } = {}
+	local function face(vs: { number }, cs: { Attributes }, records: { BVertex }, poly: Polygon)
 		local fid = out:addFace(vs, cs, poly.material)
 		maps.face[fid] = { { poly.source, 1 } }
 		for i, id in vs do
@@ -382,16 +472,16 @@ local function output(polys, origin, epsilon, source)
 			end
 		end
 	end
-	local function key(x, y, z)
+	local function key(x: number, y: number, z: number): string
 		return x .. "," .. y .. "," .. z
 	end
-	local function weld(v)
+	local function weld(v: BVertex): number
 		local p = v.p
 		local x, y, z = math.floor(p.X / epsilon), math.floor(p.Y / epsilon), math.floor(p.Z / epsilon)
 		for dx = -1, 1 do
 			for dy = -1, 1 do
 				for dz = -1, 1 do
-					for _, id in hash[key(x + dx, y + dy, z + dz)] or {} do
+					for _, id in (hash[key(x + dx, y + dy, z + dz)] or {}) :: { number } do
 						if (points[id].p - p).Magnitude <= epsilon then
 							return id
 						end
@@ -412,9 +502,9 @@ local function output(polys, origin, epsilon, source)
 		table.insert(hash[k], id)
 		return id
 	end
-	local records = {}
+	local records: { { polygon: Polygon, ids: { number } } } = {}
 	for _, p in polys do
-		local ids = {}
+		local ids: { number } = {}
 		for i, v in p.vertices do
 			ids[i] = weld(v)
 		end
@@ -423,13 +513,13 @@ local function output(polys, origin, epsilon, source)
 	local tree = kdBuild(table.clone(points), 1)
 	local inserted = 0
 	for _, record in records do
-		local vs, cs, cornerRecords = {}, {}, {}
+		local vs: { number }, cs: { Attributes }, cornerRecords: { BVertex } = {}, {}, {}
 		local p = record.polygon
-		local present = {}
+		local present: { [number]: boolean } = {}
 		for _, id in record.ids do
 			present[id] = true
 		end
-		local added = {}
+		local added: { [number]: boolean } = {}
 		for i, a in record.ids do
 			local j = i % #record.ids + 1
 			local b = record.ids[j]
@@ -438,10 +528,10 @@ local function output(polys, origin, epsilon, source)
 				table.insert(vs, a)
 				table.insert(cs, p.vertices[i].corner)
 				table.insert(cornerRecords, p.vertices[i])
-				local candidates = {}
+				local candidates: { KdPoint } = {}
 				local pad = Vector3.one * epsilon
 				kdQuery(tree, pa:Min(pb) - pad, pa:Max(pb) + pad, candidates)
-				local between = {}
+				local between: { { id: number, t: number } } = {}
 				local delta = pb - pa
 				for _, v in candidates do
 					if not present[v.id] and not added[v.id] then
@@ -470,7 +560,7 @@ local function output(polys, origin, epsilon, source)
 			-- A center fan keeps every conformed boundary edge. Ear clipping near
 			-- collinear float32 cut points can otherwise leave zero-area ears.
 			local center = points[vs[1]].p
-			local merged = {
+			local merged: BVertex = {
 				p = center,
 				corner = cs[1],
 				weights = out.weights[vs[1]] or {},
@@ -483,7 +573,7 @@ local function output(polys, origin, epsilon, source)
 				merged.groups[name] = g[vs[1]] or 0
 			end
 			for i = 2, #vs do
-				local groups = {}
+				local groups: { [any]: number } = {}
 				for name, g in out.groups do
 					groups[name] = g[vs[i]] or 0
 				end
@@ -529,8 +619,8 @@ local function output(polys, origin, epsilon, source)
 	A.transfer(source, out, maps)
 	return out, inserted, maps
 end
-function B.apply(a, b, operation, options)
-	options = options or {}
+function B.apply(a: Mesh, b: Mesh, operation: string, options: BooleanOptions?): (Mesh, BooleanReport)
+	local options: BooleanOptions = options or {}
 	local method = options.method or "bsp"
 	assert(method == "bsp" or method == "arrangement", "Boolean method must be bsp or arrangement")
 	if method == "arrangement" then
@@ -565,7 +655,7 @@ function B.apply(a, b, operation, options)
 		operation == "union" or operation == "intersect" or operation == "subtract",
 		"Unknown Boolean operation"
 	)
-	local function checkIntersections(mesh, stage)
+	local function checkIntersections(mesh: Mesh, stage: string): any
 		if not options.checkIntersections then
 			return nil
 		end
@@ -604,7 +694,7 @@ function B.apply(a, b, operation, options)
 	local joined, forward, inputMaps = require(script.Parent.BooleanSources)(a, b, options.materialOffsetB)
 	if not next(a.faces) or not next(b.faces) then
 		local result = Mesh.new()
-		local maps = {
+		local maps: CorrespondenceMaps = {
 			vertex = {},
 			edge = {},
 			face = {},
@@ -722,13 +812,13 @@ function B.apply(a, b, operation, options)
 			empty = empty,
 		}
 end
-function B.union(a, b, options)
+function B.union(a: Mesh, b: Mesh, options: BooleanOptions?): (Mesh, BooleanReport)
 	return B.apply(a, b, "union", options)
 end
-function B.intersect(a, b, options)
+function B.intersect(a: Mesh, b: Mesh, options: BooleanOptions?): (Mesh, BooleanReport)
 	return B.apply(a, b, "intersect", options)
 end
-function B.subtract(a, b, options)
+function B.subtract(a: Mesh, b: Mesh, options: BooleanOptions?): (Mesh, BooleanReport)
 	return B.apply(a, b, "subtract", options)
 end
 return B
