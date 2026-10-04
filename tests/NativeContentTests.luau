@@ -64,6 +64,90 @@ end
 local function fingerprint(m)
 	return C.mesh(m, B.new(nil, "fingerprint"))
 end
+-- Two triangles sharing the edge (2,3). Welded: 4 shared vertices. Split: one vertex per corner,
+-- as Roblox's asset pipeline stores published meshes. `orphan` adds an unreferenced vertex.
+local function pair(split, orphan)
+	local corners = {
+		{ Vector3.zero, Vector2.zero },
+		{ Vector3.xAxis, Vector2.xAxis },
+		{ Vector3.yAxis, Vector2.yAxis },
+		{ Vector3.yAxis, Vector2.yAxis },
+		{ Vector3.xAxis, Vector2.xAxis },
+		{ Vector3.new(1, 1, 0), Vector2.one },
+	}
+	local m = { positions = {}, uvs = {}, vertices = {}, faces = {}, triangles = {} }
+	local weld = { 1, 2, 3, 3, 2, 4 }
+	for i, c in corners do
+		local id = split and i or weld[i]
+		m.positions[id], m.uvs[i] = c[1], c[2]
+		m.vertices[id] = id
+	end
+	if orphan then
+		m.positions[99], m.vertices[99] = Vector3.new(5, 5, 5), 99
+	end
+	m.triangles = { [10] = { 1, 2, 3 }, [20] = { 4, 5, 6 } }
+	local list = {}
+	for id in m.vertices do
+		table.insert(list, id)
+	end
+	function m:GetFacsPoses()
+		return {}
+	end
+	function m:GetFacsCorrectivePoses()
+		return {}
+	end
+	function m:GetBones()
+		return {}
+	end
+	function m:GetVertices()
+		return list
+	end
+	function m:GetVertexBones()
+		return {}
+	end
+	function m:GetVertexBoneWeights()
+		return {}
+	end
+	function m:GetPosition(id)
+		return self.positions[id]
+	end
+	function m:GetFaces()
+		local ids = {}
+		for id in self.triangles do
+			table.insert(ids, id)
+		end
+		return ids
+	end
+	function m:GetFaceVertices(fid)
+		local out = {}
+		for i, corner in self.triangles[fid] do
+			out[i] = split and corner or weld[corner]
+		end
+		return out
+	end
+	function m:GetFaceUVs(fid)
+		return self.triangles[fid]
+	end
+	function m:GetFaceNormals(fid)
+		return self.triangles[fid]
+	end
+	function m:GetFaceColors(fid)
+		return self.triangles[fid]
+	end
+	function m:GetUV(id)
+		return self.uvs[id]
+	end
+	function m:GetNormal()
+		return Vector3.zAxis
+	end
+	function m:GetColor()
+		return Color3.new(1, 1, 1)
+	end
+	function m:GetColorAlpha()
+		return 1
+	end
+	return m
+end
 return function(_, options)
 	local report, test, rejects = harness()
 	test("Native fingerprints ignore enumeration order and cyclic face start", function()
@@ -75,6 +159,30 @@ return function(_, options)
 		b.vertices = { 12, 13, 11 }
 		b.face = { 11, 12, 13 }
 		assert(fingerprint(a) == fingerprint(b))
+	end)
+	test(
+		"Native fingerprints ignore vertex welding, per-corner splitting and unreferenced vertices",
+		function()
+			-- Roblox's asset pipeline returns one vertex per triangle corner; rendering is unchanged.
+			local welded = fingerprint(pair(false, false))
+			assert(welded == fingerprint(pair(true, false)), "Split corners must match welded vertices")
+			assert(welded == fingerprint(pair(false, true)), "Unreferenced vertices are not rendered content")
+		end
+	)
+	test("Split-corner fingerprints still detect corner, missing and duplicated triangle changes", function()
+		local base = fingerprint(pair(true, false))
+		local moved = pair(true, false)
+		moved.positions[6] = Vector3.new(1, 1, 0.001)
+		assert(fingerprint(moved) ~= base, "Changed corner position accepted")
+		local uv = pair(true, false)
+		uv.uvs[4] = Vector2.new(0, 0.5)
+		assert(fingerprint(uv) ~= base, "Changed corner UV accepted")
+		local missing = pair(true, false)
+		missing.triangles[20] = nil
+		assert(fingerprint(missing) ~= base, "Missing triangle accepted")
+		local doubled = pair(true, false)
+		doubled.triangles[30] = { 4, 5, 6 }
+		assert(fingerprint(doubled) ~= base, "Duplicated triangle accepted")
 	end)
 	for _, attribute in { "position", "uv", "normal", "color", "alpha", "winding" } do
 		test("Native fingerprint detects same-count change: " .. attribute, function()

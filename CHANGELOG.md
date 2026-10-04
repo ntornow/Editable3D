@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.77.1 — 2026-10-04
+
+Fixes `Roblox.publish` verification against real Roblox uploads. The first real publish (a statue mesh) failed readback with "Published Mesh content mismatch" even though every position, UV and normal was unchanged: Roblox's asset pipeline stores one vertex per triangle corner (an 18,000-triangle mesh returns 54,000 vertices), and the verifier compared vertex welding. Native verification now compares each triangle corner's exact position, skin weights, UV, normal, color and alpha in winding order, plus bones, and ignores vertex sharing and unreferenced vertices. New tests cover welded vs split vs orphan-carrying meshes and still detect changed corners, missing and duplicated triangles. Earlier automated tests could not catch this because they used in-memory content that is never re-welded.
+
 ## 0.77.0 — 2026-10-04
 
 Every public namespace is now strict: 76 strict modules, up from 5 in 0.76.0 (55 namespaces were promoted after the first 21). Callers get typed signatures and exported types across the API, including GLTF scenes and nodes, NURBS/Cyclic/Bezier descriptors, Convex/Dynamics/RigidBody/Simulation/Fluid/Particles bodies, Rig/Timeline/Animation/Morph/Constraints, BSDF/Lighting/Integrator/PathTrace/Camera/Render, Boolean/Topology/MeshRepair/Remesh, SplineQuery/Surfaces/SurfaceTrim/SurfaceAdaptive/ArcLength, and Spatial/Connectivity/Planar/Predicates/Deform/ARAP/Laplacian/Registration/SurfaceDeform/Conformal/Fields/Geometry/Modifiers. Values that pass through to internal modules that are not strict yet remain open tables or `any`. `tools/type_erased_diff.py` lists the functions a typing change actually altered after erasing types.

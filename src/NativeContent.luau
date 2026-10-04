@@ -1,5 +1,8 @@
--- Canonical native content, independent of vertex/face/normal/UV IDs and face order.
--- Exact float32 values and all returned corner/skin data are retained. Fail closed.
+-- Canonical native content, independent of vertex/face/normal/UV IDs, face order and vertex welding.
+-- Each triangle corner carries its exact float32 position, skin weights, UV, normal, color and alpha;
+-- faces are compared as a multiset in winding order. Vertex sharing is not compared: Roblox's asset
+-- pipeline stores one vertex per corner, which renders identically. Unreferenced vertices are not
+-- content. Fail closed.
 local C = {}
 local function framed(s)
 	return #s .. ":" .. s
@@ -54,7 +57,7 @@ function C.mesh(mesh, budget)
 		end
 		table.insert(bones, table.concat(values))
 	end
-	local vertices, byId, incidence = {}, {}, {}
+	local byId = {}
 	for _, id in vertexIds do
 		budget:step()
 		local weights = {}
@@ -65,7 +68,6 @@ function C.mesh(mesh, budget)
 		table.sort(weights)
 		local value = vec(mesh:GetPosition(id)) .. #weights .. ":" .. table.concat(weights)
 		byId[id] = value
-		incidence[id] = {}
 	end
 	local faces = {}
 	for _, fid in faceIds do
@@ -88,13 +90,6 @@ function C.mesh(mesh, budget)
 		}
 		table.sort(rotations)
 		table.insert(faces, rotations[1])
-		for _, id in ids do
-			table.insert(incidence[id], rotations[1])
-		end
-	end
-	for id, value in byId do
-		table.sort(incidence[id])
-		table.insert(vertices, framed(value) .. #incidence[id] .. ":" .. table.concat(incidence[id]))
 	end
 	-- Length prefixes prevent ambiguity in variable-length bone/weight records.
 	local function section(values)
@@ -107,7 +102,7 @@ function C.mesh(mesh, budget)
 		end
 		return #values .. ";" .. table.concat(out)
 	end
-	return section(bones) .. section(vertices) .. section(faces)
+	return section(bones) .. section(faces)
 end
 function C.image(image, budget)
 	local size = image.Size
