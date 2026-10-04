@@ -1,37 +1,66 @@
+--!strict
 local U = require(script.Parent.Util)
 local A = require(script.Parent.AttributeCore)
 local Edit = require(script.Parent.MeshEditCore)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Options pass through to the island/packing/relaxation engines; see UV_MODELING.md.
+export type UVOptions = { [string]: any }
+-- Island, packing and relaxation reports carry operation-specific fields; see UV_MODELING.md.
+export type UVReport = { [string]: any }
+export type SeamReport = { complete: boolean, seams: { [string]: boolean }, work: number }
+export type UVValidation = { valid: boolean, missingTriangles: number, degenerateTriangles: number }
+export type TileProgress = { work: number, vertices: number, faces: number }
+export type TileOptions = {
+	maxTiles: number?,
+	maxWork: number?,
+	maxVertices: number?,
+	maxFaces: number?,
+	cancelled: (() -> boolean)?,
+	checkpoint: ((TileProgress) -> ())?,
+}
+export type Tile = { mesh: Mesh, tile: number, column: number, row: number }
+-- A clipped polygon point while splitting triangles across tile boundaries.
+type ClipPoint = {
+	key: string,
+	position: Vector3,
+	corner: Types.Corner,
+	uv: { X: number, Y: number },
+	refs: { { number } },
+	edges: { [string]: boolean },
+}
 local UV = {}
-function UV.islands(mesh, options)
+function UV.islands(mesh: Mesh, options: UVOptions?): ({ any }, UVReport)
 	local Core = require(script.Parent.UVIslandCore)
 	local context = Core.prepare(mesh, options)
 	local report = Core.summary(context)
 	assert(not context.options.requireComplete or report.complete, "UV island discovery incomplete")
 	return report.islands, report
 end
-function UV.analyze(mesh, options)
+function UV.analyze(mesh: Mesh, options: UVOptions?): UVReport
 	return require(script.Parent.UVAnalysis).run(require(script.Parent.UVIslandCore).prepare(mesh, options))
 end
-function UV.transformIslands(mesh, transforms, options)
+-- transforms are per-island plans; see UV_MODELING.md.
+function UV.transformIslands(mesh: Mesh, transforms: any, options: UVOptions?): (Mesh, UVReport)
 	return require(script.Parent.UVIslandEdit).transform(mesh, transforms, options)
 end
-function UV.equalizeDensity(mesh, options)
+function UV.equalizeDensity(mesh: Mesh, options: UVOptions?): (Mesh, UVReport)
 	return require(script.Parent.UVIslandEdit).density(mesh, options)
 end
-function UV.packIslands(mesh, options)
+function UV.packIslands(mesh: Mesh, options: UVOptions?): (Mesh, UVReport)
 	return require(script.Parent.UVPacking).run(mesh, options)
 end
-function UV.relax(mesh, options)
+function UV.relax(mesh: Mesh, options: UVOptions?): (Mesh, UVReport)
 	return require(script.Parent.UVRelax).run(mesh, options)
 end
-function UV.seamsFromIslands(mesh, options)
+function UV.seamsFromIslands(mesh: Mesh, options: UVOptions?): (Mesh, SeamReport)
 	local context = require(script.Parent.UVIslandCore).prepare(mesh, options)
 	local complete = true
 	for _, island in context.islands do
 		complete = complete and #island.missing == 0
 	end
 	assert(not context.options.requireComplete or complete, "UV seam discovery incomplete")
-	local out = context.mesh:clone()
+	local out: Mesh = context.mesh:clone()
 	local name = context.options.attribute or "uv_seam"
 	local channel = out.attributes[name]
 	if channel then
@@ -41,7 +70,7 @@ function UV.seamsFromIslands(mesh, options)
 		)
 	else
 		out = require(script.Parent.Attributes).create(out, name, "edge", "boolean", false)
-		channel = out.attributes[name]
+		channel = out.attributes[name] :: Types.Channel
 	end
 	channel.values = {}
 	for key in out:topology().edges do
@@ -50,9 +79,9 @@ function UV.seamsFromIslands(mesh, options)
 	end
 	return out, { complete = complete, seams = U.copy(context.boundaries), work = context.work }
 end
-function UV.planar(mesh, frame, scale)
-	frame = frame or CFrame.identity
-	scale = scale or Vector2.one
+function UV.planar(mesh: Mesh, frame: CFrame?, scale: Vector2?): Mesh
+	local frame: CFrame = frame or CFrame.identity
+	local scale: Vector2 = scale or Vector2.one
 	assert(scale.X ~= 0 and scale.Y ~= 0)
 	local out = mesh:clone()
 	for _, f in out.faces do
@@ -63,9 +92,9 @@ function UV.planar(mesh, frame, scale)
 	end
 	return out
 end
-function UV.cylindrical(mesh, center, height)
+function UV.cylindrical(mesh: Mesh, center: Vector3?, height: number): Mesh
 	assert(height > 0)
-	center = center or Vector3.zero
+	local center: Vector3 = center or Vector3.zero
 	local out = mesh:clone()
 	for _, f in out.faces do
 		local minU, maxU = math.huge, -math.huge
@@ -78,16 +107,17 @@ function UV.cylindrical(mesh, center, height)
 		end
 		if maxU - minU > 0.5 then
 			for _, c in f.corners do
-				if c.uv.X < 0.5 then
-					c.uv += Vector2.xAxis
+				local uv = c.uv :: Vector2 -- assigned for every corner in the loop above
+				if uv.X < 0.5 then
+					c.uv = uv + Vector2.xAxis
 				end
 			end
 		end
 	end
 	return out
 end
-function UV.spherical(mesh, center)
-	center = center or Vector3.zero
+function UV.spherical(mesh: Mesh, center: Vector3?): Mesh
+	local center: Vector3 = center or Vector3.zero
 	local out = mesh:clone()
 	for _, f in out.faces do
 		local minU, maxU = math.huge, -math.huge
@@ -100,17 +130,18 @@ function UV.spherical(mesh, center)
 		end
 		if maxU - minU > 0.5 then
 			for _, c in f.corners do
-				if c.uv.X < 0.5 then
-					c.uv += Vector2.xAxis
+				local uv = c.uv :: Vector2 -- assigned for every corner in the loop above
+				if uv.X < 0.5 then
+					c.uv = uv + Vector2.xAxis
 				end
 			end
 		end
 	end
 	return out
 end
-function UV.faceCharts(mesh, padding)
+function UV.faceCharts(mesh: Mesh, padding: number?): Mesh
 	-- Deterministic nonoverlapping planar chart per polygon, not LSCM.
-	padding = padding or 0.04
+	local padding: number = padding or 0.04
 	assert(padding >= 0 and padding < 0.5)
 	local out = mesh:clone()
 	local ids = U.keys(out.faces)
@@ -122,7 +153,7 @@ function UV.faceCharts(mesh, padding)
 		local f = out.faces[fid]
 		local n = out:faceNormal(fid)
 		local x, y = U.frame(n)
-		local coords = {}
+		local coords: { Vector2 } = {}
 		local lo = Vector2.new(math.huge, math.huge)
 		local hi = -lo
 		for i, id in f.vertices do
@@ -142,19 +173,20 @@ function UV.faceCharts(mesh, padding)
 	end
 	return out
 end
-function UV.transform(mesh, scale, offset, angle)
-	angle = angle or 0
+-- scale multiplies UVs (a Vector2 or a uniform number) before rotation by angle and offset.
+function UV.transform(mesh: Mesh, scale: Vector2 | number, offset: Vector2, angle: number?): Mesh
+	local angle: number = angle or 0
 	local c, s = math.cos(angle), math.sin(angle)
 	local out = mesh:clone()
 	for _, f in out.faces do
 		for _, corner in f.corners do
-			local p = (corner.uv or Vector2.zero) * scale
+			local p: Vector2 = (corner.uv or Vector2.zero) * (scale :: any)
 			corner.uv = Vector2.new(c * p.X - s * p.Y, s * p.X + c * p.Y) + offset
 		end
 	end
 	return out
 end
-function UV.validate(mesh)
+function UV.validate(mesh: Mesh): UVValidation
 	local missing, degenerate = 0, 0
 	for _, t in mesh:triangles() do
 		local f = mesh.faces[t.face]
@@ -174,10 +206,10 @@ function UV.validate(mesh)
 		degenerateTriangles = degenerate,
 	}
 end
-function UV.splitTiles(mesh, columns, rows, options)
+function UV.splitTiles(mesh: Mesh, columns: number, rows: number, options: TileOptions?): { Tile }
 	U.integer(columns, 1)
 	U.integer(rows, 1)
-	options = options or {}
+	local options: TileOptions = options or {}
 	A.validate(mesh)
 	assert(columns * rows <= U.integer(options.maxTiles or 4096, 1), "UV tile budget exceeded")
 	local maxWork = U.integer(options.maxWork or 2000000, 1)
@@ -185,9 +217,12 @@ function UV.splitTiles(mesh, columns, rows, options)
 	local maxFaces = U.integer(options.maxFaces or 500000, 1)
 	local work, vertices, faces = 0, 0, 0
 	local function checkpoint()
-		assert(not options.cancelled or not options.cancelled(), "UV tiling cancelled")
-		if options.checkpoint then
-			options.checkpoint({ work = work, vertices = vertices, faces = faces })
+		local cancelled = options.cancelled
+		assert(not cancelled or not cancelled(), "UV tiling cancelled")
+		-- Read after cancelled() runs, matching the original evaluation order.
+		local onCheckpoint = options.checkpoint
+		if onCheckpoint then
+			onCheckpoint({ work = work, vertices = vertices, faces = faces })
 		end
 	end
 	local function step()
@@ -199,12 +234,16 @@ function UV.splitTiles(mesh, columns, rows, options)
 	end
 	checkpoint()
 	local Mesh = require(script.Parent.Mesh)
-	local tiles = {}
+	local tiles: { Tile } = {}
 	local triangles = mesh:triangles()
 	for _, f in mesh.faces do
 		for _, c in f.corners do
 			assert(
-				c.uv and c.uv.X >= -1e-8 and c.uv.X <= 1 + 1e-8 and c.uv.Y >= -1e-8 and c.uv.Y <= 1 + 1e-8,
+				c.uv
+					and (c.uv :: Vector2).X >= -1e-8
+					and c.uv.X <= 1 + 1e-8
+					and c.uv.Y >= -1e-8
+					and c.uv.Y <= 1 + 1e-8,
 				"Texture tiling requires UVs within [0,1]"
 			)
 		end
@@ -212,17 +251,24 @@ function UV.splitTiles(mesh, columns, rows, options)
 	for row = 0, rows - 1 do
 		for column = 0, columns - 1 do
 			local out = Mesh.new()
-			local maps = {
+			local maps: { [string]: any } = {
 				vertex = {},
 				edge = {},
 				face = {},
 				corner = {},
 				identity = { vertex = false, edge = false, face = false, corner = false },
 			}
-			local pooled = {}
+			local pooled: { [string]: number } = {}
 			local tile = 1 + column + columns * row
-			local function interpolate(a, b, t, axis, boundary)
-				local weights, refs, edges = {}, {}, {}
+			local function interpolate(
+				a: ClipPoint,
+				b: ClipPoint,
+				t: number,
+				axis: string,
+				boundary: number
+			): ClipPoint
+				local weights: { [number]: number }, refs: { { number } }, edges: { [string]: boolean } =
+					{}, {}, {}
 				for _, r in a.refs do
 					weights[r[2]] = (weights[r[2]] or 0) + r[3] * (1 - t)
 				end
@@ -241,7 +287,7 @@ function UV.splitTiles(mesh, columns, rows, options)
 				end
 				local corner = Edit.corner(mesh, refs)
 				local uv = { X = a.uv.X + (b.uv.X - a.uv.X) * t, Y = a.uv.Y + (b.uv.Y - a.uv.Y) * t }
-				uv[axis] = boundary
+				(uv :: any)[axis] = boundary
 				if corner.normal then
 					corner.normal = U.unit(corner.normal)
 				end
@@ -258,13 +304,18 @@ function UV.splitTiles(mesh, columns, rows, options)
 					edges = edges,
 				}
 			end
-			local function clip(poly, axis, boundary, sign)
-				local result = {}
+			local function clip(
+				poly: { ClipPoint },
+				axis: string,
+				boundary: number,
+				sign: number
+			): { ClipPoint }
+				local result: { ClipPoint } = {}
 				for i, a in poly do
 					step()
 					local b = poly[i % #poly + 1]
-					local da = (a.uv[axis] - boundary) * sign
-					local db = (b.uv[axis] - boundary) * sign
+					local da = ((a.uv :: any)[axis] - boundary) * sign
+					local db = ((b.uv :: any)[axis] - boundary) * sign
 					if da >= -1e-10 then
 						table.insert(result, a)
 					end
@@ -277,10 +328,10 @@ function UV.splitTiles(mesh, columns, rows, options)
 			for _, tri in triangles do
 				step()
 				local f = mesh.faces[tri.face]
-				local poly = {}
+				local poly: { ClipPoint } = {}
 				for i = 1, 3 do
 					local corner = U.copy(f.corners[tri.corners[i]])
-					local uv = corner.uv
+					local uv = corner.uv :: Vector2
 					local ci = tri.corners[i]
 					table.insert(poly, {
 						key = tri[i] .. "/" .. uv.X .. "," .. uv.Y,
@@ -305,14 +356,14 @@ function UV.splitTiles(mesh, columns, rows, options)
 					poly = clip(poly, "Y", (row + 1) / rows, -1)
 				end
 				if #poly >= 3 then
-					local vs, cs, records = {}, {}, {}
-					local seen = {}
+					local vs: { number }, cs: { Types.Corner }, records: { ClipPoint } = {}, {}, {}
+					local seen: { [number]: boolean } = {}
 					for _, p in poly do
 						if not pooled[p.key] then
 							vertices += 1
 							assert(vertices <= maxVertices, "UV tiling vertex budget exceeded")
 							pooled[p.key] = out:addVertex(p.position)
-							local refs = {}
+							local refs: { { number } } = {}
 							for _, r in p.refs do
 								table.insert(refs, { mesh.faces[r[1]].vertices[r[2]], r[3] })
 							end
@@ -339,15 +390,15 @@ function UV.splitTiles(mesh, columns, rows, options)
 							local fid = out:addFace(vs, cs, tile)
 							maps.face[fid] = { { tri.face, 1 } }
 							for i, record in records do
-								local refs = {}
+								local refs: { { any } } = {}
 								for _, r in record.refs do
-									table.insert(refs, { r[1] .. ":" .. r[2], r[3] })
+									table.insert(refs, { r[1] .. ":" .. r[2], r[3] } :: { any })
 								end
 								maps.corner[fid .. ":" .. i] = refs
 								local j = i % #records + 1
 								for key in record.edges do
 									if records[j].edges[key] then
-										maps.edge[U.edge(vs[i], vs[j])] = { { key, 1 } }
+										maps.edge[U.edge(vs[i], vs[j])] = { { key, 1 } :: { any } }
 									end
 								end
 							end

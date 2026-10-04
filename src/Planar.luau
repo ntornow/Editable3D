@@ -2,6 +2,8 @@
 local U = require(script.Parent.Util)
 local P = require(script.Parent.Predicates)
 local Mesh = require(script.Parent.Mesh)
+-- Deferred require breaks a load-order cycle; the analyzer does not follow it.
+local deferredRequire = require :: any
 local D = {}
 
 local function context(options)
@@ -350,6 +352,6 @@ function D.toMesh(domain, frame)
 	return mesh
 end
 function D.constrain(outer, holes, paths, options)
-	return require(script.Parent.PlanarConstrain)(outer, holes, paths, options)
+	return deferredRequire(script.Parent.PlanarConstrain)(outer, holes, paths, options)
 end
 return D

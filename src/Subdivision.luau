@@ -1,27 +1,65 @@
+--!strict
 local Mesh = require(script.Parent.Mesh)
 local U = require(script.Parent.Util)
 local A = require(script.Parent.AttributeCore)
 local FaceVarying = require(script.Parent.SubdivisionFaceVarying)
 local Limit = require(script.Parent.SubdivisionLimit)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Remaining keys configure face-varying channels (see SubdivisionFaceVarying.configure).
+export type Options = {
+	boundary: string?,
+	creasing: string?,
+	maxVertices: number?,
+	maxFaces: number?,
+	checkpoint: ((fraction: number) -> ())?,
+	cancelled: (() -> boolean)?,
+	[string]: any,
+}
+type Config = {
+	boundary: string,
+	creasing: string,
+	maxVertices: number,
+	maxFaces: number,
+	checkpoint: ((fraction: number) -> ())?,
+	cancelled: (() -> boolean)?,
+	faceVarying: any,
+}
+type CreaseState = {
+	edges: { [string]: number },
+	vertices: { [number]: number },
+	children: { [number]: { [number]: number } },
+	childVertices: { [number]: number },
+}
+-- Limit options extend Options with exact-normal budgets; prepareLimit fills defaults in a copy.
+export type LimitOptions = { [string]: any }
+export type Multires = {
+	levels: { Mesh },
+	active: number,
+	get: (Multires) -> Mesh,
+	select: (Multires, number) -> Mesh,
+	commit: (Multires, Mesh) -> Mesh,
+}
 local S = {}
 local EDGE_CREASE = "subdivision_edge_sharpness"
 local VERTEX_CREASE = "subdivision_vertex_sharpness"
-local function sharpness(value)
+local function sharpness(value: any): number
 	assert(
 		type(value) == "number" and U.finite(value) and value >= 0 and value <= 10,
 		"Subdivision sharpness must be in [0,10]"
 	)
 	return value
 end
-local function decay(value)
+local function decay(value: number): number
 	return value == 10 and 10 or math.max(0, value - 1)
 end
-function S.crease(mesh, edges, vertices)
+function S.crease(mesh: Mesh, edges: { [string]: number }?, vertices: { [number]: number }?): Mesh
 	local out = mesh:clone()
 	out.attributes = out.attributes or {}
-	for _, entry in { { EDGE_CREASE, "edge", edges }, { VERTEX_CREASE, "vertex", vertices } } do
+	local entries: { { any } } = { { EDGE_CREASE, "edge", edges }, { VERTEX_CREASE, "vertex", vertices } }
+	for _, entry in entries do
 		if entry[3] then
-			local name, domain, values = entry[1], entry[2], entry[3]
+			local name: string, domain: string, values: { [any]: number } = entry[1], entry[2], entry[3]
 			local channel = out.attributes[name]
 				or { domain = domain, dataType = "number", default = 0, interpolation = "max", values = {} }
 			assert(
@@ -41,8 +79,8 @@ function S.crease(mesh, edges, vertices)
 	out.revision += 1
 	return out
 end
-local function configuration(options)
-	options = options or {}
+local function configuration(options: Options?): Config
+	local options: Options = options or {}
 	local boundary = options.boundary or "edge"
 	local method = options.creasing or "uniform"
 	assert(
@@ -62,11 +100,13 @@ local function configuration(options)
 		faceVarying = FaceVarying.configure(options),
 	}
 end
-local function creaseState(m, top, options)
+local function creaseState(m: Mesh, top: Types.MeshTopology, options: Config): CreaseState
 	A.validate(m)
-	local edgeChannel = (m.attributes or {})[EDGE_CREASE]
-	local vertexChannel = (m.attributes or {})[VERTEX_CREASE]
-	for _, entry in { { edgeChannel, "edge" }, { vertexChannel, "vertex" } } do
+	local attributes: { [string]: Types.Channel } = m.attributes or {}
+	local edgeChannel = attributes[EDGE_CREASE]
+	local vertexChannel = attributes[VERTEX_CREASE]
+	local entries: { { any } } = { { edgeChannel, "edge" }, { vertexChannel, "vertex" } }
+	for _, entry in entries do
 		local channel = entry[1]
 		if channel then
 			assert(
@@ -81,7 +121,7 @@ local function creaseState(m, top, options)
 			end
 		end
 	end
-	local state = { edges = {}, vertices = {}, children = {}, childVertices = {} }
+	local state: CreaseState = { edges = {}, vertices = {}, children = {}, childVertices = {} }
 	for key, e in top.edges do
 		state.edges[key] = #e.faces == 1 and 10 or (edgeChannel and A.read(edgeChannel, key) or 0)
 	end
@@ -93,7 +133,7 @@ local function creaseState(m, top, options)
 			while cursor <= #queue do
 				local face = m.faces[queue[cursor]]
 				cursor += 1
-				local index = table.find(face.vertices, v)
+				local index = table.find(face.vertices, v) :: number
 				for _, other in
 					{
 						face.vertices[index % #face.vertices + 1],
@@ -134,7 +174,7 @@ local function creaseState(m, top, options)
 			value = 10
 		end
 		state.vertices[v], state.childVertices[v] = value, decay(value)
-		local children = {}
+		local children: { [number]: number } = {}
 		state.children[v] = children
 		for other in top.neighbors[v] do
 			local parent = state.edges[U.edge(v, other)]
@@ -147,8 +187,14 @@ local function creaseState(m, top, options)
 	end
 	return state
 end
-local function vertexMask(mesh, v, smooth, vertexSharp, edges)
-	local adjacent = {}
+local function vertexMask(
+	mesh: Mesh,
+	v: number,
+	smooth: Vector3,
+	vertexSharp: number,
+	edges: { [number]: number }
+): Vector3
+	local adjacent: { number } = {}
 	for _, other in U.keys(edges) do
 		if edges[other] > 0 then
 			table.insert(adjacent, other)
@@ -163,11 +209,12 @@ local function vertexMask(mesh, v, smooth, vertexSharp, edges)
 	end
 	return smooth
 end
-local function averageCorners(corners)
-	local c = {}
+local function averageCorners(corners: { Types.Corner }): Types.Corner
+	local c: { [string]: any } = {}
 	for _, key in { "uv", "color", "alpha", "tangent", "tangentSign" } do
-		local sum, n = nil, 0
-		for _, a in corners do
+		local sum: any, n = nil, 0
+		for _, corner in corners do
+			local a = corner :: { [string]: any }
 			if a[key] then
 				sum = sum and U.mix(sum, a[key], 1 / (n + 1)) or a[key]
 				n += 1
@@ -175,9 +222,9 @@ local function averageCorners(corners)
 		end
 		c[key] = sum
 	end
-	return c
+	return c :: Types.Corner
 end
-local function step(m, options)
+local function step(m: Mesh, options: Config): Mesh
 	local top = m:topology()
 	local faceVaryingChannels = FaceVarying.prepare(m, options.faceVarying)
 	local nextFaces = 0
@@ -191,7 +238,7 @@ local function step(m, options)
 	)
 	local creases = creaseState(m, top, options)
 	local out = Mesh.new()
-	local fp, ep, vp = {}, {}, {}
+	local fp: { [number]: Vector3 }, ep: { [string]: Vector3 }, vp: { [number]: Vector3 } = {}, {}, {}
 	for fid, f in m.faces do
 		local p = Vector3.zero
 		for _, v in f.vertices do
@@ -210,7 +257,7 @@ local function step(m, options)
 	end
 	for v, p in m.vertices do
 		local ns = top.neighbors[v]
-		local boundary = {}
+		local boundary: { number } = {}
 		local edgeSum = Vector3.zero
 		local n = 0
 		for other in ns do
@@ -235,7 +282,7 @@ local function step(m, options)
 		end
 	end
 	for v, smooth in vp do
-		local parents, sum, count = {}, 0, 0
+		local parents: { [number]: number }, sum, count = {}, 0, 0
 		local vertexSharp = creases.vertices[v]
 		if vertexSharp > 0 and creases.childVertices[v] == 0 then
 			sum += vertexSharp
@@ -253,8 +300,8 @@ local function step(m, options)
 		local childMask = vertexMask(m, v, smooth, creases.childVertices[v], creases.children[v])
 		vp[v] = childMask:Lerp(parentMask, count == 0 and 0 or math.min(1, sum / count))
 	end
-	local vids, eids, fids = {}, {}, {}
-	local maps = {
+	local vids: { [number]: number }, eids: { [string]: number }, fids: { [number]: number } = {}, {}, {}
+	local maps: { [string]: any } = {
 		vertex = {},
 		edge = {},
 		face = {},
@@ -275,13 +322,13 @@ local function step(m, options)
 	end
 	for _, fid in U.keys(fp) do
 		fids[fid] = out:addVertex(fp[fid])
-		local refs = {}
+		local refs: { { number } } = {}
 		for _, v in m.faces[fid].vertices do
 			table.insert(refs, { v, 1 })
 		end
 		maps.vertex[fids[fid]] = refs
 	end
-	local childFaces = {}
+	local childFaces: { [number]: { [number]: number } } = {}
 	for _, fid in U.keys(m.faces) do
 		local f = m.faces[fid]
 		childFaces[fid] = {}
@@ -303,7 +350,7 @@ local function step(m, options)
 			childFaces[fid][i] = newFace
 			maps.corner[newFace .. ":1"] = { { fid .. ":" .. i, 1 } }
 			maps.corner[newFace .. ":2"] = { { fid .. ":" .. i, 1 }, { fid .. ":" .. j, 1 } }
-			local refs = {}
+			local refs: { { any } } = {}
 			for c = 1, #f.vertices do
 				table.insert(refs, { fid .. ":" .. c, 1 })
 			end
@@ -342,8 +389,8 @@ local function step(m, options)
 		end
 	end
 	-- Interpolate vertex weights and scalar selection groups with the same topology.
-	local function blend(tables)
-		local r = {}
+	local function blend(tables: { { [any]: number } }): { [any]: number }
+		local r: { [any]: number } = {}
 		for _, t in tables do
 			for key, w in t do
 				r[key] = (r[key] or 0) + w / #tables
@@ -355,14 +402,14 @@ local function step(m, options)
 		out.weights[eids[key]] = blend({ m.weights[e.a] or {}, m.weights[e.b] or {} })
 	end
 	for fid, f in m.faces do
-		local list = {}
+		local list: { { [any]: number } } = {}
 		for _, v in f.vertices do
 			table.insert(list, m.weights[v] or {})
 		end
 		out.weights[fids[fid]] = blend(list)
 	end
 	for name, g in m.groups do
-		local ng = {}
+		local ng: { [number]: number } = {}
 		out.groups[name] = ng
 		for v, id in vids do
 			ng[id] = g[v] or 0
@@ -378,7 +425,7 @@ local function step(m, options)
 			ng[fids[fid]] = sum / #f.vertices
 		end
 	end
-	local normalEdges = {}
+	local normalEdges: { [string]: boolean } = {}
 	local normalChannel = out.attributes.sharp_edge
 	if normalChannel then
 		assert(
@@ -400,8 +447,8 @@ local function step(m, options)
 	end
 	return out:recalculateNormals(nil, next(normalEdges) and normalEdges or nil)
 end
-function S.prepareLimit(mesh, options)
-	options = table.clone(options or {})
+function S.prepareLimit(mesh: Mesh, options: LimitOptions?): any
+	local options: LimitOptions = table.clone(options or {})
 	assert(
 		options.exactConstrainedJets == nil or type(options.exactConstrainedJets) == "boolean",
 		"exactConstrainedJets must be boolean"
@@ -477,36 +524,39 @@ function S.prepareLimit(mesh, options)
 	end
 	return Limit.prepare(mesh, options, config, creaseState(mesh, top, config))
 end
-function S.limit(mesh, face, u, v, options)
+function S.limit(mesh: Mesh, face: number, u: number, v: number, options: LimitOptions?): any
 	return S.prepareLimit(mesh, options):evaluate(face, u, v, options and options.corner)
 end
-function S.catmullClark(mesh, levels, options)
+function S.catmullClark(mesh: Mesh, levels: number?, options: Options?): Mesh
 	U.integer(levels or 1, 0)
 	assert((levels or 1) <= 16, "Subdivision level budget exceeded")
-	options = configuration(options)
+	local options = configuration(options)
 	local out = mesh:clone()
 	for level = 1, levels or 1 do
 		assert(not options.cancelled or not options.cancelled(), "Subdivision cancelled")
-		if options.checkpoint then
-			options.checkpoint((level - 1) / (levels or 1))
+		local checkpoint = options.checkpoint
+		if checkpoint then
+			checkpoint((level - 1) / (levels or 1))
 		end
 		out = step(out, options)
 	end
 	return out
 end
-function S.multires(mesh, levels, options)
+function S.multires(mesh: Mesh, levels: number, options: Options?): Multires
 	U.integer(levels, 0)
 	assert(levels <= 16, "Subdivision level budget exceeded")
-	options = configuration(options)
+	local options = configuration(options)
 	local stack = { mesh:clone() }
 	for level = 1, levels do
 		assert(not options.cancelled or not options.cancelled(), "Subdivision cancelled")
-		if options.checkpoint then
-			options.checkpoint((level - 1) / levels)
+		local checkpoint = options.checkpoint
+		if checkpoint then
+			checkpoint((level - 1) / levels)
 		end
 		table.insert(stack, step(stack[#stack], options))
 	end
-	local multires = { levels = stack, active = #stack }
+	-- Methods are attached below; the finished table satisfies Multires.
+	local multires: any = { levels = stack, active = #stack }
 	function multires:get()
 		return self.levels[self.active]:clone()
 	end
@@ -515,10 +565,10 @@ function S.multires(mesh, levels, options)
 		self.active = n
 		return self:get()
 	end
-	local function frames(m)
+	local function frames(m: Mesh): { [number]: { Vector3 } }
 		local topology = m:topology()
-		local result = {}
-		local normals = {}
+		local result: { [number]: { Vector3 } } = {}
+		local normals: { [number]: Vector3 } = {}
 		for fid, f in m.faces do
 			local n, a = m:faceNormal(fid)
 			for _, v in f.vertices do
@@ -538,7 +588,7 @@ function S.multires(mesh, levels, options)
 		end
 		return result
 	end
-	function multires:commit(edited)
+	function multires:commit(edited: Mesh): Mesh
 		options.faceVarying.work = 0
 		local index = self.active
 		local old = self.levels[index]
@@ -554,7 +604,7 @@ function S.multires(mesh, levels, options)
 			)
 		end
 		local previousOld, previousNew = old, edited:clone()
-		local replacements = { [index] = previousNew }
+		local replacements: { [number]: Mesh } = { [index] = previousNew }
 		for level = index + 1, #self.levels do
 			assert(not options.cancelled or not options.cancelled(), "Subdivision cancelled")
 			local originalFine = self.levels[level]
@@ -571,7 +621,7 @@ function S.multires(mesh, levels, options)
 					a[3]
 				)
 			end
-			local normalEdges = {}
+			local normalEdges: { [string]: boolean } = {}
 			local edgeCrease = fine.attributes[EDGE_CREASE]
 			local sharp = fine.attributes.sharp_edge
 			for key in fine:topology().edges do
@@ -588,6 +638,6 @@ function S.multires(mesh, levels, options)
 		end
 		return self:get()
 	end
-	return multires
+	return multires :: Multires
 end
 return S

@@ -1,19 +1,34 @@
+--!strict
 -- Seam cutting, disk-chart harmonic parameterization and deterministic chart packing.
 local Mesh = require(script.Parent.Mesh)
 local U = require(script.Parent.Util)
 local Conformal = require(script.Parent.Conformal)
 local A = require(script.Parent.AttributeCore)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Edge key ("smallerId:largerId") to true for every seam edge.
+export type Seams = { [string]: boolean }
+export type HarmonicOptions = { iterations: number?, tolerance: number? }
+export type HarmonicReport = {
+	iterations: number,
+	residual: number,
+	converged: boolean,
+	boundaryVertices: number,
+}
+-- Unwrap options also carry method-specific settings forwarded to Conformal, AngleUnwrap and
+-- AutomaticSeams (method, padding, seamAttribute, iterations, tolerance, budgets, ...).
+type Options = { [string]: any }
 local W = {}
-function W.autoSeams(mesh, options)
+function W.autoSeams(mesh: Mesh, options: Options?)
 	return require(script.Parent.AutomaticSeams)(mesh, options)
 end
-function W.angleBased(mesh, options)
+function W.angleBased(mesh: Mesh, options: Options?)
 	return require(script.Parent.AngleBased)(mesh, options)
 end
-function W.harmonic(mesh, options)
-	options = options or {}
+function W.harmonic(mesh: Mesh, options: HarmonicOptions?): (Mesh, HarmonicReport)
+	local options: HarmonicOptions = options or {}
 	local topology = mesh:topology()
-	local nextVertex = {}
+	local nextVertex: { [number]: number } = {}
 	local boundaryCount = 0
 	for _, edge in topology.edges do
 		assert(#edge.faces <= 2, "Unwrap requires manifold input")
@@ -29,18 +44,19 @@ function W.harmonic(mesh, options)
 	end
 	assert(boundaryCount >= 3, "Chart is closed; provide seams first")
 	local start = U.keys(nextVertex)[1]
-	local loop, seen = {}, {}
-	local v = start
+	local loop: { number }, seen: { [number]: boolean } = {}, {}
+	local v: number? = start
 	repeat
 		assert(v and not seen[v], "Broken chart boundary")
-		seen[v] = true
-		table.insert(loop, v)
-		v = nextVertex[v]
+		local current: number = v
+		seen[current] = true
+		table.insert(loop, current)
+		v = nextVertex[current]
 	until v == start
 	assert(#loop == boundaryCount, "Chart must have one boundary loop")
-	local uv = {}
+	local uv: { [number]: Vector2 } = {}
 	local length = 0
-	local lengths = {}
+	local lengths: { number } = {}
 	for i, id in loop do
 		lengths[i] = length
 		length += (mesh.vertices[loop[i % #loop + 1]] - mesh.vertices[id]).Magnitude
@@ -50,7 +66,7 @@ function W.harmonic(mesh, options)
 		local angle = 2 * math.pi * lengths[i] / length
 		uv[id] = Vector2.new(0.5 + 0.5 * math.cos(angle), 0.5 + 0.5 * math.sin(angle))
 	end
-	local interior = {}
+	local interior: { number } = {}
 	for _, id in U.keys(mesh.vertices) do
 		if not seen[id] then
 			uv[id] = Vector2.new(0.5, 0.5)
@@ -91,11 +107,12 @@ function W.harmonic(mesh, options)
 			boundaryVertices = #loop,
 		}
 end
-function W.unwrap(mesh, seams, options)
+function W.unwrap(mesh: Mesh, seams: Seams?, options: Options?)
 	if options and options.method == "angle" then
 		return require(script.Parent.AngleUnwrap)(mesh, seams, options)
 	end
-	options = options or {}
+	local options: Options = options or {}
+	local seams: Seams = seams :: any
 	if seams == nil then
 		seams = {}
 		local channel = (mesh.attributes or {})[options.seamAttribute or "uv_seam"]
@@ -113,19 +130,19 @@ function W.unwrap(mesh, seams, options)
 		end
 	end
 	local topology = mesh:topology()
-	local faceAdj = {}
-	local parents = {}
-	local cornerNodes = {}
-	local nodeData = {}
+	local faceAdj: { [number]: { number } } = {}
+	local parents: { [number]: number } = {}
+	local cornerNodes: { [number]: { [number]: number } } = {}
+	local nodeData: { [number]: { vertex: number, face: number, corner: number } } = {}
 	local nextNode = 1
-	local function find(x)
+	local function find(x: number): number
 		while parents[x] ~= x do
 			parents[x] = parents[parents[x]]
 			x = parents[x]
 		end
 		return x
 	end
-	local function union(a, b)
+	local function union(a: number, b: number)
 		a, b = find(a), find(b)
 		if a ~= b then
 			parents[math.max(a, b)] = math.min(a, b)
@@ -153,7 +170,8 @@ function W.unwrap(mesh, seams, options)
 			union(cornerNodes[a][e.b], cornerNodes[b][e.b])
 		end
 	end
-	local charts, visited = {}, {}
+	local charts: { { mesh: Mesh, faces: { [number]: number }, report: any } }, visited: { [number]: boolean } =
+		{}, {}
 	for _, seed in U.keys(mesh.faces) do
 		if not visited[seed] then
 			local queue = { seed }
@@ -170,10 +188,10 @@ function W.unwrap(mesh, seams, options)
 				end
 			end
 			local chart = Mesh.new()
-			local roots, faces = {}, {}
+			local roots: { [number]: number }, faces: { [number]: number } = {}, {}
 			for _, fid in queue do
 				local f = mesh.faces[fid]
-				local vs = {}
+				local vs: { number } = {}
 				for i, id in f.vertices do
 					local root = find(cornerNodes[fid][id])
 					if not roots[root] then
@@ -184,22 +202,23 @@ function W.unwrap(mesh, seams, options)
 				local newId = chart:addFace(vs, f.corners, f.material)
 				faces[newId] = fid
 			end
-			local flat, report
+			local flat: Mesh, report: any
 			if options.method == "lscm" then
 				flat, report = Conformal.lscm(chart, options)
 				-- Fit isotropically into one packing cell, preserving chart angles.
 				local lo, hi = Vector2.new(math.huge, math.huge), Vector2.new(-math.huge, -math.huge)
 				for _, f in flat.faces do
 					for _, c in f.corners do
-						lo = Vector2.new(math.min(lo.X, c.uv.X), math.min(lo.Y, c.uv.Y))
-						hi = Vector2.new(math.max(hi.X, c.uv.X), math.max(hi.Y, c.uv.Y))
+						local uv = c.uv :: Vector2
+						lo = Vector2.new(math.min(lo.X, uv.X), math.min(lo.Y, uv.Y))
+						hi = Vector2.new(math.max(hi.X, uv.X), math.max(hi.Y, uv.Y))
 					end
 				end
 				local span = math.max(hi.X - lo.X, hi.Y - lo.Y)
 				assert(span > 0, "Collapsed UV chart")
 				for _, f in flat.faces do
 					for _, c in f.corners do
-						c.uv = (c.uv - lo) / span
+						c.uv = ((c.uv :: Vector2) - lo) / span
 					end
 				end
 			else
@@ -218,20 +237,24 @@ function W.unwrap(mesh, seams, options)
 		for newId, f in chart.mesh.faces do
 			local target = out.faces[chart.faces[newId]]
 			for j, c in f.corners do
-				target.corners[j].uv = (offset + Vector2.one * padding + c.uv * (1 - 2 * padding)) / columns
+				target.corners[j].uv = (
+					offset
+					+ Vector2.one * padding
+					+ (c.uv :: Vector2) * (1 - 2 * padding)
+				) / columns
 			end
 		end
 	end
-	local reports = {}
+	local reports: { any } = {}
 	for i, c in charts do
 		reports[i] = c.report
 	end
 	return out, { charts = #charts, reports = reports }
 end
-function W.sharpSeams(mesh, angle)
-	local seams = {}
+function W.sharpSeams(mesh: Mesh, angle: number?): Seams
+	local seams: Seams = {}
 	local threshold = math.cos(angle or math.rad(60))
-	local normals = {}
+	local normals: { [number]: Vector3 } = {}
 	for fid in mesh.faces do
 		normals[fid] = mesh:faceNormal(fid)
 	end

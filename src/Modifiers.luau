@@ -44,7 +44,8 @@ function M.bevel(mesh, width, options)
 		end
 	end
 	local edit = require(script.Parent.MeshEdit)
-	return (mode == "edges" and edit.bevelEdges or edit.bevelVertices)(mesh, selection, width, options)
+	local bevel: typeof(edit.bevelEdges) = mode == "edges" and edit.bevelEdges or edit.bevelVertices
+	return bevel(mesh, selection, width, options)
 end
 function M.array(mesh, count, step)
 	U.integer(count, 1)

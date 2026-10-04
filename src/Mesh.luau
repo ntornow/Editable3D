@@ -1,12 +1,18 @@
+--!strict
 -- Polygon authoring mesh. IDs are monotonically allocated, never array indices.
 -- Each face owns its corner attributes; UV/normal discontinuities are explicit.
 local U = require(script.Parent.Util)
 local Attributes = require(script.Parent.AttributeCore)
 local Connectivity = require(script.Parent.Connectivity)
 local Predicates = require(script.Parent.Predicates)
+local Types = require(script.Parent.Types)
+export type Mesh = Types.Mesh
+export type Face = Types.Face
+export type Corner = Types.Corner
+type Self = Mesh
 local Mesh = {}
 Mesh.__index = Mesh
-function Mesh.new()
+function Mesh.new(): Mesh
 	return setmetatable({
 		vertices = {},
 		faces = {},
@@ -16,9 +22,9 @@ function Mesh.new()
 		nextVertex = 1,
 		nextFace = 1,
 		revision = 0,
-	}, Mesh)
+	}, Mesh) :: any
 end
-function Mesh:addVertex(position)
+function Mesh.addVertex(self: Self, position: Vector3): number
 	assert(U.vector(position), "Vertex must be finite Vector3")
 	local id = self.nextVertex
 	self.nextVertex += 1
@@ -26,7 +32,7 @@ function Mesh:addVertex(position)
 	self.revision += 1
 	return id
 end
-function Mesh:addFace(vertices, corners, material)
+function Mesh.addFace(self: Self, vertices: { number }, corners: { Corner }?, material: number?): number
 	assert(#vertices >= 3, "Face needs at least three vertices")
 	local seen = {}
 	for _, id in vertices do
@@ -36,7 +42,7 @@ function Mesh:addFace(vertices, corners, material)
 	assert(corners == nil or #corners == #vertices, "Corner count mismatch")
 	local id = self.nextFace
 	self.nextFace += 1
-	local copiedCorners = {}
+	local copiedCorners: { Corner } = {}
 	for i = 1, #vertices do
 		copiedCorners[i] = corners and U.copy(corners[i]) or {}
 	end
@@ -48,18 +54,18 @@ function Mesh:addFace(vertices, corners, material)
 	self.revision += 1
 	return id
 end
-function Mesh:setPosition(id, p)
+function Mesh.setPosition(self: Self, id: number, p: Vector3)
 	assert(self.vertices[id] and U.vector(p), "Invalid position/vertex")
 	self.vertices[id] = p
 	self.revision += 1
 end
-function Mesh:removeFace(id)
+function Mesh.removeFace(self: Self, id: number)
 	assert(self.faces[id], "Unknown face")
 	self.faces[id] = nil
 	Attributes.prune(self)
 	self.revision += 1
 end
-function Mesh:removeUnused()
+function Mesh.removeUnused(self: Self): Mesh
 	local used = {}
 	for _, f in self.faces do
 		for _, v in f.vertices do
@@ -79,14 +85,14 @@ function Mesh:removeUnused()
 	self.revision += 1
 	return self
 end
-function Mesh:clone()
+function Mesh.clone(self: Self): Mesh
 	local m = Mesh.new()
-	for k, v in self do
-		m[k] = U.copy(v)
+	for k, v in self :: any do
+		(m :: any)[k] = U.copy(v)
 	end
 	return m
 end
-function Mesh:bounds()
+function Mesh.bounds(self: Self): (Vector3, Vector3)
 	local lo = Vector3.new(math.huge, math.huge, math.huge)
 	local hi = -lo
 	assert(next(self.vertices), "Empty mesh has no bounds")
@@ -96,7 +102,7 @@ function Mesh:bounds()
 	end
 	return lo, hi
 end
-function Mesh:faceNormal(id)
+function Mesh.faceNormal(self: Self, id: number): (Vector3, number)
 	local vs = assert(self.faces[id]).vertices
 	local origin = self.vertices[vs[1]]
 	local nx, ny, nz, permanent = 0, 0, 0, 0
@@ -131,8 +137,10 @@ function Mesh:faceNormal(id)
 	return Vector3.new(nx / length, ny / length, nz / length), length * 0.5
 end
 
-function Mesh:topology()
-	local edges, neighbors, vertexFaces = {}, {}, {}
+function Mesh.topology(self: Self): Types.MeshTopology
+	local edges: { [string]: Types.TopologyEdge } = {}
+	local neighbors: { [number]: { [number]: boolean } } = {}
+	local vertexFaces: { [number]: { number } } = {}
 	for v in self.vertices do
 		neighbors[v] = {}
 		vertexFaces[v] = {}
@@ -154,9 +162,9 @@ function Mesh:topology()
 	return { edges = edges, neighbors = neighbors, vertexFaces = vertexFaces }
 end
 -- Ear clipping supports simple planar concave polygons. Returns corner indices.
-function Mesh:faceTriangles(fid, options)
+function Mesh.faceTriangles(self: Self, fid: number, options: Types.TriangulationOptions?): { { number } }
 	local f = assert(self.faces[fid])
-	options = options or {}
+	local options: Types.TriangulationOptions = options or {}
 	assert(#f.vertices <= (options.maxVertices or 2000), "Face triangulation vertex budget exceeded")
 	local n = self:faceNormal(fid)
 	assert(n.Magnitude > 0, "Degenerate polygon")
@@ -178,11 +186,12 @@ function Mesh:faceTriangles(fid, options)
 	local function visit()
 		work += 1
 		assert(work <= (options.maxWork or 5000000), "Face triangulation work budget exceeded")
-		if options._visit then
-			options._visit()
+		local onVisit, checkpoint = options._visit, options.checkpoint
+		if onVisit then
+			onVisit()
 		end
-		if work % 256 == 0 and options.checkpoint then
-			options.checkpoint(work / (options.maxWork or 5000000))
+		if work % 256 == 0 and checkpoint then
+			checkpoint(work / (options.maxWork or 5000000))
 		end
 	end
 	local function cross(a, b, c)
@@ -201,11 +210,11 @@ function Mesh:faceTriangles(fid, options)
 			end
 		end
 	end
-	local ring = {}
+	local ring: { number } = {}
 	for i = 1, #pts do
 		ring[i] = i
 	end
-	local out = {}
+	local out: { { number } } = {}
 	while #ring > 3 do
 		local cut = false
 		for j, b in ring do
@@ -239,8 +248,8 @@ function Mesh:faceTriangles(fid, options)
 	table.insert(out, ring)
 	return out
 end
-function Mesh:triangles()
-	local r = {}
+function Mesh.triangles(self: Self): { Types.Triangle }
+	local r: { Types.Triangle } = {}
 	for _, fid in U.keys(self.faces) do
 		local f = self.faces[fid]
 		for _, c in self:faceTriangles(fid) do
@@ -249,7 +258,7 @@ function Mesh:triangles()
 	end
 	return r
 end
-function Mesh:volume(origin)
+function Mesh.volume(self: Self, origin: Vector3?): number
 	assert(origin == nil or U.vector(origin), "Finite volume origin required")
 	if not next(self.vertices) then
 		return 0
@@ -265,6 +274,7 @@ function Mesh:volume(origin)
 		-- Open pieces retain a common world origin so their oriented tetrahedra add.
 		origin = closed and self.vertices[U.keys(self.vertices)[1]] or Vector3.zero
 	end
+	local origin = origin :: Vector3
 	local sum, compensation = 0, 0
 	for _, t in self:triangles() do
 		local a, b, c = self.vertices[t[1]], self.vertices[t[2]], self.vertices[t[3]]
@@ -280,9 +290,8 @@ function Mesh:volume(origin)
 	return sum
 end
 
-function Mesh:validate(options)
-	options = options or {}
-	local minimumFaceArea = options.minimumFaceArea
+function Mesh.validate(self: Self, options: Types.ValidateOptions?): Types.ValidationReport
+	local minimumFaceArea = (options or {} :: Types.ValidateOptions).minimumFaceArea
 	if minimumFaceArea == nil then
 		minimumFaceArea = 1e-12
 	end
@@ -290,7 +299,7 @@ function Mesh:validate(options)
 		type(minimumFaceArea) == "number" and U.finite(minimumFaceArea) and minimumFaceArea >= 0,
 		"Minimum face area must be finite and nonnegative"
 	)
-	local errors = {}
+	local errors: { string } = {}
 	local valid = true
 	local boundary, nonmanifold, winding, degenerate = 0, 0, 0, 0
 	for id, p in self.vertices do
@@ -336,7 +345,7 @@ function Mesh:validate(options)
 			table.insert(errors, tostring(err))
 		end
 	end
-	local connectivity = valid and Connectivity.analyze(self) or nil
+	local connectivity: any = valid and Connectivity.analyze(self) or nil
 	local badVertices = connectivity and U.count(connectivity.nonmanifoldVertices) or 0
 	local duplicates = connectivity and U.count(connectivity.duplicateFaces) or 0
 	local zeroEdges = connectivity and U.count(connectivity.zeroLengthEdges) or 0
@@ -365,25 +374,26 @@ function Mesh:validate(options)
 		closed = validSurface and boundary == 0 and next(self.faces) ~= nil,
 	}
 end
-function Mesh:recalculateNormals(angle, sharpEdges)
-	angle = angle or math.pi
+function Mesh.recalculateNormals(self: Self, angle: number?, sharpEdges: { [string]: boolean }?): Mesh
+	local angle: number = angle or math.pi
 	assert(
 		type(angle) == "number" and U.finite(angle) and angle >= 0 and angle <= math.pi,
 		"Normal angle must be in [0,pi]"
 	)
 	local t = self:topology()
 	if sharpEdges == nil then
-		local channel = (self.attributes or {}).sharp_edge
+		local channel = (self.attributes or {} :: { [string]: Types.Channel }).sharp_edge
 		if channel then
 			assert(
 				channel.domain == "edge" and channel.dataType == "boolean",
 				"Sharp normal attribute must be edge boolean"
 			)
 			Attributes.validate(self)
-			sharpEdges = {}
+			local fromChannel: { [string]: boolean } = {}
 			for key in t.edges do
-				sharpEdges[key] = Attributes.read(channel, key)
+				fromChannel[key] = Attributes.read(channel, key)
 			end
+			sharpEdges = fromChannel
 		end
 	else
 		assert(type(sharpEdges) == "table", "Sharp edges must be a selection table")
@@ -391,7 +401,7 @@ function Mesh:recalculateNormals(angle, sharpEdges)
 			assert(t.edges[key] and type(value) == "boolean", "Invalid sharp edge selection")
 		end
 	end
-	local normals, areas = {}, {}
+	local normals: { [number]: Vector3 }, areas: { [number]: number } = {}, {}
 	local threshold = math.cos(angle)
 	for id in self.faces do
 		normals[id], areas[id] = self:faceNormal(id)
@@ -406,7 +416,7 @@ function Mesh:recalculateNormals(angle, sharpEdges)
 				while cursor <= #candidates do
 					local current = self.faces[candidates[cursor]]
 					cursor += 1
-					local index = table.find(current.vertices, v)
+					local index = table.find(current.vertices, v) :: number
 					for _, neighbor in
 						{
 							current.vertices[index % #current.vertices + 1],

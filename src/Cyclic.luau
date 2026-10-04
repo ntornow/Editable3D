@@ -1,6 +1,8 @@
 -- Periodic rational splines store each control exactly once. Expanded NURBS are copies.
 local U = require(script.Parent.Util)
 local N = require(script.Parent.NURBS)
+-- Deferred require breaks a load-order cycle; the analyzer does not follow it.
+local deferredRequire = require :: any
 local C = {}
 
 local function periodicKnots(count, degree, intervals)
@@ -292,15 +294,15 @@ function C.rotateSurfaceSeam(surface, axis, offset)
 	return editDirection(surface, axis, "rotateSeam", offset)
 end
 function C.elevateDegree(curve, count, options)
-	return require(script.Parent.CyclicEdit).curve(curve, "elevate", nil, count or 1, options)
+	return deferredRequire(script.Parent.CyclicEdit).curve(curve, "elevate", nil, count or 1, options)
 end
 function C.removeKnot(curve, t, count, options)
-	return require(script.Parent.CyclicEdit).curve(curve, "remove", t, count or 1, options)
+	return deferredRequire(script.Parent.CyclicEdit).curve(curve, "remove", t, count or 1, options)
 end
 function C.elevateSurfaceDegree(surface, axis, count, options)
-	return require(script.Parent.CyclicEdit).surface(surface, axis, "elevate", nil, count or 1, options)
+	return deferredRequire(script.Parent.CyclicEdit).surface(surface, axis, "elevate", nil, count or 1, options)
 end
 function C.removeSurfaceKnot(surface, axis, t, count, options)
-	return require(script.Parent.CyclicEdit).surface(surface, axis, "remove", t, count or 1, options)
+	return deferredRequire(script.Parent.CyclicEdit).surface(surface, axis, "remove", t, count or 1, options)
 end
 return C

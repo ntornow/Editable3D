@@ -138,7 +138,7 @@ return function(mesh, strokes, options)
 			edit.maps.edge[U.edge(previous, cut.id)] = { { key, 1 } }
 			previous = cut.id
 		end
-		edit.maps.edge[U.edge(previous, tonumber(endpoints[2]))] = { { key, 1 } }
+		edit.maps.edge[U.edge(previous, tonumber(endpoints[2]) :: number)] = { { key, 1 } }
 	end
 	edit.report.faceMap = {}
 	for _, fid in U.keys(mesh.faces) do

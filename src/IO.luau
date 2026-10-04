@@ -1,8 +1,14 @@
+--!strict
 local Mesh = require(script.Parent.Mesh)
 local U = require(script.Parent.Util)
 local A = require(script.Parent.AttributeCore)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- JSON-compatible mesh document (format "Editable3D.Mesh", version 1 or 2). Decoded documents
+-- are untrusted input and are validated field by field in fromTable.
+export type MeshDocument = { [string]: any }
 local IO = {}
-local function encodeValue(value)
+local function encodeValue(value: any): any
 	local kind = typeof(value)
 	if kind == "Vector2" then
 		return { value.X, value.Y }
@@ -15,7 +21,7 @@ local function encodeValue(value)
 	end
 	return value
 end
-local function decodeValue(value, kind)
+local function decodeValue(value: any, kind: string): any
 	if kind == "Vector2" then
 		assert(type(value) == "table" and #value == 2)
 		return Vector2.new(table.unpack(value))
@@ -30,12 +36,13 @@ local function decodeValue(value, kind)
 	end
 	return value
 end
-function IO.toTable(mesh)
+function IO.toTable(mesh: Mesh): MeshDocument
 	A.validate(mesh)
-	local data = { format = "Editable3D.Mesh", version = 1, vertices = {}, faces = {}, groups = {} }
+	local data: MeshDocument =
+		{ format = "Editable3D.Mesh", version = 1, vertices = {}, faces = {}, groups = {} }
 	for _, id in U.keys(mesh.vertices) do
 		local p = mesh.vertices[id]
-		local weights = {}
+		local weights: { { number } } = {}
 		for _, bone in U.keys(mesh.weights[id] or {}) do
 			table.insert(weights, { bone, mesh.weights[id][bone] })
 		end
@@ -43,9 +50,9 @@ function IO.toTable(mesh)
 	end
 	for _, id in U.keys(mesh.faces) do
 		local f = mesh.faces[id]
-		local corners = {}
+		local corners: { { [string]: any } } = {}
 		for i, c in f.corners do
-			local a = {}
+			local a: { [string]: any } = {}
 			if c.uv then
 				a.uv = { c.uv.X, c.uv.Y }
 			end
@@ -68,7 +75,7 @@ function IO.toTable(mesh)
 		)
 	end
 	for name, group in mesh.groups do
-		local list = {}
+		local list: { { number } } = {}
 		for _, id in U.keys(group) do
 			table.insert(list, { id, group[id] })
 		end
@@ -78,26 +85,23 @@ function IO.toTable(mesh)
 		data.version, data.attributes = 2, {}
 		for _, name in U.keys(mesh.attributes) do
 			local channel = mesh.attributes[name]
-			local values = {}
+			local values: { { any } } = {}
 			for _, key in U.keys(channel.values) do
 				table.insert(values, { key, encodeValue(channel.values[key]) })
 			end
-			table.insert(
-				data.attributes,
-				{
-					name = name,
-					domain = channel.domain,
-					dataType = channel.dataType,
-					default = encodeValue(channel.default),
-					interpolation = channel.interpolation,
-					values = values,
-				}
-			)
+			table.insert(data.attributes, {
+				name = name,
+				domain = channel.domain,
+				dataType = channel.dataType,
+				default = encodeValue(channel.default),
+				interpolation = channel.interpolation,
+				values = values,
+			})
 		end
 	end
 	return data
 end
-function IO.fromTable(data)
+function IO.fromTable(data: MeshDocument): Mesh
 	assert(
 		data.format == "Editable3D.Mesh" and (data.version == 1 or data.version == 2),
 		"Unsupported mesh format"
@@ -114,9 +118,9 @@ function IO.fromTable(data)
 		end
 	end
 	for _, f in data.faces do
-		local corners = {}
+		local corners: { Types.Corner } = {}
 		for i, c in f.corners do
-			local a = {}
+			local a: Types.Corner = {}
 			if c.uv then
 				a.uv = Vector2.new(table.unpack(c.uv))
 			end
@@ -152,7 +156,7 @@ function IO.fromTable(data)
 				type(entry.name) == "string" and not m.attributes[entry.name],
 				"Duplicate or invalid attribute name"
 			)
-			local channel = {
+			local channel: Types.Channel = {
 				domain = entry.domain,
 				dataType = entry.dataType,
 				default = decodeValue(entry.default, entry.dataType),
@@ -172,15 +176,15 @@ function IO.fromTable(data)
 	assert(#report.errors == 0, "Malformed serialized mesh")
 	return m
 end
-function IO.encode(mesh)
+function IO.encode(mesh: Mesh): string
 	return game:GetService("HttpService"):JSONEncode(IO.toTable(mesh))
 end
-function IO.decode(json)
+function IO.decode(json: string): Mesh
 	return IO.fromTable(game:GetService("HttpService"):JSONDecode(json))
 end
-function IO.toOBJ(mesh)
+function IO.toOBJ(mesh: Mesh): string
 	local lines = { "# Editable3D original geometry" }
-	local mapping = {}
+	local mapping: { [number]: number } = {}
 	for i, id in U.keys(mesh.vertices) do
 		local p = mesh.vertices[id]
 		mapping[id] = i
@@ -202,12 +206,12 @@ function IO.toOBJ(mesh)
 			table.insert(lines, string.format("vn %.9g %.9g %.9g", n.X, n.Y, n.Z))
 		end
 	end
-	local material = nil
+	local material: number? = nil
 	for _, fid in U.keys(mesh.faces) do
 		local f = mesh.faces[fid]
 		if f.material ~= material then
 			material = f.material
-			table.insert(lines, "usemtl material_" .. material)
+			table.insert(lines, "usemtl material_" .. (material :: number))
 		end
 		local parts = { "f" }
 		for _, id in f.vertices do
@@ -218,13 +222,13 @@ function IO.toOBJ(mesh)
 	end
 	return table.concat(lines, "\n") .. "\n"
 end
-function IO.fromOBJ(text)
+function IO.fromOBJ(text: string): Mesh
 	local m = Mesh.new()
-	local vertices, uvs, normals = {}, {}, {}
+	local vertices: { number }, uvs: { Vector2 }, normals: { Vector3 } = {}, {}, {}
 	local material = 1
-	local names = {}
+	local names: { [string]: number } = {}
 	local count = 0
-	local function index(s, list)
+	local function index<T>(s: string, list: { T }): T
 		local i = tonumber(s)
 		assert(i and i ~= 0)
 		i = i < 0 and #list + i + 1 or i
@@ -233,7 +237,7 @@ function IO.fromOBJ(text)
 		return value
 	end
 	for line in text:gmatch("[^\r\n]+") do
-		local values = {}
+		local values: { string } = {}
 		for value in line:gsub("#.*$", ""):gmatch("%S+") do
 			table.insert(values, value)
 		end
@@ -267,17 +271,17 @@ function IO.fromOBJ(text)
 			end
 			material = names[values[2]]
 		elseif kind == "f" then
-			local face, corners = {}, {}
+			local face: { number }, corners: { Types.Corner } = {}, {}
 			for i = 2, #values do
 				local v, uv, n = values[i]:match("^([^/]+)/?([^/]*)/?([^/]*)$")
 				assert(v, "Malformed OBJ face")
 				table.insert(face, index(v, vertices))
-				local c = {}
+				local c: Types.Corner = {}
 				if uv ~= "" then
-					c.uv = index(uv, uvs)
+					c.uv = index(uv :: string, uvs)
 				end
 				if n ~= "" then
-					c.normal = index(n, normals)
+					c.normal = index(n :: string, normals)
 				end
 				table.insert(corners, c)
 			end

@@ -4,17 +4,21 @@ Version 0.76.0 adds bounded texture/bake operations, typed public boundaries and
 
 ## Typed callers
 
-`src/Types.luau` exports mesh, texture, bake, limit and publishing contracts. The package root re-exports `Mesh`, `Texture`, `Limits`, `BakeOptions`, `PublishOptions` and `PublishReport`. Use a statically resolved require in a strict caller:
+`src/Types.luau` exports mesh, texture, bake, limit and publishing contracts. The package root lists every namespace explicitly, so a strict caller gets each namespace's real type, and re-exports `Mesh`, `Corner`, `Face`, `Texture`, `Limits`, `BakeOptions`, `PublishOptions`, `PublishReport`, `ValidationReport` and `API`. Use a statically resolved require in a strict caller:
 
 ```lua
 --!strict
 local E = require(game.ReplicatedStorage.Editable3D)
+local mesh: E.Mesh = E.Subdivision.catmullClark(E.Primitives.box(Vector3.new(4, 4, 4)), 2)
+local report: E.ValidationReport = mesh:validate()
 local texture: E.Texture = E.Texture.new(256, 256)
 local options: E.Limits = {maxPixels = 1024 * 1024, maxSeconds = 5}
 local resized: E.Texture = texture:resize(512, 512, options)
 ```
 
-Five modules are strict: the contracts, resource budget, retry policy, transaction runner and publishing pipeline. Existing numerical modules remain nonstrict. Legacy namespaces have an explicit `any` fallback in `Types.API`; this is an incremental boundary, not a claim of complete type coverage. The CLI checks core modules and rejects invalid argument types. Roblox native value types resolve in Studio; the standalone analyzer's declared Roblox globals do not validate Vector/CFrame semantics.
+Twenty-one modules are strict: the root and contracts, the resource budget and publishing pipeline, and the core authoring API (`Util`, `Mesh`, `Primitives`, `Selection`, `Normals`, `Sculpt`, `IO`, `Simplify`, `Unwrap`, `MeshEdit`, `UV`, `Subdivision`, `Texture`, `Bake`, `Roblox`). Their public functions have parameter and return types, and `Roblox` uses the engine classes (`EditableMesh`, `MeshPart`, `Model`, `SurfaceAppearance`). Some option and report tables that are only forwarded to nonstrict modules are typed as open tables. The other namespaces are type-checked in nonstrict mode, so callers see their function shapes with mostly untyped parameters.
+
+The validation gate type-checks the whole package against the Roblox API definitions and rejects a set of invalid usages (for example a number passed as a vertex position, or a number to `IO.encode`). See [MAINTAINING.md](MAINTAINING.md).
 
 ## Texture and bake limits
 

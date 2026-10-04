@@ -1,7 +1,11 @@
+--!strict
 -- Linear floating-point RGBA images. UV origin is upper-left; byte conversion is explicit.
 local U = require(script.Parent.Util)
 local Budget = require(script.Parent.OperationBudget)
-local function finish(value, budget, owned)
+local Types = require(script.Parent.Types)
+type Texture = Types.Texture
+type Limits = Types.Limits
+local function finish<T>(value: T, budget: Budget.Budget, owned: boolean): T
 	if owned then
 		budget:finish()
 	end
@@ -10,9 +14,9 @@ end
 local Texture = {}
 Texture.__index = Texture
 -- UV 0/1 are image boundaries; texel centers are (index + 0.5) / size.
-local function sampleAxis(value, size, wrap)
+local function sampleAxis(value: number, size: number, wrap: boolean?): (number, number, number)
 	assert(U.finite(value), "Texture coordinates must be finite")
-	value = wrap and value % 1 or math.clamp(value, 0, 1)
+	value = if wrap then value % 1 else math.clamp(value, 0, 1)
 	local coordinate = value * size - 0.5
 	local lower = math.floor(coordinate)
 	local fraction = coordinate - lower
@@ -22,7 +26,12 @@ local function sampleAxis(value, size, wrap)
 	return math.clamp(lower, 0, size - 1), math.clamp(lower + 1, 0, size - 1), fraction
 end
 -- Stored RGB is straight alpha. Preserve hidden RGB when nothing is applied.
-local function sourceOver(destination, destinationAlpha, source, coverage)
+local function sourceOver(
+	destination: Color3,
+	destinationAlpha: number,
+	source: Color3,
+	coverage: number
+): (Color3, number)
 	if coverage == 0 then
 		return destination, destinationAlpha
 	end
@@ -38,24 +47,26 @@ local function sourceOver(destination, destinationAlpha, source, coverage)
 	),
 		alpha
 end
-function Texture.new(width, height, color, alpha, options)
+function Texture.new(width: number, height: number, color: Color3?, alpha: number?, options: Limits?): Texture
 	local budget, owned = Budget.acquire(options, "Texture.new")
 	budget:image(width, height)
 	U.integer(width, 1)
 	U.integer(height, 1)
-	local self =
-		setmetatable({ width = width, height = height, pixels = buffer.create(width * height * 16) }, Texture)
+	local self: Texture = setmetatable(
+		{ width = width, height = height, pixels = buffer.create(width * height * 16) },
+		Texture
+	) :: any
 	if color or alpha then
 		for y = 0, height - 1 do
 			for x = 0, width - 1 do
 				budget:step()
-				self:set(x, y, color or Color3.new(), alpha == nil and 1 or alpha)
+				self:set(x, y, color or Color3.new(), if alpha == nil then 1 else alpha)
 			end
 		end
 	end
 	return finish(self, budget, owned)
 end
-function Texture:set(x, y, color, alpha)
+function Texture.set(self: Texture, x: number, y: number, color: Color3, alpha: number?)
 	assert(
 		x % 1 == 0 and y % 1 == 0 and x >= 0 and y >= 0 and x < self.width and y < self.height,
 		"Pixel out of bounds"
@@ -64,9 +75,9 @@ function Texture:set(x, y, color, alpha)
 	buffer.writef32(self.pixels, i, color.R)
 	buffer.writef32(self.pixels, i + 4, color.G)
 	buffer.writef32(self.pixels, i + 8, color.B)
-	buffer.writef32(self.pixels, i + 12, alpha == nil and 1 or alpha)
+	buffer.writef32(self.pixels, i + 12, if alpha == nil then 1 else alpha)
 end
-function Texture:get(x, y)
+function Texture.get(self: Texture, x: number, y: number): (Color3, number)
 	assert(
 		x % 1 == 0 and y % 1 == 0 and x >= 0 and y >= 0 and x < self.width and y < self.height,
 		"Pixel out of bounds"
@@ -79,14 +90,14 @@ function Texture:get(x, y)
 	),
 		buffer.readf32(self.pixels, i + 12)
 end
-function Texture:clone(options)
+function Texture.clone(self: Texture, options: Limits?): Texture
 	local budget, owned = Budget.acquire(options, "Texture.clone")
 	local t = Texture.new(self.width, self.height, nil, nil, Budget.options(budget))
 	budget:step(self.width * self.height)
 	buffer.copy(t.pixels, 0, self.pixels)
 	return finish(t, budget, owned)
 end
-function Texture:sample(uv, wrap, wrapV)
+function Texture.sample(self: Texture, uv: Vector2, wrap: boolean?, wrapV: boolean?): (Color3, number)
 	if wrapV == nil then
 		wrapV = wrap
 	end
@@ -99,7 +110,12 @@ function Texture:sample(uv, wrap, wrapV)
 	return a:Lerp(b, fx):Lerp(c:Lerp(d, fx), fy),
 		(aa + (ab - aa) * fx) * (1 - fy) + (ac + (ad - ac) * fx) * fy
 end
-function Texture.generate(width, height, fn, options)
+function Texture.generate(
+	width: number,
+	height: number,
+	fn: (Vector2, number, number) -> (Color3, number?),
+	options: Limits?
+): Texture
 	local budget, owned = Budget.acquire(options, "Texture.generate")
 	local t = Texture.new(width, height, nil, nil, Budget.options(budget))
 	for y = 0, height - 1 do
@@ -111,13 +127,17 @@ function Texture.generate(width, height, fn, options)
 	end
 	return finish(t, budget, owned)
 end
-function Texture:map(fn, options)
+function Texture.map(
+	self: Texture,
+	fn: (Color3, number, Vector2, number, number) -> (Color3, number?),
+	options: Limits?
+): Texture
 	return Texture.generate(self.width, self.height, function(uv, x, y)
 		local c, a = self:get(x, y)
 		return fn(c, a, uv, x, y)
 	end, options)
 end
-function Texture:resize(width, height, options)
+function Texture.resize(self: Texture, width: number, height: number, options: Limits?): Texture
 	if width == self.width and height == self.height then
 		return self:clone(options)
 	end
@@ -125,9 +145,9 @@ function Texture:resize(width, height, options)
 		return self:sample(uv)
 	end, options)
 end
-function Texture:blend(other, opacity, options)
+function Texture.blend(self: Texture, other: Texture, opacity: number?, options: Limits?): Texture
 	assert(self.width == other.width and self.height == other.height)
-	opacity = math.clamp(opacity or 1, 0, 1)
+	local opacity = math.clamp(opacity or 1, 0, 1)
 	return Texture.generate(self.width, self.height, function(_, x, y)
 		local a, aa = self:get(x, y)
 		local b, ab = other:get(x, y)
@@ -135,16 +155,16 @@ function Texture:blend(other, opacity, options)
 		return sourceOver(a, aa, b, ab)
 	end, options)
 end
-function Texture:blur(radius, sigma, options)
+function Texture.blur(self: Texture, radius: number, sigma: number?, options: Limits?): Texture
 	local budget, owned = Budget.acquire(options, "Texture.blur")
 	U.integer(radius, 0)
 	if radius == 0 then
 		return finish(self:clone(Budget.options(budget)), budget, owned)
 	end
-	sigma = sigma or radius / 2
+	local sigma = sigma or radius / 2
 	assert(sigma > 0)
 	budget:reserve((2 * radius + 1) * 8)
-	local weights = {}
+	local weights: { [number]: number } = {}
 	local sum = 0
 	for i = -radius, radius do
 		budget:step()
@@ -152,7 +172,7 @@ function Texture:blur(radius, sigma, options)
 		weights[i] = w
 		sum += w
 	end
-	local source = self
+	local source: Texture = self
 	for _, axis in { "x", "y" } do
 		local input = source
 		source = Texture.generate(self.width, self.height, function(_, x, y)
@@ -174,8 +194,8 @@ function Texture:blur(radius, sigma, options)
 	end
 	return finish(source, budget, owned)
 end
-function Texture:normalFromHeight(strength, options)
-	strength = strength or 1
+function Texture.normalFromHeight(self: Texture, strength: number?, options: Limits?): Texture
+	local strength = strength or 1
 	return Texture.generate(self.width, self.height, function(_, x, y)
 		local left = self:get(math.max(x - 1, 0), y).R
 		local right = self:get(math.min(x + 1, self.width - 1), y).R
@@ -185,11 +205,18 @@ function Texture:normalFromHeight(strength, options)
 		return Color3.new(n.X * 0.5 + 0.5, n.Y * 0.5 + 0.5, n.Z * 0.5 + 0.5), 1
 	end, options)
 end
-function Texture:paint(center, radius, color, opacity, options)
+function Texture.paint(
+	self: Texture,
+	center: Vector2,
+	radius: number,
+	color: Color3,
+	opacity: number?,
+	options: Limits?
+): Texture
 	local budget, owned = Budget.acquire(options, "Texture.paint")
 	assert(radius > 0)
 	local out = self:clone(Budget.options(budget))
-	opacity = math.clamp(opacity or 1, 0, 1)
+	local opacity = math.clamp(opacity or 1, 0, 1)
 	for y = math.max(0, math.floor(center.Y - radius)), math.min(self.height - 1, math.ceil(center.Y + radius)) do
 		for x = math.max(0, math.floor(center.X - radius)), math.min(self.width - 1, math.ceil(center.X + radius)) do
 			budget:step()
@@ -200,13 +227,13 @@ function Texture:paint(center, radius, color, opacity, options)
 	end
 	return finish(out, budget, owned)
 end
-local function encode(x)
+local function encode(x: number): number
 	return x <= 0.0031308 and 12.92 * x or 1.055 * x ^ (1 / 2.4) - 0.055
 end
-local function decode(x)
+local function decode(x: number): number
 	return x <= 0.04045 and x / 12.92 or ((x + 0.055) / 1.055) ^ 2.4
 end
-function Texture:toRGBA8(srgb, options)
+function Texture.toRGBA8(self: Texture, srgb: boolean?, options: Limits?): buffer
 	local budget, owned = Budget.acquire(options, "Texture.toRGBA8")
 	budget:image(self.width, self.height, 4)
 	local bytes = buffer.create(self.width * self.height * 4)
@@ -226,7 +253,13 @@ function Texture:toRGBA8(srgb, options)
 	end
 	return finish(bytes, budget, owned)
 end
-function Texture.fromRGBA8(width, height, bytes, srgb, options)
+function Texture.fromRGBA8(
+	width: number,
+	height: number,
+	bytes: buffer,
+	srgb: boolean?,
+	options: Limits?
+): Texture
 	assert(buffer.len(bytes) == width * height * 4)
 	return Texture.generate(width, height, function(_, x, y)
 		local i = (y * width + x) * 4
@@ -240,11 +273,17 @@ function Texture.fromRGBA8(width, height, bytes, srgb, options)
 		return Color3.new(r, g, b), buffer.readu8(bytes, i + 3) / 255
 	end, options)
 end
-function Texture.noise(width, height, frequency, octaves, seed, options)
+function Texture.noise(
+	width: number,
+	height: number,
+	frequency: number?,
+	octaves: number?,
+	seed: number?,
+	options: Limits?
+): Texture
 	local budget, owned = Budget.acquire(options, "Texture.noise")
 	U.integer(octaves or 4, 1)
-	local out = nil
-	out = Texture.generate(width, height, function(uv)
+	local out = Texture.generate(width, height, function(uv)
 		local f, a, sum, total = frequency or 8, 1, 0, 0
 		for _ = 1, octaves or 4 do
 			budget:step()
@@ -258,10 +297,10 @@ function Texture.noise(width, height, frequency, octaves, seed, options)
 	end, Budget.options(budget))
 	return finish(out, budget, owned)
 end
-function Texture:tiles(size, options)
+function Texture.tiles(self: Texture, size: number, options: Limits?): { Types.Tile }
 	local budget, owned = Budget.acquire(options, "Texture.tiles")
 	U.integer(size, 1)
-	local tiles = {}
+	local tiles: { Types.Tile } = {}
 	for y = 0, self.height - 1, size do
 		for x = 0, self.width - 1, size do
 			local width, height = math.min(size, self.width - x), math.min(size, self.height - y)
@@ -280,5 +319,26 @@ function Texture:tiles(size, options)
 		end
 	end
 	return finish(tiles, budget, owned)
+end
+-- Never called: lets the type checker verify the implementation against the public contracts.
+local function _contract(t: Texture): (Types.TextureLibrary, Types.Texture)
+	return Texture,
+		{
+			width = t.width,
+			height = t.height,
+			pixels = t.pixels,
+			set = Texture.set,
+			get = Texture.get,
+			clone = Texture.clone,
+			sample = Texture.sample,
+			map = Texture.map,
+			resize = Texture.resize,
+			blend = Texture.blend,
+			blur = Texture.blur,
+			normalFromHeight = Texture.normalFromHeight,
+			paint = Texture.paint,
+			toRGBA8 = Texture.toRGBA8,
+			tiles = Texture.tiles,
+		}
 end
 return Texture

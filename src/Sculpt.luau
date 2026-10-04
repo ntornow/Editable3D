@@ -1,28 +1,36 @@
+--!strict
 local U = require(script.Parent.Util)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Vertex ID to weight in [0,1]; nil selects every vertex at full weight.
+type Mask = { [number]: number }
+-- Brush, stroke and fairing options are validated by BrushStroke and Fairing.
+type Options = { [string]: any }
+export type SmoothOptions = { pinBoundary: boolean?, lambda: number?, taubin: boolean?, mu: number? }
 local S = {}
-function S.stroke(mesh, samples, options)
+function S.stroke(mesh: Mesh, samples: { { [string]: any } }, options: Options?)
 	return require(script.Parent.BrushStroke)(mesh, samples, options)
 end
-function S.brush(mesh, center, options)
+function S.brush(mesh: Mesh, center: Vector3, options: Options?)
 	assert(options == nil or type(options) == "table", "Brush options must be a table")
-	options = table.clone(options or {})
+	local options: Options = table.clone(options or {})
 	options.sampling = "dabs"
 	return S.stroke(mesh, { { position = center, pressure = options.pressure } }, options)
 end
-function S.fair(mesh, selection, options)
+function S.fair(mesh: Mesh, selection: { [any]: any }?, options: Options?)
 	return require(script.Parent.Fairing)(mesh, selection, options)
 end
-function S.move(mesh, mask, delta)
+function S.move(mesh: Mesh, mask: Mask?, delta: Vector3): Mesh
 	local out = mesh:clone()
 	for id, p in out.vertices do
 		out.vertices[id] = p + delta * U.weight(mask, id)
 	end
 	return out:recalculateNormals()
 end
-function S.inflate(mesh, mask, amount)
+function S.inflate(mesh: Mesh, mask: Mask?, amount: number): Mesh
 	local out = mesh:clone()
 	local top = mesh:topology()
-	local normals = {}
+	local normals: { [number]: Vector3 } = {}
 	for fid in mesh.faces do
 		local n, a = mesh:faceNormal(fid)
 		normals[fid] = n * a
@@ -36,7 +44,7 @@ function S.inflate(mesh, mask, amount)
 	end
 	return out:recalculateNormals()
 end
-function S.flatten(mesh, mask, point, normal, strength)
+function S.flatten(mesh: Mesh, mask: Mask?, point: Vector3, normal: Vector3, strength: number?): Mesh
 	assert(normal.Magnitude > 0)
 	normal = normal.Unit
 	local out = mesh:clone()
@@ -46,20 +54,20 @@ function S.flatten(mesh, mask, point, normal, strength)
 	end
 	return out:recalculateNormals()
 end
-function S.smooth(mesh, mask, iterations, options)
-	options = options or {}
+function S.smooth(mesh: Mesh, mask: Mask?, iterations: number?, options: SmoothOptions?): Mesh
+	local options: SmoothOptions = options or {}
 	U.integer(iterations or 1, 0)
 	local out = mesh:clone()
 	local top = mesh:topology()
-	local boundary = {}
+	local boundary: { [number]: boolean } = {}
 	for _, e in top.edges do
 		if #e.faces == 1 then
 			boundary[e.a] = true
 			boundary[e.b] = true
 		end
 	end
-	local function pass(alpha)
-		local nextPos = {}
+	local function pass(alpha: number)
+		local nextPos: { [number]: Vector3 } = {}
 		for id, p in out.vertices do
 			local sum = Vector3.zero
 			local n = 0
@@ -83,7 +91,15 @@ function S.smooth(mesh, mask, iterations, options)
 	end
 	return out:recalculateNormals()
 end
-function S.crease(mesh, mask, point, normal, width, depth, pinch)
+function S.crease(
+	mesh: Mesh,
+	mask: Mask?,
+	point: Vector3,
+	normal: Vector3,
+	width: number,
+	depth: number,
+	pinch: number?
+): Mesh
 	assert(width > 0 and normal.Magnitude > 0)
 	normal = normal.Unit
 	local out = mesh:clone()
@@ -95,7 +111,7 @@ function S.crease(mesh, mask, point, normal, width, depth, pinch)
 	end
 	return out:recalculateNormals()
 end
-function S.displace(mesh, field, mask)
+function S.displace(mesh: Mesh, field: (position: Vector3, id: number) -> Vector3, mask: Mask?): Mesh
 	local out = mesh:clone()
 	for id, p in mesh.vertices do
 		local d = field(p, id)
@@ -104,24 +120,33 @@ function S.displace(mesh, field, mask)
 	end
 	return out:recalculateNormals()
 end
-function S.symmetrize(mesh, axis, sourcePositive, tolerance)
-	axis = axis or "X"
+function S.symmetrize(
+	mesh: Mesh,
+	axis: ("X" | "Y" | "Z")?,
+	sourcePositive: boolean?,
+	tolerance: number?
+): Mesh
+	local axis: "X" | "Y" | "Z" = axis or "X"
 	assert(axis == "X" or axis == "Y" or axis == "Z")
-	tolerance = tolerance or 1e-4
+	local tolerance: number = tolerance or 1e-4
 	local direction = axis == "X" and Vector3.xAxis or axis == "Y" and Vector3.yAxis or Vector3.zAxis
 	local out = mesh:clone()
-	local sources = {}
+	-- axis is asserted to be "X", "Y" or "Z" above; component reads go through any.
+	local sources: { [number]: Vector3 } = {}
 	for id, p in mesh.vertices do
-		if (sourcePositive ~= false and p[axis] >= 0) or (sourcePositive == false and p[axis] <= 0) then
+		if
+			(sourcePositive ~= false and (p :: any)[axis] >= 0)
+			or (sourcePositive == false and (p :: any)[axis] <= 0)
+		then
 			sources[id] = p
 		end
 	end
 	for id, p in out.vertices do
-		if math.abs(p[axis]) <= tolerance then
-			out.vertices[id] = p - direction * p[axis]
-		elseif sources[id] == nil then
-			local target = p - direction * 2 * p[axis]
-			local best, dist = nil, math.huge
+		if math.abs((p :: any)[axis]) <= tolerance then
+			out.vertices[id] = p - direction * (p :: any)[axis]
+		elseif (sources[id] :: Vector3?) == nil then
+			local target = p - direction * 2 * (p :: any)[axis]
+			local best: Vector3?, dist = nil, math.huge
 			for _, q in sources do
 				local d = (q - target).Magnitude
 				if d < dist then
@@ -130,7 +155,9 @@ function S.symmetrize(mesh, axis, sourcePositive, tolerance)
 				end
 			end
 			if best then
-				out.vertices[id] = best - direction * 2 * best[axis]
+				local mirrored: Vector3 = best
+				-- axis is "X", "Y" or "Z" (asserted above).
+				out.vertices[id] = mirrored - direction * 2 * (mirrored :: any)[axis]
 			end
 		end
 	end

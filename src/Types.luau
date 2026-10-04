@@ -1,13 +1,14 @@
 --!strict
--- Public boundary contracts. Roblox supplies the native value types in Studio.
+-- Public boundary contracts. Engine value types come from the Roblox API definitions.
 local Budget = require(script.Parent.OperationBudget)
 local Publishing = require(script.Parent.PublishPipeline)
 export type Limits = Budget.Options
 export type Progress = Budget.Progress
-export type Vector2Value = typeof(Vector2.new())
-export type Vector3Value = typeof(Vector3.new())
-export type Color = typeof(Color3.new())
-export type Frame = typeof(CFrame.new())
+-- Aliases kept for existing callers; they are the engine types.
+export type Vector2Value = Vector2
+export type Vector3Value = Vector3
+export type Color = Color3
+export type Frame = CFrame
 export type Corner = {
 	uv: Vector2Value?,
 	normal: Vector3Value?,
@@ -25,6 +26,40 @@ export type Channel = {
 	interpolation: string?,
 	values: { [any]: unknown },
 }
+export type TriangulationOptions = {
+	maxVertices: number?,
+	maxWork: number?,
+	validateSimple: boolean?,
+	checkpoint: ((fraction: number) -> ())?,
+	_visit: (() -> ())?,
+}
+export type ValidateOptions = { minimumFaceArea: number? }
+export type ValidationReport = {
+	valid: boolean,
+	errors: { string },
+	vertices: number,
+	faces: number,
+	boundaryEdges: number,
+	nonmanifoldEdges: number,
+	nonmanifoldVertices: number,
+	duplicateFaces: number,
+	zeroLengthEdges: number,
+	looseVertices: number,
+	eulerCharacteristic: number?,
+	surfaceComponents: number?,
+	windingErrors: number,
+	degenerateFaces: number,
+	closed: boolean,
+}
+-- Edge keys are "smallerId:largerId" (see Util.edge). directions holds +1/-1 per adjacent face.
+export type TopologyEdge = { a: number, b: number, faces: { number }, directions: { number } }
+export type MeshTopology = {
+	edges: { [string]: TopologyEdge },
+	neighbors: { [number]: { [number]: boolean } },
+	vertexFaces: { [number]: { number } },
+}
+-- Three vertex IDs at [1..3], plus the source face and its corner indices.
+export type Triangle = { [number]: number, face: number, corners: { number } }
 export type Mesh = {
 	vertices: { [number]: Vector3Value },
 	faces: { [number]: Face },
@@ -41,13 +76,13 @@ export type Mesh = {
 	removeUnused: (Mesh) -> Mesh,
 	clone: (Mesh) -> Mesh,
 	bounds: (Mesh) -> (Vector3Value, Vector3Value),
-	faceNormal: (Mesh, number) -> Vector3Value,
-	triangles: (Mesh) -> { any },
-	validate: (Mesh, any?) -> { [string]: any },
-	recalculateNormals: (Mesh, number?, { [string]: boolean }?) -> Mesh,
+	faceNormal: (Mesh, number) -> (Vector3Value, number),
+	faceTriangles: (Mesh, number, TriangulationOptions?) -> { { number } },
+	triangles: (Mesh) -> { Triangle },
 	volume: (Mesh, Vector3Value?) -> number,
-	topology: (Mesh) -> { [string]: any },
-	faceTriangles: (Mesh, number, any?) -> { any },
+	validate: (Mesh, ValidateOptions?) -> ValidationReport,
+	recalculateNormals: (Mesh, number?, { [string]: boolean }?) -> Mesh,
+	topology: (Mesh) -> MeshTopology,
 }
 export type Texture = {
 	width: number,

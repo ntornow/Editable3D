@@ -75,11 +75,11 @@ Source: [src/BSDF.luau](src/BSDF.luau)
 
 Source: [src/Bake.luau](src/Bake.luau)
 
-- `Bake.rasterize(mesh, width, height, shader, options)`
-- `Bake.dilate(image, coverage, iterations, options)`
-- `Bake.normalMap(low, high, width, height, options)`
-- `Bake.ambientOcclusion(mesh, width, height, options)`
-- `Bake.project(mesh, texture, camera, width, height, options)`
+- `Bake.rasterize(mesh: Mesh, width: number, height: number, shader: (Types.BakeContext) -> (Color3, number?), options: BakeOptions?): (Texture, BakeReport)`
+- `Bake.dilate(image: Texture, coverage: buffer, iterations: number, options: Types.Limits?): Texture`
+- `Bake.normalMap(low: Mesh, high: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
+- `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
+- `Bake.project(mesh: Mesh, texture: Texture, camera: Types.Camera, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 
 ## Bezier
 
@@ -323,12 +323,12 @@ Source: [src/History.luau](src/History.luau)
 
 Source: [src/IO.luau](src/IO.luau)
 
-- `IO.toTable(mesh)`
-- `IO.fromTable(data)`
-- `IO.encode(mesh)`
-- `IO.decode(json)`
-- `IO.toOBJ(mesh)`
-- `IO.fromOBJ(text)`
+- `IO.toTable(mesh: Mesh): MeshDocument`
+- `IO.fromTable(data: MeshDocument): Mesh`
+- `IO.encode(mesh: Mesh): string`
+- `IO.decode(json: string): Mesh`
+- `IO.toOBJ(mesh: Mesh): string`
+- `IO.fromOBJ(text: string): Mesh`
 
 ## Integrator
 
@@ -383,40 +383,40 @@ Source: [src/Lighting.luau](src/Lighting.luau)
 
 Source: [src/Mesh.luau](src/Mesh.luau)
 
-- `Mesh.new()`
-- `Mesh:addVertex(position)`
-- `Mesh:addFace(vertices, corners, material)`
-- `Mesh:setPosition(id, p)`
-- `Mesh:removeFace(id)`
-- `Mesh:removeUnused()`
-- `Mesh:clone()`
-- `Mesh:bounds()`
-- `Mesh:faceNormal(id)`
-- `Mesh:topology()`
-- `Mesh:faceTriangles(fid, options)`
-- `Mesh:triangles()`
-- `Mesh:volume(origin)`
-- `Mesh:validate(options)`
-- `Mesh:recalculateNormals(angle, sharpEdges)`
+- `Mesh.new(): Mesh`
+- `Mesh:addVertex(position: Vector3): number`
+- `Mesh:addFace(vertices: { number }, corners: { Corner }?, material: number?): number`
+- `Mesh:setPosition(id: number, p: Vector3)`
+- `Mesh:removeFace(id: number)`
+- `Mesh:removeUnused(): Mesh`
+- `Mesh:clone(): Mesh`
+- `Mesh:bounds(): (Vector3, Vector3)`
+- `Mesh:faceNormal(id: number): (Vector3, number)`
+- `Mesh:topology(): Types.MeshTopology`
+- `Mesh:faceTriangles(fid: number, options: Types.TriangulationOptions?): { { number } }`
+- `Mesh:triangles(): { Types.Triangle }`
+- `Mesh:volume(origin: Vector3?): number`
+- `Mesh:validate(options: Types.ValidateOptions?): Types.ValidationReport`
+- `Mesh:recalculateNormals(angle: number?, sharpEdges: { [string]: boolean }?): Mesh`
 
 ## MeshEdit
 
 Source: [src/MeshEdit.luau](src/MeshEdit.luau)
 
-- `MeshEdit.bevelEdges(mesh, selected, width, options)`
-- `MeshEdit.bevelVertices(mesh, selected, width, options)`
-- `MeshEdit.knife(mesh, strokes, options)`
-- `MeshEdit.knifeNetwork(mesh, strokes, options)`
-- `MeshEdit.bisect(mesh, origin, normal, options)`
-- `MeshEdit.gridFill(mesh, boundary, span, options)`
-- `MeshEdit.spin(mesh, profile, origin, axis, angle, steps, options)`
-- `MeshEdit.screw(mesh, profile, origin, axis, turns, pitch, steps, options)`
-- `MeshEdit.insetRegion(mesh, selected, width, options)`
-- `MeshEdit.extrudeFaces(mesh, selected, distance, options)`
-- `MeshEdit.poke(mesh, selected, options)`
-- `MeshEdit.loopCut(mesh, edgeKey, cuts, options)`
-- `MeshEdit.slideVertices(mesh, targets, factor, options)`
-- `MeshEdit.trianglesToQuads(mesh, selected, options)`
+- `MeshEdit.bevelEdges(mesh: Mesh, selected: Selection, width: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.bevelVertices(mesh: Mesh, selected: Selection, width: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.knife(mesh: Mesh, strokes: { any }, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.knifeNetwork(mesh: Mesh, strokes: { any }, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.bisect(mesh: Mesh, origin: Vector3, normal: Vector3, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.gridFill(mesh: Mesh, boundary: { number }, span: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.spin(mesh: Mesh, profile: { number }, origin: Vector3, axis: Vector3, angle: number, steps: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.screw(mesh: Mesh, profile: { number }, origin: Vector3, axis: Vector3, turns: number, pitch: number, steps: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.insetRegion(mesh: Mesh, selected: Selection, width: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.extrudeFaces(mesh: Mesh, selected: Selection, distance: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.poke(mesh: Mesh, selected: Selection, options: PokeOptions?): (Mesh, EditReport)`
+- `MeshEdit.loopCut(mesh: Mesh, edgeKey: string, cuts: (number | { number })?, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.slideVertices(mesh: Mesh, targets: { [number]: number }, factor: number, options: EditOptions?): (Mesh, EditReport)`
+- `MeshEdit.trianglesToQuads(mesh: Mesh, selected: Selection, options: QuadOptions?): (Mesh, EditReport)`
 
 ## MeshRepair
 
@@ -482,15 +482,15 @@ Source: [src/NURBS.luau](src/NURBS.luau)
 
 Source: [src/Normals.luau](src/Normals.luau)
 
-- `Normals.recalculate(mesh, options)`
-- `Normals.average(mesh, options)`
-- `Normals.set(mesh, values, options)`
-- `Normals.direction(mesh, direction, options)`
-- `Normals.point(mesh, target, options)`
-- `Normals.rotate(mesh, rotation, options)`
-- `Normals.flip(mesh, options)`
-- `Normals.markSharp(mesh, edges, options)`
-- `Normals.tangents(mesh, options)`
+- `Normals.recalculate(mesh: Mesh, options: Options?)`
+- `Normals.average(mesh: Mesh, options: Options?)`
+- `Normals.set(mesh: Mesh, values: { [any]: Vector3 }, options: Options?)`
+- `Normals.direction(mesh: Mesh, direction: Vector3, options: Options?)`
+- `Normals.point(mesh: Mesh, target: Vector3, options: Options?)`
+- `Normals.rotate(mesh: Mesh, rotation: CFrame, options: Options?)`
+- `Normals.flip(mesh: Mesh, options: Options?)`
+- `Normals.markSharp(mesh: Mesh, edges: { [string]: boolean }, options: Options?)`
+- `Normals.tangents(mesh: Mesh, options: Options?)`
 
 ## Particles
 
@@ -533,11 +533,11 @@ Source: [src/Predicates.luau](src/Predicates.luau)
 
 Source: [src/Primitives.luau](src/Primitives.luau)
 
-- `Primitives.grid(nx, nz, size)`
-- `Primitives.box(size)`
-- `Primitives.sphere(radius, segments, rings)`
-- `Primitives.cylinder(radius, height, segments, topRadius)`
-- `Primitives.torus(major, minor, segments, sides)`
+- `Primitives.grid(nx: number, nz: number, size: Vector2?): Mesh`
+- `Primitives.box(size: Vector3?): Mesh`
+- `Primitives.sphere(radius: number?, segments: number?, rings: number?): Mesh`
+- `Primitives.cylinder(radius: number?, height: number?, segments: number?, topRadius: number?): Mesh`
+- `Primitives.torus(major: number?, minor: number?, segments: number?, sides: number?): Mesh`
 
 ## Quaternion
 
@@ -614,64 +614,64 @@ Source: [src/RigidBody.luau](src/RigidBody.luau)
 
 Source: [src/Roblox.luau](src/Roblox.luau)
 
-- `Roblox.fromEditable(editable)`
-- `Roblox.partition(mesh, maxTriangles)`
-- `Roblox.toEditable(mesh, options)`
-- `Roblox.createPart(handle, options)`
-- `Roblox.createBones(handle)`
-- `Roblox.applyPose(handle, pose)`
-- `Roblox.update(handle, mesh)`
-- `Roblox.refreshCollision(handle)`
-- `Roblox.toModel(mesh, options)`
-- `Roblox.toEditableImage(texture, srgb)`
-- `Roblox.fromEditableImage(image, srgb)`
-- `Roblox.material(maps)`
-- `Roblox.applyMaterial(bundle, maps, slot)`
-- `Roblox.toTexturedModel(mesh, maps, options)`
-- `Roblox.destroy(bundle)`
-- `Roblox.publish(bundle, metadata, options)`
+- `Roblox.fromEditable(editable: EditableMesh): (Mesh, { [number]: number }, any)`
+- `Roblox.partition(mesh: Mesh, triangleLimit: number?): { Chunk }`
+- `Roblox.toEditable(mesh: Mesh, options: EditableOptions?): Handle`
+- `Roblox.createPart(handle: Handle, options: PartOptions?): MeshPart`
+- `Roblox.createBones(handle: Handle): { [any]: Bone }`
+- `Roblox.applyPose(handle: Handle, pose: { [any]: CFrame }): Handle`
+- `Roblox.update(handle: Handle, mesh: Mesh): Handle`
+- `Roblox.refreshCollision(handle: Handle)`
+- `Roblox.toModel(mesh: Mesh, options: ModelOptions?): Bundle`
+- `Roblox.toEditableImage(texture: Texture, srgb: boolean?): EditableImage`
+- `Roblox.fromEditableImage(image: EditableImage, srgb: boolean?): Texture`
+- `Roblox.material(maps: MaterialMaps): (SurfaceAppearance, { [string]: EditableImage })`
+- `Roblox.applyMaterial(bundle: Bundle, maps: MaterialMaps, slot: number?): { [string]: EditableImage }`
+- `Roblox.toTexturedModel(mesh: Mesh, maps: MaterialMaps, options: TexturedModelOptions?): Bundle`
+- `Roblox.destroy(bundle: { model: Model?, handles: { Handle }?, images: { EditableImage }? })`
+- `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 
 ## Sculpt
 
 Source: [src/Sculpt.luau](src/Sculpt.luau)
 
-- `Sculpt.stroke(mesh, samples, options)`
-- `Sculpt.brush(mesh, center, options)`
-- `Sculpt.fair(mesh, selection, options)`
-- `Sculpt.move(mesh, mask, delta)`
-- `Sculpt.inflate(mesh, mask, amount)`
-- `Sculpt.flatten(mesh, mask, point, normal, strength)`
-- `Sculpt.smooth(mesh, mask, iterations, options)`
-- `Sculpt.crease(mesh, mask, point, normal, width, depth, pinch)`
-- `Sculpt.displace(mesh, field, mask)`
-- `Sculpt.symmetrize(mesh, axis, sourcePositive, tolerance)`
+- `Sculpt.stroke(mesh: Mesh, samples: { { [string]: any } }, options: Options?)`
+- `Sculpt.brush(mesh: Mesh, center: Vector3, options: Options?)`
+- `Sculpt.fair(mesh: Mesh, selection: { [any]: any }?, options: Options?)`
+- `Sculpt.move(mesh: Mesh, mask: Mask?, delta: Vector3): Mesh`
+- `Sculpt.inflate(mesh: Mesh, mask: Mask?, amount: number): Mesh`
+- `Sculpt.flatten(mesh: Mesh, mask: Mask?, point: Vector3, normal: Vector3, strength: number?): Mesh`
+- `Sculpt.smooth(mesh: Mesh, mask: Mask?, iterations: number?, options: SmoothOptions?): Mesh`
+- `Sculpt.crease(mesh: Mesh, mask: Mask?, point: Vector3, normal: Vector3, width: number, depth: number, pinch: number?): Mesh`
+- `Sculpt.displace(mesh: Mesh, field: (position: Vector3, id: number) -> Vector3, mask: Mask?): Mesh`
+- `Sculpt.symmetrize(mesh: Mesh, axis: ("X" | "Y" | "Z")?, sourcePositive: boolean?, tolerance: number?): Mesh`
 
 ## Selection
 
 Source: [src/Selection.luau](src/Selection.luau)
 
-- `Selection.all(mesh)`
-- `Selection.sphere(mesh, center, radius, falloff)`
-- `Selection.box(mesh, lo, hi)`
-- `Selection.boundary(mesh)`
-- `Selection.geodesic(mesh, seeds, radius, options)`
-- `Selection.shortestPath(mesh, startId, endId, options)`
-- `Selection.linked(mesh, seeds, options)`
-- `Selection.regionBoundary(mesh, selected, options)`
-- `Selection.edgeLoop(mesh, edgeKey, options)`
-- `Selection.edgeRing(mesh, edgeKey, options)`
-- `Selection.faceLoop(mesh, edgeKey, options)`
-- `Selection.combine(a, b, operation)`
-- `Selection.invert(mesh, mask)`
-- `Selection.convertDomain(mesh, mask, sourceDomain, targetDomain, options)`
+- `Selection.all(mesh: Mesh): Mask`
+- `Selection.sphere(mesh: Mesh, center: Vector3, radius: number, falloff: boolean?): Mask`
+- `Selection.box(mesh: Mesh, lo: Vector3, hi: Vector3): Mask`
+- `Selection.boundary(mesh: Mesh): Mask`
+- `Selection.geodesic(mesh: Mesh, seeds: { [any]: any }, radius: number, options: Options?)`
+- `Selection.shortestPath(mesh: Mesh, startId: any, endId: any, options: Options?)`
+- `Selection.linked(mesh: Mesh, seeds: { [any]: any }, options: Options?)`
+- `Selection.regionBoundary(mesh: Mesh, selected: { [number]: any }, options: Options?)`
+- `Selection.edgeLoop(mesh: Mesh, edgeKey: string, options: Options?)`
+- `Selection.edgeRing(mesh: Mesh, edgeKey: string, options: Options?)`
+- `Selection.faceLoop(mesh: Mesh, edgeKey: string, options: Options?)`
+- `Selection.combine(a: Mask, b: Mask, operation: "union" | "intersect" | "subtract"): Mask`
+- `Selection.invert(mesh: Mesh, mask: Mask?): Mask`
+- `Selection.convertDomain(mesh: Mesh, mask: { [any]: number | boolean }, sourceDomain: string, targetDomain: string, options: Options?)`
 
 ## Simplify
 
 Source: [src/Simplify.luau](src/Simplify.luau)
 
-- `Simplify.planar(mesh, angleLimit, options)`
-- `Simplify.unsubdivide(mesh, iterations, options)`
-- `Simplify.decimate(mesh, targetFaces, options)`
+- `Simplify.planar(mesh: Mesh, angleLimit: number, options: Options?)`
+- `Simplify.unsubdivide(mesh: Mesh, iterations: number, options: Options?)`
+- `Simplify.decimate(mesh: Mesh, targetFaces: number, options: Options?)`
 
 ## Simulation
 
@@ -735,11 +735,11 @@ Source: [src/Stroke.luau](src/Stroke.luau)
 
 Source: [src/Subdivision.luau](src/Subdivision.luau)
 
-- `Subdivision.crease(mesh, edges, vertices)`
-- `Subdivision.prepareLimit(mesh, options)`
-- `Subdivision.limit(mesh, face, u, v, options)`
-- `Subdivision.catmullClark(mesh, levels, options)`
-- `Subdivision.multires(mesh, levels, options)`
+- `Subdivision.crease(mesh: Mesh, edges: { [string]: number }?, vertices: { [number]: number }?): Mesh`
+- `Subdivision.prepareLimit(mesh: Mesh, options: LimitOptions?): any`
+- `Subdivision.limit(mesh: Mesh, face: number, u: number, v: number, options: LimitOptions?): any`
+- `Subdivision.catmullClark(mesh: Mesh, levels: number?, options: Options?): Mesh`
+- `Subdivision.multires(mesh: Mesh, levels: number, options: Options?): Multires`
 
 ## SurfaceAdaptive
 
@@ -809,22 +809,22 @@ Source: [src/Surfaces.luau](src/Surfaces.luau)
 
 Source: [src/Texture.luau](src/Texture.luau)
 
-- `Texture.new(width, height, color, alpha, options)`
-- `Texture:set(x, y, color, alpha)`
-- `Texture:get(x, y)`
-- `Texture:clone(options)`
-- `Texture:sample(uv, wrap, wrapV)`
-- `Texture.generate(width, height, fn, options)`
-- `Texture:map(fn, options)`
-- `Texture:resize(width, height, options)`
-- `Texture:blend(other, opacity, options)`
-- `Texture:blur(radius, sigma, options)`
-- `Texture:normalFromHeight(strength, options)`
-- `Texture:paint(center, radius, color, opacity, options)`
-- `Texture:toRGBA8(srgb, options)`
-- `Texture.fromRGBA8(width, height, bytes, srgb, options)`
-- `Texture.noise(width, height, frequency, octaves, seed, options)`
-- `Texture:tiles(size, options)`
+- `Texture.new(width: number, height: number, color: Color3?, alpha: number?, options: Limits?): Texture`
+- `Texture:set(x: number, y: number, color: Color3, alpha: number?)`
+- `Texture:get(x: number, y: number): (Color3, number)`
+- `Texture:clone(options: Limits?): Texture`
+- `Texture:sample(uv: Vector2, wrap: boolean?, wrapV: boolean?): (Color3, number)`
+- `Texture.generate(width: number, height: number, fn: (Vector2, number, number) -> (Color3, number?), options: Limits?): Texture`
+- `Texture:map(fn: (Color3, number, Vector2, number, number) -> (Color3, number?), options: Limits?): Texture`
+- `Texture:resize(width: number, height: number, options: Limits?): Texture`
+- `Texture:blend(other: Texture, opacity: number?, options: Limits?): Texture`
+- `Texture:blur(radius: number, sigma: number?, options: Limits?): Texture`
+- `Texture:normalFromHeight(strength: number?, options: Limits?): Texture`
+- `Texture:paint(center: Vector2, radius: number, color: Color3, opacity: number?, options: Limits?): Texture`
+- `Texture:toRGBA8(srgb: boolean?, options: Limits?): buffer`
+- `Texture.fromRGBA8(width: number, height: number, bytes: buffer, srgb: boolean?, options: Limits?): Texture`
+- `Texture.noise(width: number, height: number, frequency: number?, octaves: number?, seed: number?, options: Limits?): Texture`
+- `Texture:tiles(size: number, options: Limits?): { Types.Tile }`
 
 ## Timeline
 
@@ -857,30 +857,30 @@ Source: [src/Topology.luau](src/Topology.luau)
 
 Source: [src/UV.luau](src/UV.luau)
 
-- `UV.islands(mesh, options)`
-- `UV.analyze(mesh, options)`
-- `UV.transformIslands(mesh, transforms, options)`
-- `UV.equalizeDensity(mesh, options)`
-- `UV.packIslands(mesh, options)`
-- `UV.relax(mesh, options)`
-- `UV.seamsFromIslands(mesh, options)`
-- `UV.planar(mesh, frame, scale)`
-- `UV.cylindrical(mesh, center, height)`
-- `UV.spherical(mesh, center)`
-- `UV.faceCharts(mesh, padding)`
-- `UV.transform(mesh, scale, offset, angle)`
-- `UV.validate(mesh)`
-- `UV.splitTiles(mesh, columns, rows, options)`
+- `UV.islands(mesh: Mesh, options: UVOptions?): ({ any }, UVReport)`
+- `UV.analyze(mesh: Mesh, options: UVOptions?): UVReport`
+- `UV.transformIslands(mesh: Mesh, transforms: any, options: UVOptions?): (Mesh, UVReport)`
+- `UV.equalizeDensity(mesh: Mesh, options: UVOptions?): (Mesh, UVReport)`
+- `UV.packIslands(mesh: Mesh, options: UVOptions?): (Mesh, UVReport)`
+- `UV.relax(mesh: Mesh, options: UVOptions?): (Mesh, UVReport)`
+- `UV.seamsFromIslands(mesh: Mesh, options: UVOptions?): (Mesh, SeamReport)`
+- `UV.planar(mesh: Mesh, frame: CFrame?, scale: Vector2?): Mesh`
+- `UV.cylindrical(mesh: Mesh, center: Vector3?, height: number): Mesh`
+- `UV.spherical(mesh: Mesh, center: Vector3?): Mesh`
+- `UV.faceCharts(mesh: Mesh, padding: number?): Mesh`
+- `UV.transform(mesh: Mesh, scale: Vector2 | number, offset: Vector2, angle: number?): Mesh`
+- `UV.validate(mesh: Mesh): UVValidation`
+- `UV.splitTiles(mesh: Mesh, columns: number, rows: number, options: TileOptions?): { Tile }`
 
 ## Unwrap
 
 Source: [src/Unwrap.luau](src/Unwrap.luau)
 
-- `Unwrap.autoSeams(mesh, options)`
-- `Unwrap.angleBased(mesh, options)`
-- `Unwrap.harmonic(mesh, options)`
-- `Unwrap.unwrap(mesh, seams, options)`
-- `Unwrap.sharpSeams(mesh, angle)`
+- `Unwrap.autoSeams(mesh: Mesh, options: Options?)`
+- `Unwrap.angleBased(mesh: Mesh, options: Options?)`
+- `Unwrap.harmonic(mesh: Mesh, options: HarmonicOptions?): (Mesh, HarmonicReport)`
+- `Unwrap.unwrap(mesh: Mesh, seams: Seams?, options: Options?)`
+- `Unwrap.sharpSeams(mesh: Mesh, angle: number?): Seams`
 
 ## Additional returned objects
 

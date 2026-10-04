@@ -32,15 +32,21 @@ def install():
         assert hashlib.sha256(archive).hexdigest() == entry['sha256'], f'Checksum mismatch: {name}'
         target.mkdir(exist_ok=True)
         hashes = {}
-        with zipfile.ZipFile(io.BytesIO(archive)) as source:
-            for program in entry['programs']:
-                members = [p for p in source.namelist() if Path(p).name == program and not p.endswith('/')]
-                assert len(members) == 1, f'Missing or ambiguous binary: {program}'
-                data = source.read(members[0])
-                path = target/program
-                path.write_bytes(data)
-                path.chmod(0o755)
-                hashes[program] = hashlib.sha256(data).hexdigest()
+        if entry.get('file'):
+            # A single pinned file (for example type definitions), not an archive.
+            path = target/entry['programs'][0]
+            path.write_bytes(archive)
+            hashes[path.name] = hashlib.sha256(archive).hexdigest()
+        else:
+            with zipfile.ZipFile(io.BytesIO(archive)) as source:
+                for program in entry['programs']:
+                    members = [p for p in source.namelist() if Path(p).name == program and not p.endswith('/')]
+                    assert len(members) == 1, f'Missing or ambiguous binary: {program}'
+                    data = source.read(members[0])
+                    path = target/program
+                    path.write_bytes(data)
+                    path.chmod(0o755)
+                    hashes[program] = hashlib.sha256(data).hexdigest()
         receipt.write_text(json.dumps({'archive': entry['sha256'], 'version': entry['version'], 'binaries': hashes}, indent=2)+'\n')
     return destination
 

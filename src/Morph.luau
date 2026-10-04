@@ -76,7 +76,8 @@ function M.evaluate(base, targets, weights, options)
 									),
 								"Morph attribute requires matching base attribute"
 							)
-							c[key] += value * weight
+							-- key selects uv/normal/tangent; the assert above matched the base value's type.
+							c[key] = (c[key] :: any) + (value :: any) * weight
 						elseif key == "color" then
 							assert(
 								c.color and U.vector(value),

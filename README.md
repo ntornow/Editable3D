@@ -178,7 +178,9 @@ The package's `.rbxmx` contains source scripts, not ephemeral editable reference
 
 ## Tests and examples
 
-Tests and examples belong to the development profile. Insert that artifact as `ServerStorage.Editable3DDevelopment` for these checks; the live production profile omits them. Local CI instructions are in [MAINTAINING.md](MAINTAINING.md).
+The full regression suite (about 1,850 tests in 104 suites) runs headless in CI on every push, apart from 68 tests that need native `EditableMesh`/asset APIs and one that depends on engine value semantics; those run in Studio. Local CI instructions are in [MAINTAINING.md](MAINTAINING.md).
+
+To run everything in Studio, including the native tests, use the development profile. Insert that artifact as `ServerStorage.Editable3DDevelopment`; the live production profile omits tests and examples.
 
 ```lua
 local root = game.ServerStorage.Editable3DDevelopment

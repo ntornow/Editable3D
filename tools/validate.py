@@ -1,14 +1,20 @@
-"""One reproducible local/CI gate. Native Studio tests are a separate release gate."""
+"""One reproducible local/CI gate. Native Studio tests are a separate release gate.
+
+Runs formatting, Roblox-aware type checking (tools/check_types.py), the full regression suite
+headless in parallel (tools/run_headless.py), coverage, benchmarks and portable builds.
+"""
 from pathlib import Path
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import time
 from bootstrap import install
 from check_types import check
 from coverage import run as coverage
+from run_headless import run as run_headless
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMATTED = ('OperationBudget','PublishRetry','PublishTransaction','PublishPipeline','NativeContent','RobloxPublish','Types','Texture','Bake','Roblox','init')
@@ -18,13 +24,15 @@ NEW_TESTS = ('TestHarness','OperationBudgetTests','GuardedImageTests','PublishTe
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--bootstrap', action='store_true', help='Download SHA-256 pinned official tools')
+    parser.add_argument('--jobs', type=int, default=min(8, os.cpu_count() or 2), help='Parallel headless test processes')
     args = parser.parse_args()
     directory = install() if args.bootstrap else ROOT/'.tools'
-    paths = {p: str(directory/name/p) for name, programs in {'luau':['luau','luau-analyze'], 'lune':['lune'], 'rojo':['rojo'], 'stylua':['stylua']}.items() for p in programs}
+    tools = {'luau':['luau'], 'lune':['lune'], 'rojo':['rojo'], 'stylua':['stylua'], 'luau-lsp':['luau-lsp'], 'roblox-types':['globalTypes.None.d.luau']}
+    paths = {p: str(directory/name/p) for name, programs in tools.items() for p in programs}
     for path in paths.values():
         assert Path(path).is_file(), 'Run tools/validate.py --bootstrap to install pinned tools'
     lock=json.loads((ROOT/'toolchain.lock.json').read_text())
-    for name in ('luau','lune','rojo','stylua'):
+    for name in tools:
         receipt=json.loads((directory/name/'receipt.json').read_text())
         assert any(receipt['archive']==platform[name]['sha256'] for platform in lock['platforms'].values()), f'Unpinned tool: {name}'
         for binary,digest in receipt['binaries'].items():
@@ -34,12 +42,11 @@ def main():
         result = subprocess.run(cmd, cwd=ROOT)
         if result.returncode:
             raise SystemExit(f"Gate failed: {Path(cmd[0]).name} (exit {result.returncode})")
-    formatted = [f'src/{n}.luau' for n in FORMATTED] + [f'tests/{n}.luau' for n in NEW_TESTS] + ['tools/headless.luau','tools/verify_portable.luau','tools/studio_install.luau','tools/studio_verify.luau','tools/studio_read_report.luau']
+    strict = [p.stem for p in sorted((ROOT/'src').glob('*.luau')) if p.read_text().startswith('--!strict')]
+    formatted = [f'src/{n}.luau' for n in sorted(set(FORMATTED) | set(strict))] + [f'tests/{n}.luau' for n in NEW_TESTS] + ['tools/headless.luau','tools/verify_portable.luau','tools/studio_install.luau','tools/studio_verify.luau','tools/studio_read_report.luau']
     command(paths['stylua'], '--check', *formatted)
-    check(paths['luau-analyze'])
-    # Nonstrict baseline is still analyzed; strict modules use the path-correct mirror.
-    legacy = [str(p) for folder in ('src','tests','examples') for p in (ROOT/folder).glob('*.luau') if p.name != 'init.luau' and not p.read_text().startswith('--!strict')]
-    command(paths['luau-analyze'], *legacy, 'tools/studio_install.luau', 'tools/studio_verify.luau')
+    check(paths['luau-lsp'], paths['globalTypes.None.d.luau'], paths['rojo'])
+    run_headless(paths['lune'], args.jobs, False)
     command(paths['lune'], 'run', 'tools/headless.luau', '--bench')
     coverage(paths['luau'])
     for profile in ('development','production'):

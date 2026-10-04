@@ -1,5 +1,13 @@
 # Editable3D changes
 
+## Unreleased
+
+Runs the full regression suite in CI. `tools/headless.luau` mirrors the package tree under Lune with deterministic stand-ins for HttpService JSON, Random and the look-at CFrame constructors; `tools/run_headless.py` runs all 104 suites in parallel and enforces `tests/headless-baseline.json`. CI now executes 1,784 tests (previously 78); 68 tests that need native editable or asset APIs and one that relies on engine Vector3 key semantics are tracked explicitly and still run in the Studio release gate.
+
+Type checking now uses luau-lsp with pinned Roblox API definitions and a Rojo sourcemap across all sources, tests, examples and Studio scripts, with zero errors required. Twenty-one modules are strict, up from five, including the core authoring API (Mesh, Primitives, Selection, Normals, Sculpt, IO, Simplify, Unwrap, MeshEdit, UV, Subdivision, Texture, Bake, Roblox). The root lists namespaces explicitly so callers receive their types; `Types.API` with its `any` fallback is removed and the root exports `API`. Contract fixtures reject 18 invalid usages. `.luaurc` no longer declares engine globals as untyped, which had made `Vector3`-typed contracts accept any value. API.md now shows typed signatures where available.
+
+Behavior is unchanged: the edits are annotations, casts and equivalent local rewrites, verified by the full headless suite and a type-erased syntax comparison of every changed function.
+
 ## 0.76.0 — 2026-10-03
 
 Adds shared texture/bake work, allocation and time budgets with cooperative cancellation; strict public boundary types and a service-independent publishing pipeline with full-content readback, bounded read retries, caller-owned resume ledgers, scene guards, reverse rollback and cleanup reports. Native engine adapters are separated from transaction logic and covered by local-content integration tests.

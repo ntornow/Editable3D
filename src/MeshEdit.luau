@@ -1,3 +1,4 @@
+--!strict
 -- Polygon modeling operations with stable surviving IDs and typed correspondence.
 local U = require(script.Parent.Util)
 local Core = require(script.Parent.MeshEditCore)
@@ -5,39 +6,96 @@ local C = require(script.Parent.Connectivity)
 local Loops = require(script.Parent.MeshLoops)
 local P = require(script.Parent.Predicates)
 local A = require(script.Parent.AttributeCore)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Selections map face IDs (or edge keys / vertex IDs for bevels) to true or a positive weight.
+export type Selection = { [any]: boolean | number }
+-- Operator reports carry operation-specific fields: correspondence maps, added/replaced IDs,
+-- validation and per-operator results. See MESH_EDITING.md for each operator's fields.
+export type EditReport = { [string]: any }
+-- Options pass through to the shared edit budget (maxVertices, maxFaces, checkpoint, ...)
+-- and to operator-specific settings.
+export type EditOptions = { [string]: any }
+export type PokeOptions = { center: string?, offset: number?, [string]: any }
+export type QuadOptions = {
+	maxAngle: number?,
+	maxCornerAngle: number?,
+	attributeTolerance: number?,
+	maxCandidates: number?,
+	delimitAttributes: boolean?,
+	[string]: any,
+}
 local E = {}
-function E.bevelEdges(mesh, selected, width, options)
+function E.bevelEdges(
+	mesh: Mesh,
+	selected: Selection,
+	width: number,
+	options: EditOptions?
+): (Mesh, EditReport)
 	return require(script.Parent.MeshBevel)(mesh, selected, width, options, "edges")
 end
-function E.bevelVertices(mesh, selected, width, options)
+function E.bevelVertices(
+	mesh: Mesh,
+	selected: Selection,
+	width: number,
+	options: EditOptions?
+): (Mesh, EditReport)
 	return require(script.Parent.MeshBevel)(mesh, selected, width, options, "vertices")
 end
-function E.knife(mesh, strokes, options)
+-- Stroke records are described in MESH_EDITING.md.
+function E.knife(mesh: Mesh, strokes: { any }, options: EditOptions?): (Mesh, EditReport)
 	return require(script.Parent.MeshKnife)(mesh, strokes, options)
 end
-function E.knifeNetwork(mesh, strokes, options)
+function E.knifeNetwork(mesh: Mesh, strokes: { any }, options: EditOptions?): (Mesh, EditReport)
 	return require(script.Parent.MeshKnifeNetwork)(mesh, strokes, options)
 end
-function E.bisect(mesh, origin, normal, options)
+function E.bisect(mesh: Mesh, origin: Vector3, normal: Vector3, options: EditOptions?): (Mesh, EditReport)
 	return require(script.Parent.MeshBisect)(mesh, origin, normal, options)
 end
-function E.gridFill(mesh, boundary, span, options)
+function E.gridFill(mesh: Mesh, boundary: { number }, span: number, options: EditOptions?): (Mesh, EditReport)
 	return require(script.Parent.MeshGridFill)(mesh, boundary, span, options)
 end
-function E.spin(mesh, profile, origin, axis, angle, steps, options)
+function E.spin(
+	mesh: Mesh,
+	profile: { number },
+	origin: Vector3,
+	axis: Vector3,
+	angle: number,
+	steps: number,
+	options: EditOptions?
+): (Mesh, EditReport)
 	return require(script.Parent.MeshSpin)(mesh, profile, origin, axis, angle, steps, options)
 end
-function E.screw(mesh, profile, origin, axis, turns, pitch, steps, options)
+function E.screw(
+	mesh: Mesh,
+	profile: { number },
+	origin: Vector3,
+	axis: Vector3,
+	turns: number,
+	pitch: number,
+	steps: number,
+	options: EditOptions?
+): (Mesh, EditReport)
 	assert(type(turns) == "number" and U.finite(turns) and turns ~= 0, "Nonzero finite turns required")
 	assert(type(pitch) == "number" and U.finite(pitch), "Finite screw pitch required")
 	local config = table.clone(options or {})
 	config.rise = turns * pitch
 	return E.spin(mesh, profile, origin, axis, turns * 2 * math.pi, steps, config)
 end
-function E.insetRegion(mesh, selected, width, options)
+function E.insetRegion(
+	mesh: Mesh,
+	selected: Selection,
+	width: number,
+	options: EditOptions?
+): (Mesh, EditReport)
 	return require(script.Parent.RegionInset)(mesh, selected, width, options)
 end
-function E.extrudeFaces(mesh, selected, distance, options)
+function E.extrudeFaces(
+	mesh: Mesh,
+	selected: Selection,
+	distance: number,
+	options: EditOptions?
+): (Mesh, EditReport)
 	assert(
 		type(distance) == "number" and U.finite(distance) and distance ~= 0,
 		"Nonzero finite extrusion distance required"
@@ -46,7 +104,7 @@ function E.extrudeFaces(mesh, selected, distance, options)
 	local edit = Core.begin(mesh, options)
 	edit.report.tops, edit.report.sides = {}, {}
 	for _, fid in faces do
-		local f, top, refs = mesh.faces[fid], {}, {}
+		local f, top, refs = mesh.faces[fid], {} :: { number }, {}
 		local offset = mesh:faceNormal(fid) * distance
 		for i, v in f.vertices do
 			top[i] = edit.vertex(mesh.vertices[v] + offset, { { v, 1 } })
@@ -64,13 +122,13 @@ function E.extrudeFaces(mesh, selected, distance, options)
 				{ { fid, 1 } }
 			)
 			table.insert(edit.report.sides[fid], side)
-			edit.maps.edge[U.edge(top[i], top[j])] = { { U.edge(a, b), 1 } }
+			edit.maps.edge[U.edge(top[i], top[j])] = { { U.edge(a, b), 1 } :: { any } }
 		end
 	end
 	return edit.finish()
 end
-function E.poke(mesh, selected, options)
-	options = options or {}
+function E.poke(mesh: Mesh, selected: Selection, options: PokeOptions?): (Mesh, EditReport)
+	local options: PokeOptions = options or {}
 	local mode, offset = options.center or "median", options.offset or 0
 	assert(mode == "median" or mode == "area", "Poke center must be median or area")
 	assert(type(offset) == "number" and U.finite(offset), "Finite poke offset required")
@@ -114,11 +172,11 @@ function E.poke(mesh, selected, options)
 		local axis = math.abs(normal.X) > math.abs(normal.Y)
 				and (math.abs(normal.X) > math.abs(normal.Z) and "X" or "Z")
 			or (math.abs(normal.Y) > math.abs(normal.Z) and "Y" or "Z")
-		local function project(p)
+		local function project(p: Vector3): Vector2
 			return axis == "X" and Vector2.new(p.Y, p.Z)
 				or (axis == "Y" and Vector2.new(p.Z, p.X) or Vector2.new(p.X, p.Y))
 		end
-		local sign = normal[axis] > 0 and 1 or -1
+		local sign = (normal :: any)[axis] > 0 and 1 or -1
 		for i, a in f.vertices do
 			local b = f.vertices[i % #f.vertices + 1]
 			assert(
@@ -142,11 +200,11 @@ function E.poke(mesh, selected, options)
 	end
 	return edit.finish()
 end
-local function cutPositions(cuts)
+local function cutPositions(cuts: (number | { number })?): { number }
 	if cuts == nil then
 		cuts = 1
 	end
-	local result = {}
+	local result: { number } = {}
 	if type(cuts) == "number" then
 		U.integer(cuts, 1)
 		assert(cuts <= 128, "Loop cut count exceeds 128")
@@ -155,6 +213,7 @@ local function cutPositions(cuts)
 		end
 	else
 		assert(type(cuts) == "table" and #cuts >= 1 and #cuts <= 128, "Loop cut parameters required")
+		local cuts = cuts :: { number }
 		for i, t in cuts do
 			assert(
 				type(t) == "number" and U.finite(t) and t > 0 and t < 1 and (i == 1 or t > cuts[i - 1]),
@@ -165,8 +224,14 @@ local function cutPositions(cuts)
 	end
 	return result
 end
-function E.loopCut(mesh, edgeKey, cuts, options)
-	options = options or {}
+-- cuts is a count (default 1) or strictly increasing parameters inside (0,1).
+function E.loopCut(
+	mesh: Mesh,
+	edgeKey: string,
+	cuts: (number | { number })?,
+	options: EditOptions?
+): (Mesh, EditReport)
+	local options: EditOptions = options or {}
 	local positions = cutPositions(cuts)
 	local ring = Loops.edgeRing(mesh, edgeKey, options)
 	assert(ring.complete and #ring.faces > 0, "Loop cut requires a complete nonempty quad strip")
@@ -232,7 +297,7 @@ function E.loopCut(mesh, edgeKey, cuts, options)
 	for _, fid in U.keys(mesh.faces) do
 		local f = mesh.faces[fid]
 		if splitFaces[fid] then
-			local i
+			local i: number = nil :: any
 			for k, v in f.vertices do
 				if rails[U.edge(v, f.vertices[k % 4 + 1])] then
 					i = k
@@ -277,7 +342,13 @@ function E.loopCut(mesh, edgeKey, cuts, options)
 	end
 	return edit.finish()
 end
-function E.slideVertices(mesh, targets, factor, options)
+-- targets maps each moving vertex ID to the adjacent vertex it slides toward.
+function E.slideVertices(
+	mesh: Mesh,
+	targets: { [number]: number },
+	factor: number,
+	options: EditOptions?
+): (Mesh, EditReport)
 	assert(
 		type(factor) == "number" and U.finite(factor) and factor >= 0 and factor < 1,
 		"Slide factor must be in [0,1)"
@@ -303,7 +374,8 @@ function E.slideVertices(mesh, targets, factor, options)
 	end
 	return edit.finish()
 end
-local function sameValue(a, b, epsilon)
+-- Values are attribute payloads of any supported type.
+local function sameValue(a: any, b: any, epsilon: number): boolean
 	if typeof(a) ~= typeof(b) then
 		return false
 	end
@@ -321,8 +393,8 @@ local function sameValue(a, b, epsilon)
 	end
 	return false
 end
-function E.trianglesToQuads(mesh, selected, options)
-	options = options or {}
+function E.trianglesToQuads(mesh: Mesh, selected: Selection, options: QuadOptions?): (Mesh, EditReport)
+	local options: QuadOptions = options or {}
 	local faces = Core.selection(mesh, selected)
 	local chosen = {}
 	for _, fid in faces do
@@ -376,7 +448,7 @@ function E.trianglesToQuads(mesh, selected, options)
 			reject("angle")
 			continue
 		end
-		local boundary, refs = {}, {}
+		local boundary: { [number]: number | false }, refs: { [number]: { { number } } } = {}, {}
 		for _, fid in { fa, fb } do
 			local f = mesh.faces[fid]
 			for i, v in f.vertices do
@@ -396,15 +468,15 @@ function E.trianglesToQuads(mesh, selected, options)
 			reject("topology")
 			continue
 		end
-		local loop = {}
-		local start = U.keys(refs)[1]
-		local v = start
+		local loop: { number } = {}
+		local start: number = U.keys(refs)[1]
+		local v: (number | false)? = start
 		for _ = 1, 4 do
-			if not v or table.find(loop, v) then
+			if not v or table.find(loop, v :: number) then
 				break
 			end
-			table.insert(loop, v)
-			v = boundary[v]
+			table.insert(loop, v :: number)
+			v = boundary[v :: number]
 		end
 		if #loop ~= 4 or v ~= start then
 			reject("topology")
@@ -412,7 +484,7 @@ function E.trianglesToQuads(mesh, selected, options)
 		end
 		local delimited = false
 		if options.delimitAttributes ~= false then
-			for _, channel in mesh.attributes or {} do
+			for _, channel in mesh.attributes or {} :: { [string]: Types.Channel } do
 				if channel.domain == "edge" and A.read(channel, key) ~= channel.default then
 					delimited = true
 					break
@@ -465,7 +537,7 @@ function E.trianglesToQuads(mesh, selected, options)
 		local axis = math.abs(normal.X) > math.abs(normal.Y)
 				and (math.abs(normal.X) > math.abs(normal.Z) and "X" or "Z")
 			or (math.abs(normal.Y) > math.abs(normal.Z) and "Y" or "Z")
-		local function project(p)
+		local function project(p: Vector3): Vector2
 			return axis == "X" and Vector2.new(p.Y, p.Z)
 				or (axis == "Y" and Vector2.new(p.Z, p.X) or Vector2.new(p.X, p.Y))
 		end
@@ -475,7 +547,7 @@ function E.trianglesToQuads(mesh, selected, options)
 			local previous, nextPoint = mesh.vertices[loop[(i - 2) % 4 + 1]], mesh.vertices[loop[i % 4 + 1]]
 			if
 				P.orient2D(project(previous), project(p), project(nextPoint))
-					* (normal[axis] > 0 and 1 or -1)
+					* ((normal :: any)[axis] > 0 and 1 or -1)
 				<= 0
 			then
 				convex = false

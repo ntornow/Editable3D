@@ -1,4 +1,6 @@
 -- Compare directions represented at two independently isolated real roots.
+-- The recursive self-require is deferred; the analyzer does not follow it.
+local deferredRequire = require :: any
 return function(R, P, F, a, G, b, visit, allocate)
 	local minus = R.number(-1)
 	if G == F then
@@ -51,7 +53,7 @@ return function(R, P, F, a, G, b, visit, allocate)
 		for i, p in b do
 			c[i] = { P.evaluate(p, G.root.low) }
 		end
-		return require(script.Parent.CompareAlgebraicDirections)(R, P, F, a, F, c, visit, allocate)
+		return deferredRequire(script.Parent.CompareAlgebraicDirections)(R, P, F, a, F, c, visit, allocate)
 	end
 	-- Build a separate coefficient-field facade so local denominator reductions
 	-- cannot change either root's original isolating polynomial.

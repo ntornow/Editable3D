@@ -1,9 +1,15 @@
+--!strict
 local Texture = require(script.Parent.Texture)
 local Spatial = require(script.Parent.Spatial)
 local U = require(script.Parent.Util)
 local Budget = require(script.Parent.OperationBudget)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+type Texture = Types.Texture
+type BakeOptions = Types.BakeOptions
+type BakeReport = Types.BakeReport
 local B = {}
-local function preflight(mesh, budget, options)
+local function preflight(mesh: Mesh, budget: Budget.Budget, options: BakeOptions)
 	local count = 0
 	local limit = options.maxTriangles or 250000
 	U.integer(limit, 1)
@@ -16,17 +22,24 @@ local function preflight(mesh, budget, options)
 	budget:reserve(count * 256)
 	budget:check()
 end
-local function spatial(mesh, budget, options)
+-- Spatial is not yet strict; its index is used through an untyped handle.
+local function spatial(mesh: Mesh, budget: Budget.Budget, options: BakeOptions): any
 	preflight(mesh, budget, options)
 	local result = Spatial.new(mesh)
 	budget:check()
 	return result
 end
-local function complete(budget, owned)
+local function complete(budget: Budget.Budget, owned: boolean): Types.Progress
 	return owned and budget:finish() or budget:report()
 end
-function B.rasterize(mesh, width, height, shader, options)
-	options = options or {}
+function B.rasterize(
+	mesh: Mesh,
+	width: number,
+	height: number,
+	shader: (Types.BakeContext) -> (Color3, number?),
+	options: BakeOptions?
+): (Texture, BakeReport)
+	local options: BakeOptions = options or {}
 	local budget, owned = Budget.acquire(options, "Bake.rasterize")
 	preflight(mesh, budget, options)
 	local image = Texture.new(width, height, nil, nil, Budget.options(budget))
@@ -39,6 +52,7 @@ function B.rasterize(mesh, width, height, shader, options)
 		local ca, cb, cc = f.corners[t.corners[1]], f.corners[t.corners[2]], f.corners[t.corners[3]]
 		local a, b, c = ca.uv, cb.uv, cc.uv
 		assert(a and b and c, "Baking requires corner UVs")
+		local a, b, c = a :: Vector2, b :: Vector2, c :: Vector2
 		local e1, e2 = b - a, c - a
 		local den = e1.X * e2.Y - e1.Y * e2.X
 		if math.abs(den) > 1e-12 then
@@ -99,7 +113,7 @@ function B.rasterize(mesh, width, height, shader, options)
 			operation = complete(budget, owned),
 		}
 end
-function B.dilate(image, coverage, iterations, options)
+function B.dilate(image: Texture, coverage: buffer, iterations: number, options: Types.Limits?): Texture
 	local budget, owned = Budget.acquire(options, "Bake.dilate")
 	assert(buffer.len(coverage) == image.width * image.height, "Coverage size mismatch")
 	U.integer(iterations, 0)
@@ -139,8 +153,14 @@ function B.dilate(image, coverage, iterations, options)
 	complete(budget, owned)
 	return out
 end
-function B.normalMap(low, high, width, height, options)
-	options = options or {}
+function B.normalMap(
+	low: Mesh,
+	high: Mesh,
+	width: number,
+	height: number,
+	options: BakeOptions?
+): (Texture, BakeReport)
+	local options: BakeOptions = options or {}
 	local budget, owned = Budget.acquire(options, "Bake.normalMap")
 	local index = spatial(high, budget, options)
 	local shared = table.clone(options)
@@ -169,8 +189,13 @@ function B.normalMap(low, high, width, height, options)
 	report.operation = complete(budget, owned)
 	return image, report
 end
-function B.ambientOcclusion(mesh, width, height, options)
-	options = options or {}
+function B.ambientOcclusion(
+	mesh: Mesh,
+	width: number,
+	height: number,
+	options: BakeOptions?
+): (Texture, BakeReport)
+	local options: BakeOptions = options or {}
 	local budget, owned = Budget.acquire(options, "Bake.ambientOcclusion")
 	local index = spatial(options.occluder or mesh, budget, options)
 	local shared = table.clone(options)
@@ -199,8 +224,15 @@ function B.ambientOcclusion(mesh, width, height, options)
 	report.operation = complete(budget, owned)
 	return image, report
 end
-function B.project(mesh, texture, camera, width, height, options)
-	options = options or {}
+function B.project(
+	mesh: Mesh,
+	texture: Texture,
+	camera: Types.Camera,
+	width: number,
+	height: number,
+	options: BakeOptions?
+): (Texture, BakeReport)
+	local options: BakeOptions = options or {}
 	local Camera = require(script.Parent.Camera)
 	local budget, owned = Budget.acquire(options, "Bake.project")
 	local index = options.occlusion and spatial(mesh, budget, options) or nil
@@ -229,5 +261,9 @@ function B.project(mesh, texture, camera, width, height, options)
 	end, shared)
 	report.operation = complete(budget, owned)
 	return image, report
+end
+-- Never called: lets the type checker verify the implementation against Types.BakeLibrary.
+local function _contract(): Types.BakeLibrary
+	return B
 end
 return B

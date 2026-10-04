@@ -24,19 +24,28 @@ From this directory:
 python3 tools/validate.py --bootstrap
 ```
 
-Bootstrap downloads **tools only**, from official release URLs in `toolchain.lock.json`, and checks every archive's SHA-256. Luau 0.713, Lune 0.10.5, Rojo 7.7.0 and StyLua 2.5.2 are pinned for Linux x86_64 and macOS arm64/x86_64. Binary receipts allow verified cached reuse. Python 3.10+ standard library is sufficient for release validation; optional symbolic fixture-generation scripts may need their separately documented dependencies. `rokit.toml` provides matching versions for an existing Rokit development setup; the checksum lock is authoritative for CI.
+Bootstrap downloads **tools only**, from official release URLs in `toolchain.lock.json`, and checks every download's SHA-256. Luau 0.713, Lune 0.10.5, Rojo 7.7.0, StyLua 2.5.2, luau-lsp 1.70.1 and the matching Roblox API type definitions (pinned to the luau-lsp release commit) are locked for Linux x86_64 and macOS arm64/x86_64. Binary receipts allow verified cached reuse. Python 3.10+ standard library is sufficient for release validation; optional symbolic fixture-generation scripts may need their separately documented dependencies. `rokit.toml` provides matching versions for an existing Rokit development setup; the checksum lock is authoritative for CI.
 
 `.github/workflows/editable3d.yml` runs this same command on every push and pull request, with read-only repository permissions and SHA-pinned actions. Reports and both package profiles are uploaded even if a later gate fails. Hosted CI only runs after the commit reaches GitHub; passing locally does not imply a hosted run has occurred.
 
 The gate runs:
 
-1. Stable formatting for the changed production boundaries and their tests. Existing unrelated formatting is not rewritten.
-2. Strict core and positive/negative public contract checks. A disposable mirror changes only Roblox require paths, which standalone Luau cannot resolve.
-3. Static analysis of all legacy source, tests and examples; root exported contracts are checked in the mirror.
-4. Headless texture, budget, failure-recovery and content-verification regressions using Lune's Roblox value types.
-5. Actual Luau VM line coverage for four service-independent strict modules, requiring at least 90% in each. This is **subset line coverage**, not whole-library coverage or branch coverage.
-6. Texture noise, blur and AO benchmarks with deterministic work/allocation ceilings and a generous 15-second per-case timing gate. These report accounted bytes, not peak process memory.
-7. XML and Rojo binary builds for both profiles, followed by exact ModuleScript source parity checks.
+1. Stable formatting for every strict module, the production boundaries, their tests and the tooling scripts. Existing unrelated formatting is not rewritten.
+2. Roblox-aware type checking (`tools/check_types.py`). `luau-lsp analyze` checks all of `src`, `tests`, `examples` and the Studio install/verify scripts against the pinned Roblox API definitions and a Rojo sourcemap, so `require(script.Parent.X)`, `Vector3`, `CFrame` and `EditableMesh` are real types. The gate requires zero errors, requires every module in `STRICT_MODULES` to stay `--!strict`, and runs public contract fixtures: one strict caller must type-check and every invalid usage in `NEGATIVE` must be rejected.
+3. The **full regression suite headless** (`tools/run_headless.py`): all suites in `RunAllTests`, split across parallel Lune processes by recorded duration. See *Headless tests* below.
+4. Actual Luau VM line coverage for four service-independent strict modules, requiring at least 90% in each. This is **subset line coverage**, not whole-library coverage or branch coverage.
+5. Texture noise, blur and AO benchmarks with deterministic work/allocation ceilings and a generous 15-second per-case timing gate. These report accounted bytes, not peak process memory.
+6. XML and Rojo binary builds for both profiles, followed by exact ModuleScript source parity checks.
+
+`--jobs N` sets the number of parallel test processes (CI uses 4). A full local run takes about five minutes on a 10-core machine.
+
+### Headless tests
+
+`tools/headless.luau` mirrors the package tree (root module, test modules, `Examples` folder) under Lune and provides deterministic stand-ins for the engine pieces that pure authoring code uses: `HttpService` JSON with Roblox's array/object rules, a seeded `Random`, and corrected `CFrame.lookAt`/`lookAlong`/`new(position, target)` (Lune 0.10.5 builds these facing away from the target). Any other engine access (`AssetService`, `Instance`, `EditableMesh`, `Content`) raises a sentinel error, and a test that fails only with that sentinel is counted as a **native skip**, not a pass.
+
+`tests/headless-baseline.json` records each suite's native skips and duration, plus `engineOnly` tests that run headless but depend on engine semantics Lune cannot reproduce, each with a written reason. The gate fails on any unexpected failure, on a new native skip (lost headless coverage), on a listed skip that now runs, and on an engine-only test that starts passing. After an intentional change, run `python3 tools/run_headless.py --update-baseline` and review the diff. Native skips and engine-only tests still run in the Studio release gate.
+
+To run one suite: `.tools/lune/lune run tools/headless.luau --suite MeshEditTests`.
 
 Reports are under `.validation/`. Generated artifacts, installed tools and temporary reports are ignored by Git. Source, tests, docs, fixtures, lockfiles and build/CI definitions belong in version control. Do not commit credentials, live place files or generated archives.
 
@@ -54,4 +63,4 @@ Reports are under `.validation/`. Generated artifacts, installed tools and tempo
 
 ## Remaining boundaries
 
-This release does not migrate all numerical modules to strict typing, establish whole-library coverage, provide hard memory/preemption guarantees, prove every graph-isomorphism case in native verification, or complete Blender feature parity. Large numerical operators retain their documented algorithmic bounds. Promote additional modules incrementally with contract tests and independently justified numerical fixtures, instead of using passing line coverage as a proof of correctness.
+Strict typing covers the root, the contracts, the publishing pipeline and the core authoring modules (`STRICT_MODULES` in `tools/check_types.py`); the remaining numerical modules are type-checked in nonstrict mode with real Roblox types. This release does not migrate those to strict typing, establish whole-library coverage, provide hard memory/preemption guarantees, prove every graph-isomorphism case in native verification, or complete Blender feature parity. Large numerical operators retain their documented algorithmic bounds. Promote additional modules incrementally with contract tests and independently justified numerical fixtures, instead of using passing line coverage as a proof of correctness.

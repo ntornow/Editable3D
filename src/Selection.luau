@@ -1,18 +1,25 @@
+--!strict
 local U = require(script.Parent.Util)
 local Traversal = require(script.Parent.MeshTraversal)
 local Connectivity = require(script.Parent.Connectivity)
 local Loops = require(script.Parent.MeshLoops)
+local Types = require(script.Parent.Types)
+type Mesh = Types.Mesh
+-- Element ID (vertex, face, or edge key) to weight in [0,1].
+export type Mask = { [any]: number }
+-- Traversal/loop options are forwarded to MeshTraversal, Connectivity and MeshLoops.
+type Options = { [string]: any }
 local S = {}
-function S.all(mesh)
-	local r = {}
+function S.all(mesh: Mesh): Mask
+	local r: Mask = {}
 	for id in mesh.vertices do
 		r[id] = 1
 	end
 	return r
 end
-function S.sphere(mesh, center, radius, falloff)
+function S.sphere(mesh: Mesh, center: Vector3, radius: number, falloff: boolean?): Mask
 	assert(radius > 0)
-	local r = {}
+	local r: Mask = {}
 	for id, p in mesh.vertices do
 		local t = (p - center).Magnitude / radius
 		if t <= 1 then
@@ -21,8 +28,8 @@ function S.sphere(mesh, center, radius, falloff)
 	end
 	return r
 end
-function S.box(mesh, lo, hi)
-	local r = {}
+function S.box(mesh: Mesh, lo: Vector3, hi: Vector3): Mask
+	local r: Mask = {}
 	for id, p in mesh.vertices do
 		if p.X >= lo.X and p.Y >= lo.Y and p.Z >= lo.Z and p.X <= hi.X and p.Y <= hi.Y and p.Z <= hi.Z then
 			r[id] = 1
@@ -30,8 +37,8 @@ function S.box(mesh, lo, hi)
 	end
 	return r
 end
-function S.boundary(mesh)
-	local r = {}
+function S.boundary(mesh: Mesh): Mask
+	local r: Mask = {}
 	for _, e in mesh:topology().edges do
 		if #e.faces == 1 then
 			r[e.a] = 1
@@ -40,29 +47,29 @@ function S.boundary(mesh)
 	end
 	return r
 end
-function S.geodesic(mesh, seeds, radius, options)
+function S.geodesic(mesh: Mesh, seeds: { [any]: any }, radius: number, options: Options?)
 	assert(type(radius) == "number" and U.finite(radius) and radius > 0, "Positive finite radius required")
-	options = table.clone(options or {})
+	local options: Options = table.clone(options or {})
 	options.domain, options.radius = "vertex", radius
 	local result = Traversal.search(Traversal.prepare(mesh, options), seeds, nil, options)
 	assert(result.complete, "Geodesic traversal budget exceeded: " .. tostring(result.reason))
-	local mask = {}
+	local mask: Mask = {}
 	for id, d in result.distances do
 		mask[id] = U.smooth(1 - d / radius)
 	end
 	return mask, result.distances, result
 end
-function S.shortestPath(mesh, startId, endId, options)
+function S.shortestPath(mesh: Mesh, startId: any, endId: any, options: Options?)
 	assert(endId ~= nil, "Path target required")
 	return Traversal.search(Traversal.prepare(mesh, options), { [startId] = true }, endId, options)
 end
-function S.linked(mesh, seeds, options)
+function S.linked(mesh: Mesh, seeds: { [any]: any }, options: Options?)
 	local result = Traversal.search(Traversal.prepare(mesh, options), seeds, nil, options)
 	return result.selection, result
 end
-function S.regionBoundary(mesh, selected, options)
+function S.regionBoundary(mesh: Mesh, selected: { [number]: any }, options: Options?)
 	local index = Connectivity.index(mesh, options)
-	local faces, selection = {}, {}
+	local faces: { [number]: Types.Face }, selection: { [string]: boolean } = {}, {}
 	for fid, value in selected do
 		assert(index.faces[fid], "Unknown selected face")
 		if Traversal.active(value) then
@@ -86,21 +93,21 @@ function S.regionBoundary(mesh, selected, options)
 	local loops, report = Connectivity.boundaries({ vertices = mesh.vertices, faces = faces }, options)
 	return selection, loops, report
 end
-function S.edgeLoop(mesh, edgeKey, options)
+function S.edgeLoop(mesh: Mesh, edgeKey: string, options: Options?)
 	return Loops.edgeLoop(mesh, edgeKey, options)
 end
-function S.edgeRing(mesh, edgeKey, options)
+function S.edgeRing(mesh: Mesh, edgeKey: string, options: Options?)
 	return Loops.edgeRing(mesh, edgeKey, options)
 end
-function S.faceLoop(mesh, edgeKey, options)
+function S.faceLoop(mesh: Mesh, edgeKey: string, options: Options?)
 	local result = Loops.edgeRing(mesh, edgeKey, options)
 	result.selection = result.faceSelection
 	return result
 end
-function S.combine(a, b, operation)
+function S.combine(a: Mask, b: Mask, operation: "union" | "intersect" | "subtract"): Mask
 	assert(operation == "union" or operation == "intersect" or operation == "subtract")
-	local r = {}
-	local ids = table.clone(a)
+	local r: Mask = {}
+	local ids: { [any]: any } = table.clone(a)
 	for id in b do
 		ids[id] = true
 	end
@@ -112,17 +119,23 @@ function S.combine(a, b, operation)
 	end
 	return r
 end
-function S.invert(mesh, mask)
-	local r = {}
+function S.invert(mesh: Mesh, mask: Mask?): Mask
+	local r: Mask = {}
 	for id in mesh.vertices do
 		r[id] = 1 - U.weight(mask, id)
 	end
 	return r
 end
-function S.convertDomain(mesh, mask, sourceDomain, targetDomain, options)
-	options = table.clone(options or {})
+function S.convertDomain(
+	mesh: Mesh,
+	mask: { [any]: number | boolean },
+	sourceDomain: string,
+	targetDomain: string,
+	options: Options?
+)
+	local options: Options = table.clone(options or {})
 	local Core = require(script.Parent.AttributeCore)
-	local values, keys = {}, Core.keys(mesh, sourceDomain)
+	local values: { [any]: number }, keys = {}, Core.keys(mesh, sourceDomain)
 	for key, value in mask do
 		assert(keys[key], "Unknown mask element")
 		if type(value) == "boolean" then
