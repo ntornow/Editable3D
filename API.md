@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.81.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.82.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -837,6 +837,7 @@ Source: [src/Texture.luau](src/Texture.luau)
 - `Texture:resize(width: number, height: number, options: Limits?): Texture`
 - `Texture:blend(other: Texture, opacity: number?, options: Limits?): Texture`
 - `Texture:blur(radius: number, sigma: number?, options: Limits?): Texture`
+- `Texture:guided(guide: Texture, radius: number, eps: number, options: Limits?): Texture`
 - `Texture:normalFromHeight(strength: number?, options: Limits?): Texture`
 - `Texture:paint(center: Vector2, radius: number, color: Color3, opacity: number?, options: Limits?): Texture`
 - `Texture:toRGBA8(srgb: boolean?, options: Limits?): buffer`

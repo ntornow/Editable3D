@@ -1,5 +1,11 @@
 # Editable3D changes
 
+## 0.82.0 — 2026-10-04
+
+- **`Texture:guided(guide, radius, eps)`:** guided filter (He, Sun and Tang 2013). It is edge-preserving smoothing of a texture's RGB, steered by another image's luminance: edges in the guide stay sharp and flat guide areas are smoothed. Use it to snap soft depth or height fields to the crisp edges of a photograph, or to clean baked maps. Summed-area tables keep the cost independent of the radius.
+
+Test: a step edge is sharpened and noise removed, and the guide size is checked.
+
 ## 0.81.0 — 2026-10-04
 
 - **`Roblox.publishImages(images, metadata, options)`** publishes standalone EditableImages (skyboxes, decals) with readback verification and the resume ledger, and returns `report.imageIds`. Publish bundles accept an optional `images` list.

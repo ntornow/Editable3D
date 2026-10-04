@@ -96,6 +96,7 @@ export type Texture = {
 	resize: (Texture, number, number, Limits?) -> Texture,
 	blend: (Texture, Texture, number?, Limits?) -> Texture,
 	blur: (Texture, number, number?, Limits?) -> Texture,
+	guided: (Texture, Texture, number, number, Limits?) -> Texture,
 	normalFromHeight: (Texture, number?, Limits?) -> Texture,
 	paint: (Texture, Vector2Value, number, Color, number?, Limits?) -> Texture,
 	toRGBA8: (Texture, boolean?, Limits?) -> buffer,

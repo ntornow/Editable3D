@@ -194,6 +194,89 @@ function Texture.blur(self: Texture, radius: number, sigma: number?, options: Li
 	end
 	return finish(source, budget, owned)
 end
+-- Guided filter (He, Sun and Tang 2013): edge-preserving smoothing of this texture's RGB using the
+-- luminance of `guide` (same size). Inside each (2r+1)^2 window the output is a linear function of
+-- the guide, so edges present in the guide stay sharp in the result while flat guide areas are
+-- smoothed; `eps` (in guide-luminance^2 units) sets how strong a guide edge must be to be kept.
+-- Uses summed-area tables, so the cost does not grow with the radius. Alpha is copied.
+function Texture.guided(self: Texture, guide: Texture, radius: number, eps: number, options: Limits?): Texture
+	local budget, owned = Budget.acquire(options, "Texture.guided")
+	U.integer(radius, 1)
+	assert(eps > 0, "Guided filter eps must be positive")
+	assert(guide.width == self.width and guide.height == self.height, "Guide size must match")
+	local w, h = self.width, self.height
+	local n = w * h
+	budget:reserve(n * 8 * 12)
+	local I: { number } = table.create(n, 0)
+	for y = 0, h - 1 do
+		for x = 0, w - 1 do
+			local i = (y * w + x) * 16
+			I[y * w + x + 1] = (
+				buffer.readf32(guide.pixels, i)
+				+ buffer.readf32(guide.pixels, i + 4)
+				+ buffer.readf32(guide.pixels, i + 8)
+			) / 3
+		end
+	end
+	budget:step(n)
+	local function boxMean(src: { number }): { number }
+		local sat: { number } = table.create((w + 1) * (h + 1), 0)
+		local W = w + 1
+		for y = 1, h do
+			local row = 0
+			for x = 1, w do
+				row += src[(y - 1) * w + x]
+				sat[y * W + x + 1] = sat[(y - 1) * W + x + 1] + row
+			end
+		end
+		local out: { number } = table.create(n, 0)
+		for y = 0, h - 1 do
+			local y0, y1 = math.max(0, y - radius), math.min(h - 1, y + radius) + 1
+			for x = 0, w - 1 do
+				local x0, x1 = math.max(0, x - radius), math.min(w - 1, x + radius) + 1
+				local sum = sat[y1 * W + x1 + 1]
+					- sat[y0 * W + x1 + 1]
+					- sat[y1 * W + x0 + 1]
+					+ sat[y0 * W + x0 + 1]
+				out[y * w + x + 1] = sum / ((x1 - x0) * (y1 - y0))
+			end
+		end
+		budget:step(2 * n)
+		budget:check()
+		return out
+	end
+	local II: { number } = table.create(n, 0)
+	for k = 1, n do
+		II[k] = I[k] * I[k]
+	end
+	local meanI, meanII = boxMean(I), boxMean(II)
+	local out = Texture.new(w, h, nil, nil, Budget.options(budget))
+	for channel = 0, 2 do
+		local p: { number } = table.create(n, 0)
+		local Ip: { number } = table.create(n, 0)
+		for k = 1, n do
+			local v = buffer.readf32(self.pixels, (k - 1) * 16 + channel * 4)
+			p[k] = v
+			Ip[k] = v * I[k]
+		end
+		local meanP, meanIP = boxMean(p), boxMean(Ip)
+		local a: { number }, b: { number } = table.create(n, 0), table.create(n, 0)
+		for k = 1, n do
+			local varI = meanII[k] - meanI[k] * meanI[k]
+			local ak = (meanIP[k] - meanI[k] * meanP[k]) / (varI + eps)
+			a[k] = ak
+			b[k] = meanP[k] - ak * meanI[k]
+		end
+		local meanA, meanB = boxMean(a), boxMean(b)
+		for k = 1, n do
+			buffer.writef32(out.pixels, (k - 1) * 16 + channel * 4, meanA[k] * I[k] + meanB[k])
+		end
+	end
+	for k = 1, n do
+		buffer.writef32(out.pixels, (k - 1) * 16 + 12, buffer.readf32(self.pixels, (k - 1) * 16 + 12))
+	end
+	return finish(out, budget, owned)
+end
 function Texture.normalFromHeight(self: Texture, strength: number?, options: Limits?): Texture
 	local strength = strength or 1
 	return Texture.generate(self.width, self.height, function(_, x, y)
@@ -335,6 +418,7 @@ local function _contract(t: Texture): (Types.TextureLibrary, Types.Texture)
 			resize = Texture.resize,
 			blend = Texture.blend,
 			blur = Texture.blur,
+			guided = Texture.guided,
 			normalFromHeight = Texture.normalFromHeight,
 			paint = Texture.paint,
 			toRGBA8 = Texture.toRGBA8,

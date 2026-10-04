@@ -258,5 +258,33 @@ return function(E)
 		end
 	end)
 	report.success = report.failed == 0
+	test("Guided filter keeps the guide's edges and smooths elsewhere", function()
+		-- guide: a sharp vertical step; input: the same step blurred plus noise
+		local w, h = 32, 16
+		local guide = T.generate(w, h, function(_, x)
+			return x < 16 and Color3.new(0, 0, 0) or Color3.new(1, 1, 1), 1
+		end)
+		local input = T.generate(w, h, function(_, x, y)
+			local soft = 1 / (1 + math.exp(-(x - 15.5) / 2.5))
+			local noise = ((x * 7 + y * 13) % 5 - 2) * 0.02
+			return Color3.new(soft + noise, soft, soft), 0.5
+		end)
+		local out = input:guided(guide, 3, 1e-4)
+		-- far from the edge the result is flat (noise removed) and on each side of the step it
+		-- jumps between neighbouring columns much more sharply than the input did
+		local left = out:get(4, 8)
+		local right = out:get(28, 8)
+		near(left.G, (input:get(4, 8)).G, 0.05)
+		assert(right.G > 0.9 and left.G < 0.1)
+		local jumpIn = (input:get(16, 8)).G - (input:get(15, 8)).G
+		local jumpOut = (out:get(16, 8)).G - (out:get(15, 8)).G
+		assert(jumpOut > jumpIn * 2, "edge not sharpened: " .. jumpOut .. " vs " .. jumpIn)
+		local _, alpha = out:get(5, 5)
+		near(alpha, 0.5)
+		local ok = pcall(function()
+			input:guided(T.new(4, 4), 2, 1e-3)
+		end)
+		assert(not ok, "size mismatch accepted")
+	end)
 	return report
 end
