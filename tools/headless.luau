@@ -36,6 +36,43 @@ mount("tests", root)
 mount("examples", examples)
 
 -- Read-only Instance view of the tree: Name, Parent, FindFirstChild, GetChildren, child access.
+-- As in the engine, Instance members shadow children of the same name: `script.Capabilities` is
+-- the sandboxing property, not a child module. Requiring such a value fails like the engine does.
+local ENGINE_MEMBERS = {
+	Archivable = true,
+	Capabilities = true,
+	ClassName = true,
+	LinkedSource = true,
+	Sandboxed = true,
+	ScriptGuid = true,
+	Source = true,
+	UniqueId = true,
+	ClearAllChildren = true,
+	Clone = true,
+	Destroy = true,
+	FindFirstAncestor = true,
+	FindFirstChildOfClass = true,
+	FindFirstChildWhichIsA = true,
+	GetAttribute = true,
+	GetAttributes = true,
+	GetDescendants = true,
+	GetFullName = true,
+	IsA = true,
+	IsDescendantOf = true,
+	SetAttribute = true,
+	WaitForChild = true,
+	AncestryChanged = true,
+	AttributeChanged = true,
+	ChildAdded = true,
+	ChildRemoved = true,
+	Changed = true,
+	Destroying = true,
+}
+local enginePropertyValue = setmetatable({}, {
+	__tostring = function()
+		return "<engine member>"
+	end,
+})
 local instances = {}
 local function wrap(n)
 	if n == nil then
@@ -62,6 +99,8 @@ local function wrap(n)
 					end
 				elseif key == "__node" then
 					return n
+				elseif ENGINE_MEMBERS[key] then
+					return enginePropertyValue
 				end
 				local child = n.children[key]
 				if child == nil then
@@ -202,6 +241,10 @@ local CFrame = setmetatable({
 
 local cache = {}
 local function load(instance)
+	assert(
+		instance ~= enginePropertyValue and instance ~= nil,
+		"Attempted to call require with invalid argument(s)."
+	)
 	local target = instance.__node
 	assert(target.source, "Not a ModuleScript: " .. target.Name)
 	if cache[target] ~= nil then

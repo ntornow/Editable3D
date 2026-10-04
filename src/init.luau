@@ -1,6 +1,7 @@
 --!strict
 -- Editable3D 0.77.0: headless Luau authoring library. Require has no scene side effects.
--- Namespaces are listed explicitly so each one keeps its type for callers.
+-- Namespaces are listed explicitly so each one keeps its type for callers. A child whose name
+-- matches an Instance member (Capabilities) must be found with FindFirstChild.
 local Types = require(script.Types)
 export type Texture = Types.Texture
 export type Mesh = Types.Mesh
@@ -81,7 +82,8 @@ local API = {
 	BSDF = require(script.BSDF),
 	Lighting = require(script.Lighting),
 	Integrator = require(script.Integrator),
-	Capabilities = require(script.Capabilities),
+	-- `script.Capabilities` is the Instance's own sandboxing property, not this child module.
+	Capabilities = require(script:FindFirstChild("Capabilities")),
 }
 export type API = typeof(API)
 return table.freeze(API)
