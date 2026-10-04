@@ -26,7 +26,7 @@ python3 tools/validate.py --bootstrap
 
 Bootstrap downloads **tools only**, from official release URLs in `toolchain.lock.json`, and checks every download's SHA-256. Luau 0.713, Lune 0.10.5, Rojo 7.7.0, StyLua 2.5.2, luau-lsp 1.70.1 and the matching Roblox API type definitions (pinned to the luau-lsp release commit) are locked for Linux x86_64 and macOS arm64/x86_64. Binary receipts allow verified cached reuse. Python 3.10+ standard library is sufficient for release validation; optional symbolic fixture-generation scripts may need their separately documented dependencies. `rokit.toml` provides matching versions for an existing Rokit development setup; the checksum lock is authoritative for CI.
 
-`.github/workflows/editable3d.yml` runs this same command on every push and pull request, with read-only repository permissions and SHA-pinned actions. Reports and both package profiles are uploaded even if a later gate fails. Hosted CI only runs after the commit reaches GitHub; passing locally does not imply a hosted run has occurred.
+`.github/workflows/editable3d.yml` runs this command with `--tier fast` on every push and pull request, with read-only repository permissions and SHA-pinned actions. Reports and both package profiles are uploaded even if a later gate fails. Hosted CI only runs after the commit reaches GitHub; passing locally does not imply a hosted run has occurred.
 
 The gate runs:
 
@@ -37,7 +37,9 @@ The gate runs:
 5. Texture noise, blur and AO benchmarks with deterministic work/allocation ceilings and a generous 15-second per-case timing gate. These report accounted bytes, not peak process memory.
 6. XML and Rojo binary builds for both profiles, followed by exact ModuleScript source parity checks.
 
-`--jobs N` sets the number of parallel test processes (CI uses 4). A full local run takes about five minutes on a 10-core machine.
+`--jobs N` sets the number of parallel test processes. A full local run takes about five minutes on a 10-core Apple silicon machine.
+
+**CI tiers.** GitHub's runners for private repositories have two cores and run these Luau workloads several times slower than a recent laptop, so CI splits the suites. The per-push gate uses `--tier fast`: every suite except the `slowSuites` listed in the baseline (88 of 104 suites, about 1,470 tests, roughly 7 minutes of test time). `.github/workflows/full-suite.yml` runs all 104 suites in six duration-balanced matrix shards (`run_headless.py --shard I/6`) on manual dispatch, on `v*` tags and weekly. A full run uses roughly 80 billed runner-minutes. Run the full suite locally (the default) before a release.
 
 ### Headless tests
 

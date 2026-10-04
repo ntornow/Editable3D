@@ -300,7 +300,9 @@ for _, name in names do
 	end
 end
 fs.writeDir(".validation")
-fs.writeFile(out, serde.encode("json", result, true))
+if #names > 0 then
+	fs.writeFile(out, serde.encode("json", result, true))
+end
 if bench then
 	local report = load(wrap(root.children.ProductionBenchmarks))(E)
 	fs.writeFile(".validation/benchmarks.json", serde.encode("json", report, true))

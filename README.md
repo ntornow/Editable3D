@@ -178,7 +178,7 @@ The package's `.rbxmx` contains source scripts, not ephemeral editable reference
 
 ## Tests and examples
 
-The full regression suite (about 1,850 tests in 104 suites) runs headless in CI on every push, apart from 68 tests that need native `EditableMesh`/asset APIs and one that depends on engine value semantics; those run in Studio. Local CI instructions are in [MAINTAINING.md](MAINTAINING.md).
+The regression suite (about 1,850 tests in 104 suites) runs headless outside Studio, apart from 68 tests that need native `EditableMesh`/asset APIs and one that depends on engine value semantics; those run in Studio. CI runs the fast tier (88 suites) on every push and the full suite weekly, on version tags and on demand; `python3 tools/validate.py` runs all of it locally. Local CI instructions are in [MAINTAINING.md](MAINTAINING.md).
 
 To run everything in Studio, including the native tests, use the development profile. Insert that artifact as `ServerStorage.Editable3DDevelopment`; the live production profile omits tests and examples.
 

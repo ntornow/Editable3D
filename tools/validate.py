@@ -25,6 +25,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--bootstrap', action='store_true', help='Download SHA-256 pinned official tools')
     parser.add_argument('--jobs', type=int, default=min(8, os.cpu_count() or 2), help='Parallel headless test processes')
+    parser.add_argument('--tier', choices=('all', 'fast'), default='all', help='Headless suites: all, or fast (skips baseline slowSuites)')
     args = parser.parse_args()
     directory = install() if args.bootstrap else ROOT/'.tools'
     tools = {'luau':['luau'], 'lune':['lune'], 'rojo':['rojo'], 'stylua':['stylua'], 'luau-lsp':['luau-lsp'], 'roblox-types':['globalTypes.None.d.luau']}
@@ -46,7 +47,7 @@ def main():
     formatted = [f'src/{n}.luau' for n in sorted(set(FORMATTED) | set(strict))] + [f'tests/{n}.luau' for n in NEW_TESTS] + ['tools/headless.luau','tools/verify_portable.luau','tools/studio_install.luau','tools/studio_verify.luau','tools/studio_read_report.luau']
     command(paths['stylua'], '--check', *formatted)
     check(paths['luau-lsp'], paths['globalTypes.None.d.luau'], paths['rojo'])
-    run_headless(paths['lune'], args.jobs, False)
+    run_headless(paths['lune'], args.jobs, False, args.tier)
     command(paths['lune'], 'run', 'tools/headless.luau', '--bench')
     coverage(paths['luau'])
     for profile in ('development','production'):
