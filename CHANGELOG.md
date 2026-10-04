@@ -1,5 +1,15 @@
 # Editable3D changes
 
+## 0.78.1 — 2026-10-04
+
+- **`Pattern.streaks` redesign.** In 0.78.0, streaks were contour lines of 3D noise. They meandered like wood grain instead of running straight. Each run now comes from a source with a random top, length and strength, and fades downward. `width` is now a half-width in studs (default 0.05), not a fraction. New `projection` option:
+  - `"world"` (default): vertical curtains from a horizontal source grid.
+  - `"cylindrical"` (`frame`, `radius`) and `"planar"`: ignore depth, so runs follow flaring and folded surfaces instead of breaking into dashes.
+- **`Normals.unify(meshes, {tolerance, angle})`** recalculates normals over several meshes as one welded surface. Each mesh keeps its own faces, UVs and materials. This fixes shading breaks between the parts of a split surface, and the faceting of meshes read back from Roblox (one vertex per triangle corner).
+- **`Roblox.fromPart`** now reads parts whose mesh content is an EditableMesh (unpublished) in place. 0.78.0 failed on those with "Invalid id".
+
+Tests: streak shape, continuation on a flaring cone, the planar depth invariance, and `Normals.unify` against a whole-surface reference.
+
 ## 0.78.0 — 2026-10-04
 
 Adds tools for re-texturing complex published models.

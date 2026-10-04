@@ -381,6 +381,75 @@ return function(E)
 			end
 		end
 	end)
+	test("unify shares normals across meshes split from one surface", function()
+		local function height(x, z)
+			return math.sin(x * 0.9) * 0.6 + math.cos(z * 1.3) * 0.4
+		end
+		-- the same 6x4 quad sheet built whole and as two halves with duplicated boundary vertices
+		local function sheet(x0, x1, material)
+			local m = E.Mesh.new()
+			local ids = {}
+			for i = x0, x1 do
+				ids[i] = {}
+				for k = 0, 4 do
+					ids[i][k] = m:addVertex(Vector3.new(i, height(i, k), k))
+				end
+			end
+			for i = x0, x1 - 1 do
+				for k = 0, 3 do
+					m:addFace({ ids[i][k], ids[i][k + 1], ids[i + 1][k + 1], ids[i + 1][k] }, {
+						{ uv = Vector2.new(i, k) / 8 },
+						{ uv = Vector2.new(i, k + 1) / 8 },
+						{ uv = Vector2.new(i + 1, k + 1) / 8 },
+						{ uv = Vector2.new(i + 1, k) / 8 },
+					}, material)
+				end
+			end
+			return m
+		end
+		local whole = sheet(0, 6, 1):recalculateNormals()
+		local expected = {}
+		for _, f in whole.faces do
+			for i, id in f.vertices do
+				expected[tostring(whole.vertices[id])] = f.corners[i].normal
+			end
+		end
+		local left, right = sheet(0, 3, 2), sheet(3, 6, 5)
+		local unified = N.unify({ left, right }, { tolerance = 1e-4 })
+		assert(#unified == 2)
+		local seam = 0
+		for k, m in unified do
+			local count = 0
+			for _, f in m.faces do
+				count += 1
+				assert(f.material == (if k == 1 then 2 else 5), "material changed")
+				for i, id in f.vertices do
+					local p = m.vertices[id]
+					vector(f.corners[i].normal, expected[tostring(p)])
+					vector(f.corners[i].uv, Vector2.new(p.X, p.Z) / 8)
+					if p.X == 3 then
+						seam += 1
+					end
+				end
+			end
+			assert(count == 12, "faces lost")
+		end
+		assert(seam == 16, "seam corners " .. seam)
+		-- separately recalculated halves disagree at the seam; that is what unify fixes
+		local alone = left:clone():recalculateNormals()
+		local differs = false
+		for _, f in alone.faces do
+			for i, id in f.vertices do
+				local p = alone.vertices[id]
+				if p.X == 3 and (f.corners[i].normal - expected[tostring(p)]).Magnitude > 1e-3 then
+					differs = true
+				end
+			end
+		end
+		assert(differs)
+		local ok = pcall(N.unify, { left }, { angle = 4 })
+		assert(not ok, "angle above pi accepted")
+	end)
 	report.success = report.failed == 0
 	return report
 end

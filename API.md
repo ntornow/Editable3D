@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.78.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.78.1. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -490,6 +490,7 @@ Source: [src/Normals.luau](src/Normals.luau)
 - `Normals.rotate(mesh: Mesh, rotation: CFrame, options: Options?)`
 - `Normals.flip(mesh: Mesh, options: Options?)`
 - `Normals.markSharp(mesh: Mesh, edges: { [string]: boolean }, options: Options?)`
+- `Normals.unify(meshes: { Mesh }, options: UnifyOptions?): { Mesh }`
 - `Normals.tangents(mesh: Mesh, options: Options?)`
 
 ## Particles

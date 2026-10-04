@@ -555,16 +555,28 @@ function R.destroy(bundle: { model: Model?, handles: { Handle }?, images: { Edit
 end
 -- Reads a MeshPart's mesh back into an authoring Mesh. space "world" (default) applies the part's
 -- size scale and CFrame and maps corner normals through the transform; "mesh" keeps the stored
--- coordinates. Published meshes come back one vertex per triangle corner.
+-- coordinates. Published meshes come back one vertex per triangle corner; weld (Topology.weld) or
+-- use Normals.unify before recalculating normals. Unpublished parts (EditableMesh content) are read
+-- in place.
 export type FromPartOptions = { space: ("world" | "mesh")? }
 function R.fromPart(part: MeshPart, options: FromPartOptions?): Mesh
 	local space = options and options.space or "world"
 	assert(space == "world" or space == "mesh", "Unknown space")
-	local editable = game:GetService("AssetService"):CreateEditableMeshAsync(part.MeshContent)
-	local ok, mesh = pcall(R.fromEditable, editable)
-	editable:Destroy()
-	if not ok then
-		error(mesh, 0)
+	local content = part.MeshContent
+	local mesh: Mesh
+	if content.SourceType == Enum.ContentSourceType.Object then
+		-- an unpublished part renders an EditableMesh the caller owns; read it, don't destroy it
+		local object = content.Object
+		assert(object and object:IsA("EditableMesh"), "Part mesh content is not an EditableMesh")
+		mesh = R.fromEditable(object :: EditableMesh)
+	else
+		local editable = game:GetService("AssetService"):CreateEditableMeshAsync(content)
+		local ok, result = pcall(R.fromEditable, editable)
+		editable:Destroy()
+		if not ok then
+			error(result, 0)
+		end
+		mesh = result
 	end
 	if space == "mesh" then
 		return mesh

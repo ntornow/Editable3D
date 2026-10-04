@@ -31,6 +31,9 @@ export type PanelSample = {
 }
 export type StreakOptions = {
 	up: Vector3?,
+	projection: ("world" | "cylindrical" | "planar")?,
+	frame: CFrame?,
+	radius: number?,
 	spacing: number?,
 	length: number?,
 	width: number?,
@@ -130,28 +133,90 @@ function P.panels(p: Vector3, options: PanelOptions): PanelSample
 		v = v,
 	}
 end
--- Thin runs elongated along `up` (rain or drip marks), in [0, 1]. The pattern is constant along
--- up within one streak length, so neighbouring surfaces at different heights line up. Surfaces
--- facing up or straight down receive none; vertical surfaces receive the most.
+-- Rain or drip streaks in [0, 1]. Each active source drops a run with a random top, a length
+-- around `length` and a random strength, fading toward its bottom; `coverage` is the fraction of
+-- sources active per height period. Where sources sit depends on `projection`:
+--   "world" (default): a jittered grid of `spacing` studs in the plane perpendicular to `up`. Each
+--     run is a vertical curtain of radius `width`, so it marks surfaces it passes through. Runs are
+--     long on vertical surfaces and short where a surface leans away from the curtain.
+--   "cylindrical": sources every `spacing` studs of arc around frame's Y axis at `radius`. Runs
+--     ignore depth, so they follow a leaning or folded surface like water running down it. Width
+--     is measured at the point's own radius.
+--   "planar": sources every `spacing` studs along frame's X axis; depth along Z is ignored.
+-- Cylindrical and planar runs follow frame's Y axis (`up` is ignored). Surfaces facing up or
+-- straight down receive none; vertical surfaces receive the most.
 function P.streaks(p: Vector3, normal: Vector3, options: StreakOptions?): number
 	local o: StreakOptions = options or {}
-	local up = (o.up or Vector3.yAxis).Unit
-	local spacing, length = o.spacing or 0.5, o.length or 8
-	local width, coverage = o.width or 0.25, o.coverage or 0.5
-	assert(spacing > 0 and length > 0 and width > 0 and width <= 1, "Invalid streak options")
+	local projection = o.projection or "world"
+	local spacing, length, width = o.spacing or 0.3, o.length or 6, o.width or 0.05
+	local coverage, seed = math.clamp(o.coverage or 0.5, 0, 1), o.seed or 0
+	assert(spacing > 0 and length > 0 and width > 0, "Invalid streak options")
+	local frame = o.frame or CFrame.identity
+	local up: Vector3
+	if projection == "world" then
+		up = (o.up or Vector3.yAxis).Unit
+	else
+		assert(projection == "cylindrical" or projection == "planar", "Unknown streak projection")
+		up = frame.UpVector
+	end
 	local facing = normal.Magnitude > 0 and normal.Unit:Dot(up) or 0
 	local exposure = P.smoothstep(0.75, 0.15, facing) * P.smoothstep(-0.9, -0.4, facing)
-	if exposure <= 0 then
+	if exposure <= 0 or coverage <= 0 then
 		return 0
 	end
-	local h = up:Dot(p)
-	local flat = p - up * h + seedOffset(o.seed or 0)
-	local line = math.noise(flat.X / spacing, h / length, flat.Z / spacing)
-	local ridge = P.smoothstep(1 - width, 1, 1 - math.abs(line) * 2)
-	local envelope = math.noise(flat.X / (spacing * 7), h / (length * 1.7), flat.Z / (spacing * 7) + 17.3)
-	-- coverage is the approximate fraction of the surface where streaks appear
-	local threshold = (0.5 - math.clamp(coverage, 0, 1)) * 0.6
-	local present = P.smoothstep(threshold - 0.08, threshold + 0.08, envelope)
-	return math.clamp(ridge * present * exposure, 0, 1)
+	-- (a, b): source-grid coordinates in units of spacing; scale converts a distance in a to studs
+	local a: number, b: number?, h: number, scale: number, wrap: number?
+	if projection == "world" then
+		local e1 = (if math.abs(up.X) < 0.9 then Vector3.xAxis else Vector3.zAxis):Cross(up).Unit
+		local e2 = up:Cross(e1)
+		a, b, h, scale = p:Dot(e1) / spacing, p:Dot(e2) / spacing, p:Dot(up), spacing
+	else
+		local q = frame:PointToObjectSpace(p)
+		h = q.Y
+		if projection == "planar" then
+			a, scale = q.X / spacing, spacing
+		else
+			local radius = assert(o.radius, "Cylindrical streaks require a reference radius")
+			assert(radius > 0, "Streak radius must be positive")
+			local count = math.max(1, math.floor(TWO_PI * radius / spacing + 0.5))
+			a = (math.atan2(q.Z, q.X) % TWO_PI) / TWO_PI * count
+			scale = TWO_PI * math.max(Vector2.new(q.X, q.Z).Magnitude, 1e-9) / count
+			wrap = count
+		end
+	end
+	local period = length * 1.5
+	local ci, cj = math.floor(a), math.floor(h / period)
+	local ck = if b then math.floor(b) else 0
+	local best = 0
+	for di = -1, 1 do
+		for dk = (if b then -1 else 0), (if b then 1 else 0) do
+			local i, k = ci + di, ck + dk
+			if wrap then
+				i %= wrap
+			end
+			local da = a - (ci + di) - P.hash(i, k, 1, seed)
+			local d = if b
+				then Vector2.new(da, b - k - P.hash(i, k, 2, seed)).Magnitude * scale
+				else math.abs(da) * scale
+			if d < width then
+				local profile = 1 - P.smoothstep(0, width, d)
+				-- a run can start in this height period or the one above and reach into this one
+				for dj = 0, 1 do
+					local j = cj - dj
+					if P.hash(i, k, j, seed + 101) < coverage then
+						local top = (j + P.hash(i, k, j, seed + 102)) * period
+						local run = length * (0.4 + 1.2 * P.hash(i, k, j, seed + 103))
+						local t = (top - h) / run
+						if t >= 0 and t <= 1 then
+							local strength = 0.5 + 0.5 * P.hash(i, k, j, seed + 104)
+							local fade = (1 - t) ^ 0.6 * P.smoothstep(0, 0.04, t)
+							best = math.max(best, profile * strength * fade)
+						end
+					end
+				end
+			end
+		end
+	end
+	return math.clamp(best * exposure, 0, 1)
 end
 return table.freeze(P)

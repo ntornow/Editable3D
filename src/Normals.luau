@@ -102,6 +102,44 @@ function N.markSharp(mesh: Mesh, edges: { [string]: boolean }, options: Options?
 	config.sharpEdges = nil
 	return N.recalculate(state.out, config)
 end
+-- Recalculates normals over several meshes as one welded surface and returns a copy of each mesh
+-- with the shared normals, keeping its own faces, UVs and materials. Use it when one surface was
+-- split into parts (for example a Roblox.partition or a published multi-part model), so shading
+-- does not break at part boundaries. tolerance (default 1e-4) welds coincident positions; angle
+-- (radians, default pi) keeps sharper creases split.
+export type UnifyOptions = { tolerance: number?, angle: number? }
+function N.unify(meshes: { Mesh }, options: UnifyOptions?): { Mesh }
+	local Topology = require(script.Parent.Topology) :: any
+	local tolerance = options and options.tolerance or 1e-4
+	local angle = options and options.angle or math.pi
+	assert(tolerance > 0 and angle >= 0 and angle <= math.pi, "Invalid unify options")
+	-- Topology.join appends each mesh's faces in key order with consecutive new ids
+	local owner: { number } = {}
+	for k, m in meshes do
+		for _ in m.faces do
+			table.insert(owner, k)
+		end
+	end
+	local joined: Mesh = Topology.join(meshes)
+	local first = math.huge
+	for fid in joined.faces do
+		first = math.min(first, fid)
+	end
+	joined = Topology.weld(joined, tolerance)
+	joined:recalculateNormals(angle)
+	local sets: { { [number]: boolean } } = {}
+	for k in meshes do
+		sets[k] = {}
+	end
+	for fid in joined.faces do
+		sets[owner[fid - first + 1]][fid] = true
+	end
+	local out: { Mesh } = {}
+	for k in meshes do
+		out[k] = Topology.extract(joined, sets[k])
+	end
+	return out
+end
 function N.tangents(mesh: Mesh, options: Options?)
 	return require(script.Parent.NormalTangents)(mesh, options)
 end

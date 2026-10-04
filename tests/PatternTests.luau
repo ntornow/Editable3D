@@ -116,37 +116,113 @@ return function(E)
 			P.panels(Vector3.zero, { projection = "planar" :: "planar", width = 0, height = 1 })
 		end, "positive")
 	end)
-	test("streaks run along up, vanish on up- and down-facing surfaces and follow coverage", function()
+	test("streaks are narrow vertical curtains that continue downward and follow coverage", function()
 		local side = Vector3.new(0, 0, -1)
 		assert(P.streaks(Vector3.new(1, 2, 3), Vector3.yAxis) == 0)
 		assert(P.streaks(Vector3.new(1, 2, 3), -Vector3.yAxis) == 0)
-		local function fraction(coverage)
-			local hits, n = 0, 0
-			for i = 0, 59 do
-				for j = 0, 59 do
-					local v =
-						P.streaks(Vector3.new(i * 0.37, j * 0.9, 0), side, { coverage = coverage, seed = 3 })
-					assert(v >= 0 and v <= 1)
-					if v > 0.05 then
-						hits += 1
+		assert(P.streaks(Vector3.new(1, 2, 3), side, { coverage = 0 }) == 0)
+		local o = { spacing = 0.3, length = 6, width = 0.05, coverage = 0.6, seed = 5 }
+		local step = 0.005
+		local runs, continued, checked = 0, 0, 0
+		for row = 0, 19 do
+			local y = row * 1.37
+			local inside, start = false, 0
+			for i = 0, 2000 do
+				local x = i * step
+				local v = P.streaks(Vector3.new(x, y, 0.123), side, o)
+				assert(v >= 0 and v <= 1)
+				if v > 0 and not inside then
+					inside, start = true, x
+				elseif v == 0 and inside then
+					inside = false
+					runs += 1
+					-- a curtain of radius `width` cuts a plane in a strip at most 2 * width wide
+					assert(x - start <= 2 * o.width + 2 * step, "streak too wide: " .. (x - start))
+					local mid = Vector3.new((start + x) / 2, y, 0.123)
+					checked += 1
+					if P.streaks(mid - Vector3.new(0, 0.05, 0), side, o) > 0 then
+						continued += 1
 					end
-					n += 1
 				end
 			end
-			return hits / n
+		end
+		assert(runs > 10, "too few streaks: " .. runs)
+		assert(continued >= checked * 0.9, "streaks broken along up: " .. continued .. "/" .. checked)
+		local function fraction(coverage)
+			local hits = 0
+			for i = 0, 59 do
+				for j = 0, 59 do
+					if
+						P.streaks(
+							Vector3.new(i * 0.037, j * 0.31, 0.2),
+							side,
+							{ coverage = coverage, seed = 3 }
+						) > 0
+					then
+						hits += 1
+					end
+				end
+			end
+			return hits
 		end
 		local low, high = fraction(0.1), fraction(0.9)
 		assert(high > low * 2, "coverage " .. low .. " vs " .. high)
-		-- correlation along up is much stronger than across it
-		local alongDiff, acrossDiff = 0, 0
-		for i = 0, 199 do
-			local p = Vector3.new(i * 0.53, i * 0.29, 0)
-			local o = { coverage = 1, spacing = 0.5, length = 8 }
-			local v = P.streaks(p, side, o)
-			alongDiff += math.abs(v - P.streaks(p + Vector3.new(0, 0.25, 0), side, o))
-			acrossDiff += math.abs(v - P.streaks(p + Vector3.new(0.25, 0, 0), side, o))
+		rejects(function()
+			P.streaks(Vector3.zero, side, { width = 0 })
+		end, "Invalid streak options")
+	end)
+	test("cylindrical and planar streaks follow leaning surfaces; world curtains do not", function()
+		-- a cone flaring outward toward the bottom: r = 4 + 0.3 * (10 - y)
+		local function point(angle, y)
+			local r = 4 + 0.3 * (10 - y)
+			return Vector3.new(math.cos(angle) * r, y, math.sin(angle) * r),
+				Vector3.new(math.cos(angle), 0.3, math.sin(angle)).Unit
 		end
-		assert(acrossDiff > alongDiff * 2, "along " .. alongDiff .. " across " .. acrossDiff)
+		local function continuation(options)
+			local found, continued = 0, 0
+			for row = 0, 7 do
+				local y = 4 + row * 0.9
+				for i = 0, 3999 do
+					local angle = i / 4000 * 2 * math.pi
+					local p, n = point(angle, y)
+					if P.streaks(p, n, options) > 0.3 then
+						found += 1
+						local q, m = point(angle, y - 0.6)
+						if P.streaks(q, m, options) > 0 then
+							continued += 1
+						end
+					end
+				end
+			end
+			return continued / math.max(found, 1), found
+		end
+		local base = { spacing = 0.3, length = 8, width = 0.06, coverage = 0.7, seed = 2 }
+		local cyl = table.clone(base)
+		cyl.projection, cyl.radius = "cylindrical", 4
+		local world = table.clone(base)
+		local c, cFound = continuation(cyl)
+		local w = continuation(world)
+		assert(cFound > 20, "no cylindrical streaks")
+		assert(c > 0.8, "cylindrical continuation " .. c)
+		assert(w < c * 0.5, "world curtains should break on a leaning surface: " .. w .. " vs " .. c)
+		-- planar: depth along the frame's Z is ignored entirely
+		local planar =
+			{ projection = "planar", spacing = 0.3, length = 8, width = 0.06, coverage = 0.7, seed = 2 }
+		for i = 0, 200 do
+			local x, y = i * 0.013, 5 + (i % 7) * 0.4
+			local n = Vector3.new(0, 0, -1)
+			near(
+				P.streaks(Vector3.new(x, y, 0), n, planar),
+				P.streaks(Vector3.new(x, y, 3.7), n, planar),
+				1e-12
+			)
+		end
+		rejects(function()
+			P.streaks(Vector3.zero, Vector3.xAxis, { projection = "cylindrical" })
+		end, "reference radius")
+		rejects(function()
+			P.streaks(Vector3.zero, Vector3.xAxis, { projection = "spiral" :: any })
+		end, "Unknown streak projection")
 	end)
 	local function ring(): any
 		local m = E.Mesh.new()
