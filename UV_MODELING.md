@@ -20,6 +20,8 @@ assert(analysis.complete and analysis.overlapFree and analysis.consistentOrienta
 
 `UV.box(mesh, frame?, {margin})` projects each face along the `frame` axis closest to its normal into one of up to six rectangular charts (+x, −x, +y, −y, +z, −z). The charts share one scale, so texel density in studs is uniform, and they are shelf-packed into `[margin, 1 − margin]`. The report gives `scale` (UV units per stud) and `charts`.
 
+With `{tile = studs}` the charts are not packed. UV becomes the projected position divided by `tile`, so a shared tileable material repeats every `tile` studs, aligned across parts (Roblox wraps UVs). This suits masonry, paving and cladding on large architectural meshes, where a unique bake would be too coarse.
+
 Unlike island packing (`UV.packIslands`, which needs welded, oriented manifold geometry), it works on any face soup, including meshes read back from Roblox with one vertex per triangle corner. Use it for slabs, plaques, pedestals and other box-like parts, with `frame` aligned to the object. Charts overlap only where a surface folds back along the same axis.
 
 ## Discovery and selection

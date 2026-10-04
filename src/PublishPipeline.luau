@@ -22,7 +22,11 @@ export type Backend = {
 }
 export type Options = Budget.Options & Retry.Options & { resume: { LedgerEntry }? }
 -- A materialsOnly handle has no editable mesh: the part keeps its mesh and only its maps publish.
-export type Bundle = { handles: { { editable: unknown, part: unknown, materialsOnly: boolean? } } }
+-- images: standalone images (no part) to publish and verify; their IDs come back in imageIds.
+export type Bundle = {
+	handles: { { editable: unknown, part: unknown, materialsOnly: boolean? } },
+	images: { unknown }?,
+}
 local P = {}
 function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Backend)
 	local o: Options = options or {}
@@ -30,6 +34,7 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 	local budget = Budget.new(o, "Roblox.publish")
 	local ledger: { LedgerEntry } = o.resume or {}
 	local assets: { { kind: string, id: string, resumed: boolean } } = {}
+	local imageIds: { string } = {}
 	local report = Transaction.run(function(context)
 		local verified: { LedgerEntry } = {}
 		local seenParts: { [unknown]: boolean } = {}
@@ -145,6 +150,10 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 				})
 			end
 		end
+		local images: { unknown } = bundle.images or {}
+		for index, image in images do
+			imageIds[index] = asset(image, "Image")
+		end
 		return {
 			actions = actions,
 			validate = function()
@@ -183,6 +192,7 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 		cleanupErrors = report.cleanupErrors,
 		assets = assets,
 		resumeAvailable = o.resume ~= nil,
+		imageIds = imageIds,
 		operation = budget:report(),
 	}
 end

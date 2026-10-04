@@ -90,6 +90,8 @@ Preparation failures leave live references unchanged. Failed commit actions, inc
 
 `Roblox.publishMaterials(parts, metadata, options?)` runs the same transaction for MeshParts whose meshes are already published: each handle is `materialsOnly`, so only the editable `TextureContent` and SurfaceAppearance maps are uploaded, verified and swapped, and the mesh, size and CFrame are guarded but not replaced. A materials-only part with no editable maps fails preparation. In a custom bundle, a handle carries exactly one of `editable` or `materialsOnly = true`.
 
+`Roblox.publishImages(images, metadata, options?)` publishes standalone EditableImages, for example skybox faces, with the same upload, readback verification and resume ledger, and changes no scene object. `report.imageIds` lists the asset IDs in input order. In a custom bundle, the optional `images` list does the same alongside part handles.
+
 Invalid options and cancellation before preparation raise before external effects. Failures after preparation begins return a failure report. Progress/cancellation callbacks are used during preparation; they are disabled for the final source/scene guard and synchronous commit so user code cannot yield between validation and mutation. Publishing returns counters directly and does not invoke `onComplete`.
 
 Readback/staging are tested with fault-injection adapters and native in-memory Roblox content. Automated tests **do not create remote assets**. Service permissions, moderation, ownership and remote availability still require a release-specific publishing smoke test when an actual asset publication is authorized.

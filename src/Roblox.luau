@@ -597,6 +597,21 @@ function R.publishMaterials(
 	end
 	return (require(script.Parent.RobloxPublish) :: any).run({ handles = handles }, metadata, options)
 end
+-- Publishes standalone EditableImages (for example skybox faces or decals) with the same upload,
+-- readback verification and resume ledger as publish; report.imageIds lists their asset IDs in
+-- input order. No scene object is changed.
+function R.publishImages(
+	images: { EditableImage },
+	metadata: unknown,
+	options: Types.PublishOptions?
+): Types.PublishReport
+	assert(#images > 0, "No images to publish")
+	return (require(script.Parent.RobloxPublish) :: any).run(
+		{ handles = {}, images = images },
+		metadata,
+		options
+	)
+end
 function R.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport
 	return (require(script.Parent.RobloxPublish) :: any).run(bundle, metadata, options)
 end

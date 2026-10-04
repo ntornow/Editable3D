@@ -171,6 +171,8 @@ export type PublishReport = {
 	assets: { { kind: string, id: string, resumed: boolean } },
 	resumeAvailable: boolean,
 	operation: Progress,
+	-- publishImages / bundle.images: asset IDs of the standalone images, in input order
+	imageIds: { string }?,
 }
 export type API = {
 	Version: string,

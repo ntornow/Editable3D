@@ -184,7 +184,9 @@ end
 -- per stud stay uniform) and are shelf-packed into [margin, 1 - margin]. Works on any face soup:
 -- no welding, manifold or orientation requirement, unlike island-based packing. Charts can
 -- overlap only where a surface folds back over itself along the same axis.
-export type BoxOptions = { margin: number? }
+-- tile: instead of packing, set UV = projected studs / tile (world-aligned and unpacked; textures
+-- repeat every `tile` studs because Roblox wraps UVs). Use it with a shared tileable material.
+export type BoxOptions = { margin: number?, tile: number? }
 export type BoxReport = { scale: number, charts: number }
 function UV.box(mesh: Mesh, frame: CFrame?, options: BoxOptions?): (Mesh, BoxReport)
 	local frame: CFrame = frame or CFrame.identity
@@ -237,6 +239,18 @@ function UV.box(mesh: Mesh, frame: CFrame?, options: BoxOptions?): (Mesh, BoxRep
 			chart.lo, chart.hi = chart.lo:Min(uv), chart.hi:Max(uv)
 		end
 		table.insert(chart.faces, fid)
+	end
+	local tile = options and options.tile
+	if tile then
+		assert(tile > 0, "Box UV tile must be positive")
+		for _, chart in charts do
+			for _, fid in chart.faces do
+				for _, corner in out.faces[fid].corners do
+					corner.uv = (corner.uv :: Vector2) / tile
+				end
+			end
+		end
+		return out, { scale = 1 / tile, charts = #order }
 	end
 	table.sort(order, function(a: string, b: string): boolean
 		local ha, hb = charts[a].hi.Y - charts[a].lo.Y, charts[b].hi.Y - charts[b].lo.Y

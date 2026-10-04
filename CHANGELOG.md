@@ -1,5 +1,12 @@
 # Editable3D changes
 
+## 0.81.0 — 2026-10-04
+
+- **`Roblox.publishImages(images, metadata, options)`** publishes standalone EditableImages (skyboxes, decals) with readback verification and the resume ledger, and returns `report.imageIds`. Publish bundles accept an optional `images` list.
+- **`UV.box(mesh, frame, {tile = studs})`** produces world-aligned, unpacked UVs (projected studs ÷ tile) for shared tileable materials on large architectural meshes.
+
+Tests: standalone image publishing (IDs, resume, mismatch) and tiled box UVs.
+
 ## 0.80.0 — 2026-10-04
 
 - **`Deform.envelope(mesh, view, step)`:** rasterized front-depth grid of a mesh seen along a view, with `sample` and `blurred(radius)`.

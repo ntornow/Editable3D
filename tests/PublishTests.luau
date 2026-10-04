@@ -388,6 +388,23 @@ return function()
 		assert(not noMaps.success and string.find(tostring(noMaps.error), "no editable maps", 1, true))
 		assert(bundle.handles[1].editable == m)
 	end)
+	test("Standalone images publish, verify and return their IDs in order", function()
+		local _bundle, b, s, p = fixture()
+		local img1, img2 = { data = "sky-up" }, { data = "sky-side" }
+		local r = P.run({ handles = {}, images = { img1, img2 } }, {}, nil, b)
+		assert(r.success and r.committed, tostring(r.error))
+		assert(r.imageIds and #r.imageIds == 2 and r.imageIds[1] ~= r.imageIds[2])
+		assert(s.uploads == 2 and s.stages == 0 and p.mesh == "original")
+		local ledger = {}
+		local again = P.run({ handles = {}, images = { img1, img2 } }, {}, { resume = ledger }, b)
+		assert(again.success and #again.imageIds == 2)
+		local resumed = P.run({ handles = {}, images = { img1, img2 } }, {}, { resume = ledger }, b)
+		assert(resumed.success and resumed.assets[1].resumed and resumed.imageIds[2] == again.imageIds[2])
+		s.corrupt = true
+		local bad = P.run({ handles = {}, images = { { data = "x" } } }, {}, nil, b)
+		assert(not bad.success and string.find(tostring(bad.error), "content mismatch", 1, true))
+		cleaned(s)
+	end)
 	test("Validation failure precedes all live actions", function()
 		local applied = false
 		local r = Transaction.run(function()

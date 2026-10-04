@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.80.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.81.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -646,6 +646,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.destroy(bundle: { model: Model?, handles: { Handle }?, images: { EditableImage }? })`
 - `Roblox.fromPart(part: MeshPart, options: FromPartOptions?): Mesh`
 - `Roblox.publishMaterials(parts: { MeshPart }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
+- `Roblox.publishImages(images: { EditableImage }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 
 ## Sculpt

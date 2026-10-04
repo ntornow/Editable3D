@@ -23,7 +23,7 @@
   },
   "suites": {
     "Tests": {
-      "seconds": 2.2,
+      "seconds": 2.1,
       "nativeSkipped": []
     },
     "TextureTests": {
@@ -31,11 +31,11 @@
       "nativeSkipped": []
     },
     "PatternTests": {
-      "seconds": 8,
+      "seconds": 8.4,
       "nativeSkipped": []
     },
     "AuthoringTests": {
-      "seconds": 0.3,
+      "seconds": 0.4,
       "nativeSkipped": []
     },
     "OperationBudgetTests": {
@@ -59,7 +59,7 @@
       "nativeSkipped": []
     },
     "GeometryTests": {
-      "seconds": 2.9,
+      "seconds": 3,
       "nativeSkipped": [
         "surface Boolean native mesh adapter retains closed triangles"
       ]
@@ -69,7 +69,7 @@
       "nativeSkipped": []
     },
     "ShadingTests": {
-      "seconds": 2.2,
+      "seconds": 2.3,
       "nativeSkipped": []
     },
     "MotionTests": {
@@ -81,7 +81,7 @@
       "nativeSkipped": []
     },
     "DynamicsTests": {
-      "seconds": 18.2,
+      "seconds": 18.6,
       "nativeSkipped": []
     },
     "ConstraintTests": {
@@ -93,7 +93,7 @@
       "nativeSkipped": []
     },
     "DeformWorkflowTests": {
-      "seconds": 0.3,
+      "seconds": 0.5,
       "nativeSkipped": [
         "Nonlinear curve deformation preserves channels groups skin and native UV topology"
       ]
@@ -105,7 +105,7 @@
       ]
     },
     "ARAPTests": {
-      "seconds": 0.4,
+      "seconds": 0.3,
       "nativeSkipped": []
     },
     "NURBSTests": {
@@ -119,7 +119,7 @@
       "nativeSkipped": []
     },
     "HighDegreeSplineTests": {
-      "seconds": 1.4,
+      "seconds": 1.5,
       "nativeSkipped": []
     },
     "SplineFitTests": {
@@ -137,11 +137,11 @@
       "nativeSkipped": []
     },
     "CyclicTests": {
-      "seconds": 1.4,
+      "seconds": 1.5,
       "nativeSkipped": []
     },
     "CyclicEditTests": {
-      "seconds": 1.3,
+      "seconds": 1,
       "nativeSkipped": [
         "Elevated cyclic surfaces tessellate as closed native meshes"
       ]
@@ -153,19 +153,19 @@
       ]
     },
     "SurfaceConstructionTests": {
-      "seconds": 0.5,
+      "seconds": 0.6,
       "nativeSkipped": [
         "Constructed plane preserves frame dimensions UVs and native mesh positions"
       ]
     },
     "RationalCoonsTests": {
-      "seconds": 2.2,
+      "seconds": 2.3,
       "nativeSkipped": [
         "Rational Coons tessellation retains native UVs normals and valid geometry"
       ]
     },
     "SurfaceJoinTests": {
-      "seconds": 2.7,
+      "seconds": 2.8,
       "nativeSkipped": [
         "Joined rational panels retain native mesh normals and independent UV charts"
       ]
@@ -187,121 +187,121 @@
       ]
     },
     "SurfaceIntersectionTests": {
-      "seconds": 16.9,
+      "seconds": 17.1,
       "nativeSkipped": [
         "Surface intersection source geometry survives a native UV normal round trip"
       ]
     },
     "SurfaceComponentTests": {
-      "seconds": 101.9,
+      "seconds": 104.4,
       "nativeSkipped": []
     },
     "SurfaceOrderingTests": {
-      "seconds": 231.1,
+      "seconds": 235.6,
       "nativeSkipped": [
         "Ordered loop closes a native mesh boundary without a duplicate seam vertex"
       ]
     },
     "SurfaceQuotientTests": {
-      "seconds": 50.8,
+      "seconds": 51.8,
       "nativeSkipped": [
         "A quotient loop forms a native mesh boundary with retained UVs and normals"
       ]
     },
     "BoundaryIdentityTests": {
-      "seconds": 20.7,
+      "seconds": 21.5,
       "nativeSkipped": [
         "An exact-fallback periodic boundary survives native EditableMesh conversion"
       ]
     },
     "AffineContactTests": {
-      "seconds": 0.3,
+      "seconds": 0.2,
       "nativeSkipped": [
         "An exact overlap polygon round-trips through a native EditableMesh"
       ]
     },
     "PolynomialRootTests": {
-      "seconds": 3.2,
+      "seconds": 3.4,
       "nativeSkipped": []
     },
     "CurvePlaneTests": {
-      "seconds": 0.6,
+      "seconds": 0.7,
       "nativeSkipped": [
         "Certified contact vertices survive native EditableMesh conversion"
       ]
     },
     "AlgebraicFiberTests": {
-      "seconds": 0.3,
+      "seconds": 0.2,
       "nativeSkipped": []
     },
     "RuledPlaneTests": {
-      "seconds": 44,
+      "seconds": 45,
       "nativeSkipped": [
         "Tangent ruling anchors and source parameters survive native EditableMesh conversion"
       ]
     },
     "RuledQuotientTests": {
-      "seconds": 3.7,
+      "seconds": 3.8,
       "nativeSkipped": [
         "A quotient cycle forms a native mesh boundary with both seam UV representatives"
       ]
     },
     "PlanarCADTests": {
-      "seconds": 9.1,
+      "seconds": 9.3,
       "nativeSkipped": []
     },
     "TensorPlaneTests": {
-      "seconds": 4.5,
+      "seconds": 4.7,
       "nativeSkipped": [
         "Tensor contact anchors and UV parameters survive native EditableMesh conversion"
       ]
     },
     "GraphPairTests": {
-      "seconds": 7,
+      "seconds": 7.1,
       "nativeSkipped": [
         "Graph contact anchors and original UV parameters round-trip through native EditableMesh"
       ]
     },
     "GeneralCADTests": {
-      "seconds": 20.7,
+      "seconds": 21.4,
       "nativeSkipped": []
     },
     "TensorPairTests": {
-      "seconds": 14.6,
+      "seconds": 15.2,
       "nativeSkipped": [
         "General contact anchors and UV coordinates round trip through EditableMesh"
       ]
     },
     "PeriodicTensorTests": {
-      "seconds": 16.4,
+      "seconds": 17,
       "nativeSkipped": [
         "Periodic tensor anchor UV representatives round trip through EditableMesh"
       ]
     },
     "RuledPairFixtureTests": {
-      "seconds": 7.2,
+      "seconds": 7.6,
       "nativeSkipped": []
     },
     "RuledPairTests": {
-      "seconds": 10,
+      "seconds": 10.2,
       "nativeSkipped": [
         "Curved ruled-pair anchors preserve their original UVs in EditableMesh"
       ]
     },
     "RationalWindingTests": {
-      "seconds": 25.6,
+      "seconds": 26,
       "nativeSkipped": [
         "The repaired oblique boundary round-trips through a native EditableMesh"
       ]
     },
     "VertexRegularizationTests": {
-      "seconds": 9.7,
+      "seconds": 10.1,
       "nativeSkipped": [
         "A source-regularized boundary round-trips through native EditableMesh"
       ]
     },
     "FeatureRegularizationTests": {
-      "seconds": 8.6,
+      "seconds": 8.9,
       "nativeSkipped": [
         "A face-refined repaired boundary round-trips through native EditableMesh"
       ]
@@ -317,7 +317,7 @@
       "nativeSkipped": []
     },
     "SurfaceAdaptiveTests": {
-      "seconds": 14.4,
+      "seconds": 14.5,
       "nativeSkipped": [
         "Adaptive triangles and corner attributes survive native EditableMesh conversion"
       ]
@@ -327,75 +327,75 @@
       "nativeSkipped": []
     },
     "PlanarTests": {
-      "seconds": 1.4,
+      "seconds": 1.6,
       "nativeSkipped": []
     },
     "PlanarConstraintTests": {
-      "seconds": 0.8,
+      "seconds": 0.7,
       "nativeSkipped": []
     },
     "SurfaceTrimTests": {
-      "seconds": 0.8,
+      "seconds": 0.9,
       "nativeSkipped": [
         "Trim mesh UV holes and normals survive native EditableMesh roundtrip"
       ]
     },
     "SurfaceTrimAdaptiveTests": {
-      "seconds": 26.8,
+      "seconds": 27.5,
       "nativeSkipped": [
         "Adaptive trim meshes preserve holes normals and UVs through native EditableMesh"
       ]
     },
     "TrimRegionTests": {
-      "seconds": 48.4,
+      "seconds": 49.8,
       "nativeSkipped": [
         "Wrapped surface regions preserve native position normal and seam UV topology"
       ]
     },
     "IntersectionTests": {
-      "seconds": 3,
+      "seconds": 3.1,
       "nativeSkipped": [
         "Native mesh roundtrip retains an intersection-free closed modeled solid"
       ]
     },
     "IntersectionRepairTests": {
-      "seconds": 40.8,
+      "seconds": 41.3,
       "nativeSkipped": [
         "Repaired native EditableMesh roundtrips preserve closed geometry and corner UVs"
       ]
     },
     "BooleanArrangementTests": {
-      "seconds": 129.5,
+      "seconds": 134.2,
       "nativeSkipped": [
         "Native arrangement Boolean conversion preserves audited geometry and corner UVs"
       ]
     },
     "BuilderAttributeTests": {
-      "seconds": 2,
+      "seconds": 2.1,
       "nativeSkipped": [
         "Refined shelled and clipped geometry retains native EditableMesh topology and UVs"
       ]
     },
     "PlanarSimplifyTests": {
-      "seconds": 7.9,
+      "seconds": 8.1,
       "nativeSkipped": [
         "Planar output exports finite UVs and independent flat normals"
       ]
     },
     "UnsubdivideTests": {
-      "seconds": 14.1,
+      "seconds": 14.3,
       "nativeSkipped": [
         "Coarse cages retain UVs and finite normals through native conversion"
       ]
     },
     "GridTransitionTests": {
-      "seconds": 32.8,
+      "seconds": 33.4,
       "nativeSkipped": [
         "A transition panel preserves native position UV and normal topology"
       ]
     },
     "UVIslandTests": {
-      "seconds": 0.1,
+      "seconds": 0.2,
       "nativeSkipped": [
         "Packed box atlas survives native UV and normal conversion"
       ]
@@ -407,43 +407,43 @@
       ]
     },
     "AngleBasedTests": {
-      "seconds": 1,
+      "seconds": 1.1,
       "nativeSkipped": [
         "Angle atlas survives native EditableMesh UV and normal conversion"
       ]
     },
     "UVRelaxTests": {
-      "seconds": 0.8,
+      "seconds": 0.9,
       "nativeSkipped": [
         "Relaxed curved panel survives native UV and normal conversion"
       ]
     },
     "FairingTests": {
-      "seconds": 27.3,
+      "seconds": 27.7,
       "nativeSkipped": [
         "A faired patch retains its positions UVs and normals through native conversion"
       ]
     },
     "BrushTests": {
-      "seconds": 120.8,
+      "seconds": 124,
       "nativeSkipped": [
         "A symmetric sculpted stroke survives native position UV and normal conversion"
       ]
     },
     "DecimateTests": {
-      "seconds": 3.6,
+      "seconds": 3.8,
       "nativeSkipped": [
         "A reduced symmetric panel survives native position UV and normal conversion"
       ]
     },
     "QuadRetopologyTests": {
-      "seconds": 4.8,
+      "seconds": 4.9,
       "nativeSkipped": [
         "Native EditableMesh roundtrip retains a retopologized closed cube"
       ]
     },
     "ShellTests": {
-      "seconds": 5.2,
+      "seconds": 5.1,
       "nativeSkipped": [
         "Sharp shells survive native UV and skin conversion"
       ]
@@ -467,13 +467,13 @@
       "nativeSkipped": []
     },
     "SubdivisionFaceVaryingTests": {
-      "seconds": 0.2,
+      "seconds": 0.3,
       "nativeSkipped": [
         "Smoothed UV seams survive native conversion with valid geometry and normals"
       ]
     },
     "SubdivisionLimitTests": {
-      "seconds": 3.3,
+      "seconds": 3.5,
       "nativeSkipped": [
         "Limit sampled patches retain UVs and analytic normals through native conversion"
       ]
@@ -491,7 +491,7 @@
       ]
     },
     "JordanSectorTests": {
-      "seconds": 0.9,
+      "seconds": 1,
       "nativeSkipped": [
         "Jordan corner normals and separate UVs survive native EditableMesh conversion"
       ]
@@ -503,7 +503,7 @@
       ]
     },
     "ConstrainedJetTests": {
-      "seconds": 17.3,
+      "seconds": 17.6,
       "nativeSkipped": [
         "Certified higher-sector normals and UVs survive native EditableMesh conversion"
       ]
@@ -515,19 +515,19 @@
       ]
     },
     "AnnularNormalTests": {
-      "seconds": 167.5,
+      "seconds": 171.7,
       "nativeSkipped": [
         "Certified higher-sector directions survive native corner-normal conversion"
       ]
     },
     "SubdivisionHistoryTests": {
-      "seconds": 80.7,
+      "seconds": 82.8,
       "nativeSkipped": [
         "A normal certified from a refined history survives native normal and UV conversion"
       ]
     },
     "NormalGermTests": {
-      "seconds": 105.3,
+      "seconds": 109.7,
       "nativeSkipped": [
         "Certified singular patch normals survive native UV mesh conversion"
       ]
@@ -541,7 +541,7 @@
       "nativeSkipped": []
     },
     "ArcLengthTests": {
-      "seconds": 0.4,
+      "seconds": 0.2,
       "nativeSkipped": []
     },
     "BezierTests": {
@@ -557,7 +557,7 @@
       ]
     },
     "MeshConstructionTests": {
-      "seconds": 0.3,
+      "seconds": 0.4,
       "nativeSkipped": [
         "Grid spin and cap cutting compose through native EditableMesh conversion",
         "Knife bent paths and tilted native roundtrip retain volume and surface area"
@@ -570,7 +570,7 @@
       ]
     },
     "BevelTests": {
-      "seconds": 3.3,
+      "seconds": 3.4,
       "nativeSkipped": [
         "Bevels compose through native EditableMesh conversion with volume and closure intact"
       ]

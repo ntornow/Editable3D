@@ -271,5 +271,26 @@ return function(E)
 			end, { fade = 0 })
 		end, "Invalid relief options")
 	end)
+	test("box UVs with tile are world-aligned studs / tile and unpacked", function()
+		local box = E.Deform.transform(E.Primitives.box(Vector3.new(8, 4, 2)), CFrame.new(10, 3, -5))
+		local m, info = E.UV.box(box, nil, { tile = 4 })
+		near(info.scale, 0.25)
+		for fid, f in m.faces do
+			local n = m:faceNormal(fid)
+			for i, v in f.vertices do
+				local p = m.vertices[v]
+				local uv = f.corners[i].uv
+				if math.abs(n.Z) > 0.9 then
+					near(math.abs(uv.X), math.abs(p.X) / 4)
+					near(uv.Y, -p.Y / 4)
+				elseif math.abs(n.Y) > 0.9 then
+					near(uv.X, p.X / 4)
+				end
+			end
+		end
+		rejects(function()
+			E.UV.box(box, nil, { tile = 0 })
+		end, "tile must be positive")
+	end)
 	return report
 end
