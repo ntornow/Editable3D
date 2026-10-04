@@ -12,6 +12,11 @@ Real projects that use the library drive the priorities:
 - When the engine behaves unexpectedly, add the lesson to the `editable3d-studio` skill.
 
 ## Rules
+- **Every Editable3D change is synced back to this repo** (user rule, 2026-10-04). The repo is the source of truth.
+  - Never leave a library change only in Studio.
+  - Make changes here first, validate, commit and push, then release them to Studio.
+  - If a fix is prototyped in Studio, port it here in the same work session, with tests, before relying on it.
+  - Studio installs must match a pushed version: check `Version` and source parity.
 - This repo is only the library. Keep it free of references to the projects that use it.
 - Every change:
   - add or adjust tests in `tests/`
