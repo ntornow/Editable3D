@@ -49,6 +49,12 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 4. Write `dist/docs.json` (root guides except CHANGELOG), fill the three placeholders in `tools/studio_install.luau`, run it. It archives the previous install (keeps two) and installs the runtime profile.
 5. Remove the verification tree; stop the server.
 
+## Reshaping photo-derived or published sculpts
+
+- Use `Deform.envelope` and `Deform.relief` (0.80) to impose relief from a photo depth map, to symmetrize, or to band-pass sharpen. The recipes are in DEFORMATION.md.
+- View coordinates are relative to the view frame (`q.Y` is height minus the camera's height). Mixing them up with world heights silently moves nothing.
+- Check the result as numbers, not only in renders: print cross-sections (frontmost z per x bin at a few heights) before and after. A face whose cross-section is flat for most of its width reads as "a mask on a ball" from three-quarter views.
+
 ## Re-texturing published parts
 
 - Multi-part models made by `toModel`/`partition` are 18k-triangle chunks that can overlap spatially. A part's name doesn't tell you which surface region it covers, so rebuild or re-texture whole groups, not single chunks.

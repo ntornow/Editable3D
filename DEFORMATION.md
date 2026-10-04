@@ -214,3 +214,11 @@ Options:
 
 A typical use transfers relief measured from a photograph onto a sculpt seen from the same direction: `target = smooth:sample(q) + scale * photoHighPass(q)`, where `smooth = envelope:blurred(r)` removes the sculpt's own detail below the wavelength `r`.
 
+### Recipes
+
+The view coordinates in `target(q, front)` are relative to the view frame: `q.Y` is height minus the view's height, and `q.X` runs along `view.RightVector`.
+
+- **Symmetrize a scanned or photo-derived surface.** Sample the envelope at the mirrored point: `target = front + (env:sample(mirroredQ) - front) * w`. Pass `alpha = 1` so fold-unders keep their depth. Blend `w` in over a band of about 0.8 studs from the midline, and return nil where `|mirror - front|` jumps (the mirrored point fell off the other side's silhouette).
+- **Band-pass sharpen.** Enhance the features without amplifying noise: `target = front + k * (env:blurred(fine):sample(q) - env:blurred(coarse):sample(q))`, for example `k = 0.5`, `fine = 0.1`, `coarse = 0.45` studs on a face about 7 studs tall.
+- **Large-scale smoothing of a dense mesh.** `Sculpt.smooth` diffuses only about edge length × √iterations, so on fine meshes it barely moves features wider than a few edges. Replace the region with `blurred(r):sample(q) + keep * (front - blurred)` instead.
+
