@@ -20,9 +20,42 @@ function D.map(mesh: Mesh, callback: (Vector3, number) -> Vector3, mask: Mask?):
 	end
 	return out:recalculateNormals()
 end
-function D.transform(mesh: Mesh, frame: CFrame, scale: Vector3?): Mesh
+-- normals = "transform" keeps authored corner normals and tangents, mapping them through the
+-- transform (normals by the inverse transpose) instead of recalculating them from positions.
+export type TransformOptions = { normals: ("recalculate" | "transform")? }
+function D.transform(mesh: Mesh, frame: CFrame, scale: Vector3?, options: TransformOptions?): Mesh
 	local scale: Vector3 = scale or Vector3.one
 	assert(scale.X ~= 0 and scale.Y ~= 0 and scale.Z ~= 0, "Scale must be nonsingular")
+	local mode = options and options.normals or "recalculate"
+	assert(mode == "recalculate" or mode == "transform", "Unknown normals mode")
+	if mode == "transform" then
+		local mirrored = scale.X * scale.Y * scale.Z < 0
+		local out = mesh:clone()
+		for id, p in mesh.vertices do
+			out.vertices[id] = frame:PointToWorldSpace(p * scale)
+		end
+		if mirrored then
+			out = require(script.Parent.Topology).reverse(out) -- also negates corner normals
+		end
+		local sign = if mirrored then -1 else 1
+		local rotation = frame.Rotation
+		for _, f in out.faces do
+			for _, c in f.corners do
+				local n = c.normal
+				if n then
+					local m = rotation:VectorToWorldSpace(n * sign / scale)
+					c.normal = if m.Magnitude > 0 then m.Unit else m
+				end
+				local t = c.tangent
+				if t then
+					local m = rotation:VectorToWorldSpace(t * scale)
+					c.tangent = if m.Magnitude > 0 then m.Unit else m
+				end
+			end
+		end
+		out.revision += 1
+		return out
+	end
 	local out = D.map(mesh, function(p: Vector3): Vector3
 		return frame:PointToWorldSpace(p * scale)
 	end)

@@ -343,6 +343,51 @@ return function()
 		end)
 		assert(r.rolledBack and table.concat(order, ",") == "b,a,clean2,clean1")
 	end)
+	test("Materials-only handles publish maps and keep the part mesh", function()
+		local _bundle, b, s, p = fixture()
+		local r = P.run({ handles = { { part = p, materialsOnly = true } } }, {}, nil, b)
+		assert(r.success and r.committed and p.mesh == "original" and p.map == "asset:1")
+		assert(s.uploads == 1 and s.stages == 0 and #r.assets == 1 and r.assets[1].kind == "Image")
+		cleaned(s)
+	end)
+	test("Materials-only handles resume from the ledger and roll back maps on failure", function()
+		local _bundle, b, s, p, _m, image = fixture()
+		local ledger = {}
+		s.mapFail = true
+		local first = P.run({ handles = { { part = p, materialsOnly = true } } }, {}, { resume = ledger }, b)
+		assert(not first.success and first.rolledBack and p.map == image and p.mesh == "original")
+		s.mapFail = false
+		local second = P.run({ handles = { { part = p, materialsOnly = true } } }, {}, { resume = ledger }, b)
+		assert(second.success and s.uploads == 1 and second.assets[1].resumed and p.map == "asset:1")
+		cleaned(s)
+	end)
+	test("Publish handles must carry exactly one of a mesh or materialsOnly", function()
+		local bundle, b, _s, p, m = fixture()
+		local both = P.run({ handles = { { part = p, editable = m, materialsOnly = true } } }, {}, nil, b)
+		assert(not both.success and string.find(tostring(both.error), "Incomplete publish handle", 1, true))
+		local neither = P.run({ handles = { { part = p } } }, {}, nil, b)
+		assert(
+			not neither.success and string.find(tostring(neither.error), "Incomplete publish handle", 1, true)
+		)
+		local noMaps = P.run({ handles = { { part = p, materialsOnly = true } } }, {}, nil, {
+			upload = b.upload,
+			load = b.load,
+			snapshot = b.snapshot,
+			destroy = b.destroy,
+			backup = b.backup,
+			stage = b.stage,
+			apply = b.apply,
+			restore = b.restore,
+			guard = b.guard,
+			uri = b.uri,
+			sleep = b.sleep,
+			maps = function()
+				return {}
+			end,
+		})
+		assert(not noMaps.success and string.find(tostring(noMaps.error), "no editable maps", 1, true))
+		assert(bundle.handles[1].editable == m)
+	end)
 	test("Validation failure precedes all live actions", function()
 		local applied = false
 		local r = Transaction.run(function()

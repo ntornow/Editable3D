@@ -20,6 +20,10 @@ export type TileOptions = {
 	checkpoint: ((TileProgress) -> ())?,
 }
 export type Tile = { mesh: Mesh, tile: number, column: number, row: number }
+-- axis: cylinder axis through center (default +Y). seamAngle: angle about the axis where u wraps,
+-- measured from the frame's X toward Z (default pi, the -X side). normalize rescales u and v
+-- independently to fill [margin, 1 - margin] (margin default 0).
+export type CylindricalOptions = { axis: Vector3?, seamAngle: number?, normalize: boolean?, margin: number? }
 -- A clipped polygon point while splitting triangles across tile boundaries.
 type ClipPoint = {
 	key: string,
@@ -92,9 +96,68 @@ function UV.planar(mesh: Mesh, frame: CFrame?, scale: Vector2?): Mesh
 	end
 	return out
 end
-function UV.cylindrical(mesh: Mesh, center: Vector3?, height: number): Mesh
+local function axisFrame(axis: Vector3): CFrame
+	assert(axis.Magnitude > 0, "Cylinder axis must be nonzero")
+	local y = axis.Unit
+	if (y - Vector3.yAxis).Magnitude < 1e-9 then
+		return CFrame.identity
+	end
+	local x = (if math.abs(y.X) < 0.9 then Vector3.xAxis else Vector3.zAxis):Cross(y).Unit
+	x = y:Cross(x).Unit
+	return CFrame.fromMatrix(Vector3.zero, x, y, x:Cross(y))
+end
+local function fitUVs(out: Mesh, margin: number)
+	assert(margin >= 0 and margin < 0.5, "UV margin must be in [0, 0.5)")
+	local lo, hi = Vector2.new(math.huge, math.huge), Vector2.new(-math.huge, -math.huge)
+	for _, f in out.faces do
+		for _, c in f.corners do
+			local uv = c.uv :: Vector2
+			lo, hi = lo:Min(uv), hi:Max(uv)
+		end
+	end
+	local span = hi - lo
+	local sx, sy = if span.X > 0 then 1 / span.X else 0, if span.Y > 0 then 1 / span.Y else 0
+	local fill = 1 - 2 * margin
+	for _, f in out.faces do
+		for _, c in f.corners do
+			local t = (c.uv :: Vector2) - lo
+			c.uv = Vector2.new(margin + fill * t.X * sx, margin + fill * t.Y * sy)
+		end
+	end
+end
+local function cylindricalWith(mesh: Mesh, center: Vector3, height: number, o: CylindricalOptions): Mesh
+	local frame = axisFrame(o.axis or Vector3.yAxis)
+	local seam = o.seamAngle or math.pi
+	local out = mesh:clone()
+	for _, f in out.faces do
+		local minU, maxU = math.huge, -math.huge
+		for i, id in f.vertices do
+			local p = frame:VectorToObjectSpace(out.vertices[id] - center)
+			local u = ((math.atan2(p.Z, p.X) - seam) % (2 * math.pi)) / (2 * math.pi)
+			minU = math.min(minU, u)
+			maxU = math.max(maxU, u)
+			f.corners[i].uv = Vector2.new(u, p.Y / height + 0.5)
+		end
+		if maxU - minU > 0.5 then
+			for _, c in f.corners do
+				local uv = c.uv :: Vector2
+				if uv.X < 0.5 then
+					c.uv = uv + Vector2.xAxis
+				end
+			end
+		end
+	end
+	if o.normalize then
+		fitUVs(out, o.margin or 0)
+	end
+	return out
+end
+function UV.cylindrical(mesh: Mesh, center: Vector3?, height: number, options: CylindricalOptions?): Mesh
 	assert(height > 0)
 	local center: Vector3 = center or Vector3.zero
+	if options then
+		return cylindricalWith(mesh, center, height, options)
+	end
 	local out = mesh:clone()
 	for _, f in out.faces do
 		local minU, maxU = math.huge, -math.huge

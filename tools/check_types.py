@@ -29,7 +29,7 @@ STRICT_MODULES = (
     'Curves', 'Cyclic', 'Deform', 'Dynamics', 'Fields', 'Fluid', 'GLTF', 'Geometry', 'Graph',
     'History', 'IO', 'Integrator', 'Intersections', 'Jobs', 'Laplacian', 'Lighting', 'Mesh',
     'MeshEdit', 'MeshRepair', 'Modifiers', 'Morph', 'NURBS', 'Normals', 'OperationBudget',
-    'Particles', 'PathTrace', 'Planar', 'Predicates', 'Primitives', 'PublishPipeline',
+    'Particles', 'PathTrace', 'Pattern', 'Planar', 'Predicates', 'Primitives', 'PublishPipeline',
     'PublishRetry', 'PublishTransaction', 'Quaternion', 'Registration', 'Remesh', 'Render', 'Rig',
     'RigidBody', 'Roblox', 'Sculpt', 'Selection', 'Simplify', 'Simulation', 'Spatial', 'SplineFit',
     'SplineQuery', 'Stroke', 'Subdivision', 'SurfaceAdaptive', 'SurfaceDeform', 'SurfaceEdit',

@@ -21,7 +21,8 @@ export type Backend = {
 	sleep: (number) -> (),
 }
 export type Options = Budget.Options & Retry.Options & { resume: { LedgerEntry }? }
-export type Bundle = { handles: { { editable: unknown, part: unknown } } }
+-- A materialsOnly handle has no editable mesh: the part keeps its mesh and only its maps publish.
+export type Bundle = { handles: { { editable: unknown, part: unknown, materialsOnly: boolean? } } }
 local P = {}
 function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Backend)
 	local o: Options = options or {}
@@ -94,32 +95,40 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 		end
 		for _, handle in bundle.handles do
 			check()
-			assert(handle.part ~= nil and handle.editable ~= nil, "Incomplete publish handle")
+			local materialsOnly = handle.materialsOnly == true
+			assert(
+				handle.part ~= nil and (handle.editable ~= nil) ~= materialsOnly,
+				"Incomplete publish handle"
+			)
 			assert(not seenParts[handle.part], "Duplicate publish part")
 			seenParts[handle.part] = true
 			table.insert(guards, backend.guard(handle.part))
-			local backup = backend.backup(handle.part)
-			context.defer(function()
-				backend.destroy(backup)
-			end)
-			local id = asset(handle.editable, "Mesh")
-			context.phase("stage")
-			local staged = Retry.run(function()
-				return backend.stage(id, handle.part)
-			end, o, check, backend.sleep)
-			context.defer(function()
-				backend.destroy(staged)
-			end)
-			table.insert(actions, {
-				name = "mesh",
-				apply = function()
-					backend.apply(handle.part, staged)
-				end,
-				rollback = function()
-					backend.restore(handle.part, backup)
-				end,
-			})
-			for _, map in backend.maps(handle.part) do
+			if not materialsOnly then
+				local backup = backend.backup(handle.part)
+				context.defer(function()
+					backend.destroy(backup)
+				end)
+				local id = asset(handle.editable, "Mesh")
+				context.phase("stage")
+				local staged = Retry.run(function()
+					return backend.stage(id, handle.part)
+				end, o, check, backend.sleep)
+				context.defer(function()
+					backend.destroy(staged)
+				end)
+				table.insert(actions, {
+					name = "mesh",
+					apply = function()
+						backend.apply(handle.part, staged)
+					end,
+					rollback = function()
+						backend.restore(handle.part, backup)
+					end,
+				})
+			end
+			local maps = backend.maps(handle.part)
+			assert(not materialsOnly or #maps > 0, "Materials-only part has no editable maps")
+			for _, map in maps do
 				local imageId = asset(map.object, "Image")
 				local replacement = backend.uri(imageId)
 				table.insert(guards, function()

@@ -7,6 +7,7 @@ return function(API, options)
 		{
 			"Tests",
 			"TextureTests",
+			"PatternTests",
 			"OperationBudgetTests",
 			"GuardedImageTests",
 			"PublishTests",

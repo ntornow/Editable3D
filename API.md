@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.77.2. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.78.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -209,7 +209,7 @@ Source: [src/Deform.luau](src/Deform.luau)
 
 - `Deform.masked(mesh: Mesh, operation: any, options: any?)`
 - `Deform.map(mesh: Mesh, callback: (Vector3, number) -> Vector3, mask: Mask?): Mesh`
-- `Deform.transform(mesh: Mesh, frame: CFrame, scale: Vector3?): Mesh`
+- `Deform.transform(mesh: Mesh, frame: CFrame, scale: Vector3?, options: TransformOptions?): Mesh`
 - `Deform.twist(mesh: Mesh, radians: number, lo: number, hi: number, mask: Mask?): Mesh`
 - `Deform.taper(mesh: Mesh, bottom: number, top: number, lo: number, hi: number, mask: Mask?): Mesh`
 - `Deform.bend(mesh: Mesh, curvature: number, mask: Mask?): Mesh`
@@ -507,6 +507,16 @@ Source: [src/PathTrace.luau](src/PathTrace.luau)
 
 - `PathTrace.render(mesh: Types.Mesh, camera: Types.Camera, materials: { [number]: PathMaterial }, options: PathTraceOptions?): (Types.Texture?, PathTraceReport)`
 
+## Pattern
+
+Source: [src/Pattern.luau](src/Pattern.luau)
+
+- `Pattern.hash(i: number, j: number?, k: number?, seed: number?): number`
+- `Pattern.smoothstep(edge0: number, edge1: number, x: number): number`
+- `Pattern.fbm(p: Vector3, options: FbmOptions?): number`
+- `Pattern.panels(p: Vector3, options: PanelOptions): PanelSample`
+- `Pattern.streaks(p: Vector3, normal: Vector3, options: StreakOptions?): number`
+
 ## Planar
 
 Source: [src/Planar.luau](src/Planar.luau)
@@ -629,6 +639,8 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.applyMaterial(bundle: Bundle, maps: MaterialMaps, slot: number?): { [string]: EditableImage }`
 - `Roblox.toTexturedModel(mesh: Mesh, maps: MaterialMaps, options: TexturedModelOptions?): Bundle`
 - `Roblox.destroy(bundle: { model: Model?, handles: { Handle }?, images: { EditableImage }? })`
+- `Roblox.fromPart(part: MeshPart, options: FromPartOptions?): Mesh`
+- `Roblox.publishMaterials(parts: { MeshPart }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 
 ## Sculpt
@@ -865,7 +877,7 @@ Source: [src/UV.luau](src/UV.luau)
 - `UV.relax(mesh: Mesh, options: UVOptions?): (Mesh, UVReport)`
 - `UV.seamsFromIslands(mesh: Mesh, options: UVOptions?): (Mesh, SeamReport)`
 - `UV.planar(mesh: Mesh, frame: CFrame?, scale: Vector2?): Mesh`
-- `UV.cylindrical(mesh: Mesh, center: Vector3?, height: number): Mesh`
+- `UV.cylindrical(mesh: Mesh, center: Vector3?, height: number, options: CylindricalOptions?): Mesh`
 - `UV.spherical(mesh: Mesh, center: Vector3?): Mesh`
 - `UV.faceCharts(mesh: Mesh, padding: number?): Mesh`
 - `UV.transform(mesh: Mesh, scale: Vector2 | number, offset: Vector2, angle: number?): Mesh`

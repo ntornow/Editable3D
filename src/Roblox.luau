@@ -553,6 +553,38 @@ function R.destroy(bundle: { model: Model?, handles: { Handle }?, images: { Edit
 		im:Destroy()
 	end
 end
+-- Reads a MeshPart's mesh back into an authoring Mesh. space "world" (default) applies the part's
+-- size scale and CFrame and maps corner normals through the transform; "mesh" keeps the stored
+-- coordinates. Published meshes come back one vertex per triangle corner.
+export type FromPartOptions = { space: ("world" | "mesh")? }
+function R.fromPart(part: MeshPart, options: FromPartOptions?): Mesh
+	local space = options and options.space or "world"
+	assert(space == "world" or space == "mesh", "Unknown space")
+	local editable = game:GetService("AssetService"):CreateEditableMeshAsync(part.MeshContent)
+	local ok, mesh = pcall(R.fromEditable, editable)
+	editable:Destroy()
+	if not ok then
+		error(mesh, 0)
+	end
+	if space == "mesh" then
+		return mesh
+	end
+	local Deform = require(script.Parent.Deform)
+	return Deform.transform(mesh, part.CFrame, part.Size / part.MeshSize, { normals = "transform" })
+end
+-- Publishes only the editable SurfaceAppearance/TextureContent maps of existing MeshParts, keeping
+-- their meshes. Same transaction, verification and resume ledger as publish.
+function R.publishMaterials(
+	parts: { MeshPart },
+	metadata: unknown,
+	options: Types.PublishOptions?
+): Types.PublishReport
+	local handles = {}
+	for _, part in parts do
+		table.insert(handles, { part = part, editable = nil, materialsOnly = true })
+	end
+	return (require(script.Parent.RobloxPublish) :: any).run({ handles = handles }, metadata, options)
+end
 function R.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport
 	return (require(script.Parent.RobloxPublish) :: any).run(bundle, metadata, options)
 end

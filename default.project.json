@@ -8,6 +8,9 @@
     "TextureTests": {
       "$path": "tests/TextureTests.luau"
     },
+    "PatternTests": {
+      "$path": "tests/PatternTests.luau"
+    },
     "Benchmarks": {
       "$path": "tests/Benchmarks.luau"
     },

@@ -1,5 +1,17 @@
 # Editable3D changes
 
+## 0.78.0 — 2026-10-04
+
+Adds tools for re-texturing complex published models.
+
+- **`Pattern`** (new strict namespace): deterministic procedural building blocks for bake shaders, all in world space and studs. `hash` gives uniform per-cell values. `smoothstep` and `fbm` cover thresholds and fractal noise. `panels` is a cylindrical or planar sheet-panel grid with a whole number of columns per ring, per-row jitter, per-panel ids and the physical distance to the nearest seam. `streaks` makes rain or drip runs elongated along `up`, strongest on vertical surfaces and absent on up- and down-facing ones. Guide: PATTERNS.md.
+- **`Roblox.fromPart(part, {space})`** reads a MeshPart back as an authoring mesh in world space.
+- **`Deform.transform(mesh, frame, scale, {normals = "transform"})`** keeps authored corner normals and tangents and maps them by the inverse transpose, including under mirroring. The default still recalculates normals; that path made published meshes (one vertex per triangle corner) flat-shaded.
+- **`UV.cylindrical(mesh, center, height, options)`** takes `axis`, `seamAngle` and `normalize`/`margin`. Without options the behavior is unchanged.
+- **`Roblox.publishMaterials(parts, metadata, options)`** publishes only the editable texture maps of parts whose meshes are already published. The publishing pipeline accepts `materialsOnly` handles. Previously, re-texturing a published part meant re-uploading its mesh.
+
+New `PatternTests` suite (10 tests) and three materials-only publish tests.
+
 ## 0.77.2 — 2026-10-04
 
 Completes the real-upload fix. With per-corner comparison in place, the second real publish still failed: Roblox also quantizes uploaded normals (maximum observed error 8.4e-4 on an 18,000-triangle mesh) while positions, UVs, colors and alpha return bit-exact. Mesh snapshots are now an exact canonical part plus normals in canonical order, and `NativeContent.equivalent` accepts normals within `NORMAL_TOLERANCE` (2e-3). The publishing pipeline takes an optional backend `equivalent(kind, a, b)` for readback, resume and final source checks, and keeps `==` otherwise. Ledger fingerprints from 0.77.0 are not comparable with this format, so resume refuses them ("Resume source changed") rather than trusting them.
