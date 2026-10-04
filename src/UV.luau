@@ -179,6 +179,117 @@ function UV.cylindrical(mesh: Mesh, center: Vector3?, height: number, options: C
 	end
 	return out
 end
+-- Box projection: each face is projected along the axis of `frame` closest to its normal, into
+-- one of up to six rectangular charts (+x, -x, +y, -y, +z, -z) that share a single scale (texels
+-- per stud stay uniform) and are shelf-packed into [margin, 1 - margin]. Works on any face soup:
+-- no welding, manifold or orientation requirement, unlike island-based packing. Charts can
+-- overlap only where a surface folds back over itself along the same axis.
+export type BoxOptions = { margin: number? }
+export type BoxReport = { scale: number, charts: number }
+function UV.box(mesh: Mesh, frame: CFrame?, options: BoxOptions?): (Mesh, BoxReport)
+	local frame: CFrame = frame or CFrame.identity
+	local margin = options and options.margin or 0.01
+	assert(margin >= 0 and margin < 0.25, "Box UV margin must be in [0, 0.25)")
+	local out = mesh:clone()
+	type Chart = { lo: Vector2, hi: Vector2, faces: { number } }
+	local charts: { [string]: Chart } = {}
+	local order: { string } = {}
+	for _, fid in U.keys(out.faces) do
+		local f = out.faces[fid]
+		local normal = out:faceNormal(fid)
+		local n = frame:VectorToObjectSpace(normal)
+		local ax, ay, az = math.abs(n.X), math.abs(n.Y), math.abs(n.Z)
+		local key: string
+		if ax >= ay and ax >= az then
+			key = if n.X >= 0 then "+x" else "-x"
+		elseif ay >= az then
+			key = if n.Y >= 0 then "+y" else "-y"
+		else
+			key = if n.Z >= 0 then "+z" else "-z"
+		end
+		local chart = charts[key]
+		if not chart then
+			chart = {
+				lo = Vector2.new(math.huge, math.huge),
+				hi = Vector2.new(-math.huge, -math.huge),
+				faces = {},
+			}
+			charts[key] = chart
+			table.insert(order, key)
+		end
+		for i, v in f.vertices do
+			local q = frame:PointToObjectSpace(out.vertices[v])
+			local uv: Vector2
+			if key == "+x" then
+				uv = Vector2.new(-q.Z, -q.Y)
+			elseif key == "-x" then
+				uv = Vector2.new(q.Z, -q.Y)
+			elseif key == "+y" then
+				uv = Vector2.new(q.X, q.Z)
+			elseif key == "-y" then
+				uv = Vector2.new(q.X, -q.Z)
+			elseif key == "+z" then
+				uv = Vector2.new(q.X, -q.Y)
+			else
+				uv = Vector2.new(-q.X, -q.Y)
+			end
+			f.corners[i].uv = uv
+			chart.lo, chart.hi = chart.lo:Min(uv), chart.hi:Max(uv)
+		end
+		table.insert(chart.faces, fid)
+	end
+	table.sort(order, function(a: string, b: string): boolean
+		local ha, hb = charts[a].hi.Y - charts[a].lo.Y, charts[b].hi.Y - charts[b].lo.Y
+		if ha ~= hb then
+			return ha > hb
+		end
+		return a < b
+	end)
+	-- shelf packing at a shared scale; bisect the largest scale that fits
+	local function place(scale: number): { [string]: Vector2 }?
+		local x, y, row = margin, margin, 0
+		local positions: { [string]: Vector2 } = {}
+		for _, key in order do
+			local size = (charts[key].hi - charts[key].lo) * scale
+			if size.X > 1 - 2 * margin then
+				return nil
+			end
+			if x + size.X > 1 - margin then
+				x, y, row = margin, y + row + margin, 0
+			end
+			positions[key] = Vector2.new(x, y)
+			x += size.X + margin
+			row = math.max(row, size.Y)
+		end
+		if y + row > 1 - margin then
+			return nil
+		end
+		return positions
+	end
+	local lo, hi = 0, 1
+	while hi < 1e9 and place(hi) do
+		hi *= 2
+	end
+	for _ = 1, 48 do
+		local mid = (lo + hi) / 2
+		if place(mid) then
+			lo = mid
+		else
+			hi = mid
+		end
+	end
+	local positions = place(lo)
+	if positions then
+		for key, chart in charts do
+			for _, fid in chart.faces do
+				for _, corner in out.faces[fid].corners do
+					corner.uv = positions[key] + ((corner.uv :: Vector2) - chart.lo) * lo
+				end
+			end
+		end
+	end
+	return out, { scale = lo, charts = #order }
+end
 function UV.spherical(mesh: Mesh, center: Vector3?): Mesh
 	local center: Vector3 = center or Vector3.zero
 	local out = mesh:clone()

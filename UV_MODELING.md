@@ -16,6 +16,12 @@ assert(analysis.complete and analysis.overlapFree and analysis.consistentOrienta
 
 `Examples.UVAtlas` produces a six-chart rectangular box atlas. No API creates scene instances, sends HTTP requests or publishes assets.
 
+## Box projection for soups and hard-surface parts
+
+`UV.box(mesh, frame?, {margin})` projects each face along the `frame` axis closest to its normal into one of up to six rectangular charts (+x, −x, +y, −y, +z, −z). The charts share one scale, so texel density in studs is uniform, and they are shelf-packed into `[margin, 1 − margin]`. The report gives `scale` (UV units per stud) and `charts`.
+
+Unlike island packing (`UV.packIslands`, which needs welded, oriented manifold geometry), it works on any face soup, including meshes read back from Roblox with one vertex per triangle corner. Use it for slabs, plaques, pedestals and other box-like parts, with `frame` aligned to the object. Charts overlap only where a surface folds back along the same axis.
+
 ## Discovery and selection
 
 `UV.islands(mesh, options?) -> islands, report` groups polygon faces through manifold mesh edges. An edge joins its two faces only if both endpoint UVs match **exactly** and the edge is not explicitly cut by `options.seams[edgeKey] == true`. A shared UV point or coincident disconnected geometry does not join islands. There is no proximity welding. Materials, normals, typed channels and existing `uv_seam` attributes do not implicitly alter connectivity; pass an explicit edge boolean set to cut additional edges.

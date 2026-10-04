@@ -136,7 +136,14 @@ export type BakeContext = {
 	face: number,
 	barycentric: Vector3Value,
 }
-export type BakeReport = { coveredPixels: number, totalPixels: number, coverage: buffer, operation: Progress }
+export type BakeReport = {
+	coveredPixels: number,
+	totalPixels: number,
+	coverage: buffer,
+	operation: Progress,
+	-- rasterize only: faces skipped because they could not be triangulated
+	skippedFaces: number?,
+}
 export type Camera = { frame: Frame, fov: number, width: number, height: number, principal: Vector2Value }
 export type BakeLibrary = {
 	rasterize: (

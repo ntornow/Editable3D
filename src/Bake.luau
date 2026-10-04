@@ -22,6 +22,28 @@ local function preflight(mesh: Mesh, budget: Budget.Budget, options: BakeOptions
 	budget:reserve(count * 256)
 	budget:check()
 end
+-- Triangles for baking. Faces that cannot be triangulated (zero area, degenerate or
+-- self-intersecting polygons, common in meshes read back from Roblox) are skipped and counted
+-- instead of aborting the bake; they cover no texels.
+local function bakeTriangles(mesh: Mesh): ({ Types.Triangle }, number)
+	local result: { Types.Triangle } = {}
+	local skipped = 0
+	for _, fid in U.keys(mesh.faces) do
+		local f = mesh.faces[fid]
+		local ok, triangles = pcall(mesh.faceTriangles, mesh, fid)
+		if ok then
+			for _, c in triangles :: { { number } } do
+				table.insert(
+					result,
+					{ f.vertices[c[1]], f.vertices[c[2]], f.vertices[c[3]], face = fid, corners = c }
+				)
+			end
+		else
+			skipped += 1
+		end
+	end
+	return result, skipped
+end
 -- Spatial is not yet strict; its index is used through an untyped handle.
 local function spatial(mesh: Mesh, budget: Budget.Budget, options: BakeOptions): any
 	preflight(mesh, budget, options)
@@ -46,7 +68,8 @@ function B.rasterize(
 	budget:image(width, height, 1)
 	local coverage = buffer.create(width * height)
 	local written = 0
-	for _, t in mesh:triangles() do
+	local triangles, skipped = bakeTriangles(mesh)
+	for _, t in triangles do
 		budget:step()
 		local f = mesh.faces[t.face]
 		local ca, cb, cc = f.corners[t.corners[1]], f.corners[t.corners[2]], f.corners[t.corners[3]]
@@ -110,6 +133,7 @@ function B.rasterize(
 			coveredPixels = written,
 			totalPixels = width * height,
 			coverage = coverage,
+			skippedFaces = skipped,
 			operation = complete(budget, owned),
 		}
 end

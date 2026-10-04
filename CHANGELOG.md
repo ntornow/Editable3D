@@ -1,5 +1,16 @@
 # Editable3D changes
 
+## 0.79.0 — 2026-10-04
+
+Authoring helpers for complex objects, from re-posing and re-texturing a held object with its arm and sleeve:
+
+- **`Curves.sweep` profile functions:** `profile(fraction, frame)` returns each ring in a transported frame, for variable cross-sections (tapering, sagging cloth).
+- **Sweep and loft options:** both take `closed` and `triangles`. Open lofts produce sheets; triangle lofts drop zero-area triangles from pinched rings.
+- **`UV.box(mesh, frame?, {margin})`:** box projection into up to six rectangular charts at one shared scale, shelf-packed. It needs no welding or manifold geometry, so it works on meshes read back from Roblox, where island packing (`UV.packIslands`) refuses the input.
+- **`Bake.rasterize`** skips faces that cannot be triangulated (zero area, degenerate polygons) instead of aborting, and reports them as `skippedFaces`. Before, one collapsed triangle from welding a read-back mesh stopped the whole bake.
+
+New `AuthoringTests` suite (7 tests).
+
 ## 0.78.1 — 2026-10-04
 
 - **`Pattern.streaks` redesign.** In 0.78.0, streaks were contour lines of 3D noise. They meandered like wood grain instead of running straight. Each run now comes from a source with a random top, length and strength, and fades downward. `width` is now a half-width in studs (default 0.05), not a fraction. New `projection` option:

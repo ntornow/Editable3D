@@ -18,6 +18,16 @@ assert(sampling.converged)
 local mesh = E.Curves.sweep(E.Curves.circle(0.1, 8), path)
 ```
 
+### Variable profiles and open lofts
+
+`Curves.sweep(profile, path, options)` also accepts a function `profile(fraction, frame) -> { Vector2 }`. It is called once per path sample with `frame = { point, tangent, x, y }`, where `x` and `y` are transported along the path. This builds tubes whose cross-section changes along the path: tapered limbs, sleeves that widen toward the elbow, or cloth whose lower half sags under gravity (project world down onto `frame.x`/`frame.y`). Every ring must have the same point count.
+
+Options:
+- `closed = false` sweeps an open profile.
+- `triangles = true` emits two triangles per quad and drops zero-area ones. Use it when rings pinch or deform strongly, since quads can become degenerate.
+
+`Curves.loft(rings, caps, { closed, triangles })` takes the same options directly. With `closed = false`, rows become a sheet (for example a curtain or hem) whose UVs span `[0, 1]` across and down.
+
 ## Handles and editing
 
 `Bezier.new(points, options)` requires 2–3333 points. `closed=true` adds a wrap segment. `durations` supplies a positive finite duration per segment; defaults are one. Their normalized cumulative sums define the shared `[0,1]` parameter. `left` and `right` can supply full handle arrays. Explicit handles default to free mode; other nodes default to automatic mode. `mode` overrides that choice for all nodes. `maxNodes` may lower the constructor budget.

@@ -8,6 +8,7 @@ return function(API, options)
 			"Tests",
 			"TextureTests",
 			"PatternTests",
+			"AuthoringTests",
 			"OperationBudgetTests",
 			"GuardedImageTests",
 			"PublishTests",

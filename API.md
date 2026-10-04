@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.78.1. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.79.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -174,8 +174,8 @@ Source: [src/Curves.luau](src/Curves.luau)
 - `Curves.sample<T>(curve: Curve<T>, segments: number): { T }`
 - `Curves.resample<T>(points: { T }, count: number): { T }`
 - `Curves.circle(radius: number, segments: number): { Vector2 }`
-- `Curves.loft(rings: { { Vector3 } }, caps: boolean?): Mesh`
-- `Curves.sweep(profile: { Vector2 }, path: { Vector3 }, options: SweepOptions?): Mesh`
+- `Curves.loft(rings: { { Vector3 } }, caps: boolean?, options: LoftOptions?): Mesh`
+- `Curves.sweep(profile: SweepProfile, path: { Vector3 }, options: SweepOptions?): Mesh`
 - `Curves.lathe(profile: { Vector2 }, segments: number): Mesh`
 - `Curves.bezierSurface(control: { { Vector3 } }, uSegments: number, vSegments: number): Mesh`
 - `Curves.stroke2D(points: { Vector2 }, width: number, options: Stroke2DOptions?): Mesh`
@@ -879,6 +879,7 @@ Source: [src/UV.luau](src/UV.luau)
 - `UV.seamsFromIslands(mesh: Mesh, options: UVOptions?): (Mesh, SeamReport)`
 - `UV.planar(mesh: Mesh, frame: CFrame?, scale: Vector2?): Mesh`
 - `UV.cylindrical(mesh: Mesh, center: Vector3?, height: number, options: CylindricalOptions?): Mesh`
+- `UV.box(mesh: Mesh, frame: CFrame?, options: BoxOptions?): (Mesh, BoxReport)`
 - `UV.spherical(mesh: Mesh, center: Vector3?): Mesh`
 - `UV.faceCharts(mesh: Mesh, padding: number?): Mesh`
 - `UV.transform(mesh: Mesh, scale: Vector2 | number, offset: Vector2, angle: number?): Mesh`

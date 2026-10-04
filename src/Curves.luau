@@ -4,7 +4,21 @@ local U = require(script.Parent.Util)
 type Mesh = Mesh.Mesh
 -- Curve evaluators map a parameter in [0,1] to a point.
 export type Curve<T> = (t: number) -> T
-export type SweepOptions = { up: Vector3?, scale: ((fraction: number) -> number)?, caps: boolean? }
+-- closed=false lofts open rows (a sheet, e.g. a curtain); triangles=true emits two triangles per
+-- quad and drops zero-area ones (robust for strongly deformed or pinched rings).
+export type LoftOptions = { closed: boolean?, triangles: boolean? }
+-- The frame a sweep places each profile in: point on the path, unit tangent, and the profile's
+-- x and y axes (parallel-transported along the path).
+export type SweepFrame = { point: Vector3, tangent: Vector3, x: Vector3, y: Vector3 }
+-- profile functions return the ring for one path sample; every ring needs the same point count.
+export type SweepProfile = { Vector2 } | (fraction: number, frame: SweepFrame) -> { Vector2 }
+export type SweepOptions = {
+	up: Vector3?,
+	scale: ((fraction: number) -> number)?,
+	caps: boolean?,
+	closed: boolean?,
+	triangles: boolean?,
+}
 export type Stroke2DOptions = { closed: boolean?, cap: string?, miterLimit: number?, material: number? }
 local C = {}
 -- Points are polymorphic: any value with :Lerp (Vector2, Vector3, CFrame, Color3).
@@ -138,8 +152,10 @@ function C.circle(radius: number, segments: number): { Vector2 }
 	end
 	return r
 end
-function C.loft(rings: { { Vector3 } }, caps: boolean?): Mesh
+function C.loft(rings: { { Vector3 } }, caps: boolean?, options: LoftOptions?): Mesh
 	assert(#rings >= 2 and #rings[1] >= 3)
+	local closed = not (options and options.closed == false)
+	local triangles = options ~= nil and options.triangles == true
 	local m = Mesh.new()
 	local ids: { { number } } = {}
 	local n = #rings[1]
@@ -150,18 +166,30 @@ function C.loft(rings: { { Vector3 } }, caps: boolean?): Mesh
 			ids[i][j] = m:addVertex(p)
 		end
 	end
-	for i = 1, #rings - 1 do
-		for j = 1, n do
-			local k = j % n + 1
-			m:addFace({ ids[i][j], ids[i][k], ids[i + 1][k], ids[i + 1][j] }, {
-				{ uv = Vector2.new((j - 1) / n, (i - 1) / (#rings - 1)) },
-				{ uv = Vector2.new(j / n, (i - 1) / (#rings - 1)) },
-				{ uv = Vector2.new(j / n, i / (#rings - 1)) },
-				{ uv = Vector2.new((j - 1) / n, i / (#rings - 1)) },
-			})
+	local columns = if closed then n else n - 1
+	local function uv(j: number, i: number): Vector2
+		return Vector2.new((j - 1) / columns, (i - 1) / (#rings - 1))
+	end
+	local function triangle(a: number, b: number, c: number, ua: Vector2, ub: Vector2, uc: Vector2)
+		local pa = m.vertices[a]
+		if (m.vertices[b] - pa):Cross(m.vertices[c] - pa).Magnitude > 1e-12 then
+			m:addFace({ a, b, c }, { { uv = ua }, { uv = ub }, { uv = uc } })
 		end
 	end
-	if caps then
+	for i = 1, #rings - 1 do
+		for j = 1, columns do
+			local k = j % n + 1
+			local a, b, c, d = ids[i][j], ids[i][k], ids[i + 1][k], ids[i + 1][j]
+			local ua, ub, uc, ud = uv(j, i), uv(j + 1, i), uv(j + 1, i + 1), uv(j, i + 1)
+			if triangles then
+				triangle(a, b, c, ua, ub, uc)
+				triangle(a, c, d, ua, uc, ud)
+			else
+				m:addFace({ a, b, c, d }, { { uv = ua }, { uv = ub }, { uv = uc }, { uv = ud } })
+			end
+		end
+	end
+	if caps and closed then
 		local first: { number } = {}
 		for j = n, 1, -1 do
 			table.insert(first, ids[1][j])
@@ -171,9 +199,12 @@ function C.loft(rings: { { Vector3 } }, caps: boolean?): Mesh
 	end
 	return m:recalculateNormals()
 end
-function C.sweep(profile: { Vector2 }, path: { Vector3 }, options: SweepOptions?): Mesh
+function C.sweep(profile: SweepProfile, path: { Vector3 }, options: SweepOptions?): Mesh
 	local options: SweepOptions = options or {}
-	assert(#profile >= 3 and #path >= 2)
+	assert(#path >= 2)
+	if type(profile) == "table" then
+		assert(#profile >= 3)
+	end
 	local rings: { { Vector3 } } = {}
 	local previousX: Vector3?
 	for i, p in path do
@@ -187,13 +218,24 @@ function C.sweep(profile: { Vector2 }, path: { Vector3 }, options: SweepOptions?
 			end
 		end
 		previousX = x
+		local fraction = (i - 1) / (#path - 1)
+		local ring: { Vector2 }
+		if type(profile) == "function" then
+			ring = profile(fraction, { point = p, tangent = tangent, x = x, y = y })
+			assert(
+				type(ring) == "table" and #ring >= 3,
+				"Sweep profile function must return at least 3 points"
+			)
+		else
+			ring = profile
+		end
 		rings[i] = {}
-		local scale = options.scale and options.scale((i - 1) / (#path - 1)) or 1
-		for j, q in profile do
+		local scale = options.scale and options.scale(fraction) or 1
+		for j, q in ring do
 			rings[i][j] = p + (x * q.X + y * q.Y) * scale
 		end
 	end
-	return C.loft(rings, options.caps ~= false)
+	return C.loft(rings, options.caps ~= false, { closed = options.closed, triangles = options.triangles })
 end
 function C.lathe(profile: { Vector2 }, segments: number): Mesh
 	U.integer(segments, 3)

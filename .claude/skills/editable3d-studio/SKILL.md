@@ -19,6 +19,8 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 | **Raycasts hit collision geometry.** `toModel(..., {collisionFidelity = Box})` parts are boxes to `workspace:Raycast`. | A ray reports the bounding-box face, not the rendered surface. | Inspect the source mesh's vertices, or use `Spatial` queries on the authoring mesh. |
 | **Quads can become degenerate after heavy deformation.** | `Mesh:faceTriangles` → "Final polygon triangle is degenerate" during `toModel`. | `Topology.triangulate` before large `Deform.map` edits; triangles skip ear clipping. |
 | **Read-back meshes have no shared vertices** (see the first row), so `recalculateNormals`, and anything that calls it (`Deform.map`, `Deform.transform` by default), produces faceted, flat-shaded normals. | A re-imported published part renders faceted after a bake or re-upload. | Use `Roblox.fromPart(part)` (0.78), or `Deform.transform(mesh, cf, scale, {normals = "transform"})`, which keeps the stored normals. To recompute, use `Normals.unify(meshes, {tolerance, angle})` (0.78.1) over all the parts cut from one surface, so chunk boundaries don't show. To check a part, compare corner normals at equal positions: a smooth mesh disagrees by under 1°, a faceted one by 10° or more. |
+| **EditableImage is capped at 1024×1024.** | `toEditableImage` fails with "Tile textures larger than EditableImage limits"; a 2048 bake also needs `maxBytes` above the default. | Bake at 1024 or less; for more detail use more parts or `UV.box` with tight charts. |
+| **Island and clip operators need oriented manifold input.** `UV.packIslands`, `UV.islands`, `Modifiers.clipPlane` and the mesh editors reject read-back meshes ("UV charts require oriented manifold geometry", "Mesh edit requires a valid oriented source"). | A published or chunked mesh can't be packed or clipped. | Use `UV.box` (soup-safe), drop faces with `Topology.extract` by a plane test, or run `MeshRepair.clean`/`orient` first. Unwelded soups also make one UV island per triangle (allocation budget errors). |
 | **`Vector3` is a value type in the engine.** Equal vectors are the same table key. | Fine in Studio; in Lune (userdata) they are distinct keys. | Listed as `engineOnly` in `tests/headless-baseline.json`. |
 | **Lune 0.10.5 `CFrame.lookAt`/`lookAlong`/`new(pos, target)` face away from the target.** | Headless camera/render tests fail. | The harness rebuilds them from `fromMatrix`; do not "fix" the library for this. |
 
@@ -30,6 +32,9 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Keep authoring meshes (`E.Mesh`) in the session as the source of truth; native bundles are previews. Destroy a previous bundle before building its replacement.
 
 ## Measuring against references
+
+- A single frontal photo can't tell which way a flat object (a plaque, a tablet, a shield) is yawed: a face turned 45° left and one turned 45° right project to the same width. Resolve it with a second view (a side or three-quarter photo shows which face is visible) or with lighting (which face catches the sun or sky).
+- Check placement against the body: sample the surface the object rests on, and push parts that must pass behind it (a forearm behind a held slab) out through the correct face. Pushing to the nearest face can flatten them onto the front.
 
 - **Near-orthographic captures:** set `workspace.CurrentCamera.FieldOfView = 4` and capture from ~200 studs. World units per pixel = `2 * distance * tan(FOV/2) / viewportHeight`. Restore the FOV afterwards (record the old value).
 - Camera looking along +Z from −Z: image right is world **−X**.

@@ -11,6 +11,9 @@
     "PatternTests": {
       "$path": "tests/PatternTests.luau"
     },
+    "AuthoringTests": {
+      "$path": "tests/AuthoringTests.luau"
+    },
     "Benchmarks": {
       "$path": "tests/Benchmarks.luau"
     },
