@@ -168,5 +168,108 @@ return function(E)
 		local color = texture:sample(Vector2.new(0.2, 0.2))
 		near(color.R, 1)
 	end)
+	-- view from z = -10 looking along +Z: view x is world -X, depth is z + 10
+	local view = CFrame.lookAt(Vector3.new(0, 0, -10), Vector3.zero)
+	test("envelope reports the frontmost depth and fills isolated holes", function()
+		local box = E.Primitives.box(Vector3.new(4, 4, 2)) -- front face at z = -1
+		local env = E.Deform.envelope(box, view, 0.5)
+		local d = env:sample(Vector2.new(0, 0))
+		assert(d ~= nil, "no envelope at the center")
+		near(d :: number, 9, 1e-6)
+		assert(env:sample(Vector2.new(50, 0)) == nil)
+		-- the blurred envelope keeps a flat face flat and stays inside the silhouette
+		local soft = env:blurred(1)
+		near(soft:sample(Vector2.new(0, 0)) :: number, 9, 1e-6)
+		assert(soft:sample(Vector2.new(50, 0)) == nil)
+	end)
+	local function bumpySheet()
+		-- welded grid in the xy plane with bumps z = 0.3 sin(2x), facing -Z (toward the view)
+		local m = E.Mesh.new()
+		local ids = {}
+		for i = 0, 40 do
+			ids[i] = {}
+			for j = 0, 20 do
+				local x, y = -4 + i * 0.2, -2 + j * 0.2
+				ids[i][j] = m:addVertex(Vector3.new(x, y, 0.3 * math.sin(2 * x)))
+			end
+		end
+		for i = 0, 39 do
+			for j = 0, 19 do
+				m:addFace({ ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j] })
+			end
+		end
+		m:recalculateNormals()
+		-- make sure the sheet faces the view
+		local fid = next(m.faces)
+		if m:faceNormal(fid).Z > 0 then
+			m = E.Topology.reverse(m):recalculateNormals()
+		end
+		return m
+	end
+	test("relief imposes the target and compresses existing folds by alpha", function()
+		local m = bumpySheet()
+		local env = E.Deform.envelope(m, view, 0.2)
+		local out = E.Deform.relief(m, view, function(_, front)
+			return front + 0.05 -- a flat target just behind the front envelope
+		end, { alpha = 0.25, envelope = env, minFacing = -1, depth = 5 })
+		local maxDev = 0
+		for id, v in out.vertices do
+			local p = m.vertices[id]
+			local front = env:sample(Vector2.new(-p.X, p.Y))
+			if front and math.abs(p.X) < 3.5 and math.abs(p.Y) < 1.5 then
+				local below = (p.Z + 10) - front
+				local expected = front + 0.05 + 0.25 * math.max(0, below)
+				maxDev = math.max(maxDev, math.abs((v.Z + 10) - expected))
+				near(v.X, p.X)
+				near(v.Y, p.Y)
+			end
+		end
+		assert(maxDev < 1e-4, "deviation " .. maxDev)
+		-- with a low-passed envelope as the target the bumps (wavelength ~3.1) are removed
+		local smooth = env:blurred(1.5)
+		local flat = E.Deform.relief(m, view, function(q)
+			return smooth:sample(q)
+		end, { alpha = 0, envelope = env, minFacing = -1, depth = 5 })
+		local function amplitude(mesh)
+			local lo, hi = math.huge, -math.huge
+			for _, v in mesh.vertices do
+				if math.abs(v.X) < 2.5 and math.abs(v.Y) < 1 then
+					lo, hi = math.min(lo, v.Z), math.max(hi, v.Z)
+				end
+			end
+			return hi - lo
+		end
+		assert(
+			amplitude(flat) < amplitude(m) * 0.3,
+			"folds not removed: " .. amplitude(flat) .. " vs " .. amplitude(m)
+		)
+	end)
+	test("relief leaves back faces and deep geometry in place", function()
+		-- a slab: the bumpy front sheet plus a flat back sheet 4 studs behind, facing away
+		local front = bumpySheet()
+		local back = E.Topology.reverse(E.Deform.transform(bumpySheet(), CFrame.new(0, 0, 4)))
+		local slab = E.Topology.join({ front, back })
+		local out = E.Deform.relief(slab, view, function(_, d)
+			return d - 0.5 -- pull the front forward
+		end, { alpha = 0, depth = 1 })
+		local movedFront, movedBack = 0, 0
+		for id, v in out.vertices do
+			local p = slab.vertices[id]
+			if (v - p).Magnitude > 1e-6 then
+				if p.Z < 2 then
+					movedFront += 1
+				else
+					movedBack += 1
+				end
+			end
+		end
+		assert(movedBack == 0, "back vertices moved")
+		assert(movedFront > 100, "front did not move: " .. movedFront)
+		rejects(function()
+			E.Deform.relief(slab, view, function()
+				return 0
+			end, { fade = 0 })
+		end, "Invalid relief options")
+	end)
 	return report
 end

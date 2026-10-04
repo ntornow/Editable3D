@@ -1,5 +1,12 @@
 # Editable3D changes
 
+## 0.80.0 — 2026-10-04
+
+- **`Deform.envelope(mesh, view, step)`:** rasterized front-depth grid of a mesh seen along a view, with `sample` and `blurred(radius)`.
+- **`Deform.relief(mesh, view, target, options)`:** moves the visible front layer onto a target depth function, compressing existing relief below the envelope by `alpha`. The back, sides and deep geometry are left alone. This came from replacing a sculpt's drapery folds with relief measured from a photograph's depth map.
+
+Three new tests in `AuthoringTests`.
+
 ## 0.79.0 — 2026-10-04
 
 Authoring helpers for complex objects, from re-posing and re-texturing a held object with its arm and sleeve:

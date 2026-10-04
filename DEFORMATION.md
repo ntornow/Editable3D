@@ -196,3 +196,21 @@ Reversals and miters exceeding the limit reject instead of creating unbounded sp
 `DeformationTests` checks analytic linear harmonic displacement, constant biharmonic translation, exact sparse-ID anchors, unchanged disconnected components, explicit nonconvergence, cancellation, rigid and affine surface transport, masks, distance exclusions, topology rejection, attributes, connected strokes, positive volume and solidify metadata. `Examples.SurfaceControl` transfers a coarse harmonic edit onto a detailed ripple sheet.
 
 The surface-control use case is described in the [Blender Surface Deform manual](https://docs.blender.org/manual/id/5.0/modeling/modifiers/deform/surface_deform.html). Differential surface editing is discussed by [Sorkine et al., Laplacian Surface Editing, 2004](https://igl.ethz.ch/projects/Laplacian-mesh-processing/Laplacian-mesh-editing/). Those sources explain the broader methods; this package implements the narrower algorithms stated above. No Blender code or external model geometry is incorporated.
+
+## View-projected relief
+
+`Deform.envelope(mesh, view, step)` rasterizes a mesh's triangles, seen along `view.LookVector`, into a grid of frontmost depths (cell size `step` studs). View coordinates are `(x, y)` in the view plane plus depth along the look direction. It works on any tessellation, soups included.
+- `envelope:sample(Vector2)` interpolates bilinearly and returns nil outside the silhouette.
+- `envelope:blurred(radius)` is a Gaussian low-pass normalized over visible cells, so silhouettes don't bleed. Use it as the smooth base when replacing relief.
+
+`Deform.relief(mesh, view, target, options)` moves the visible front layer along the view direction onto `target(point, envelopeDepth) -> depth?`. A vertex `b` studs below the envelope goes to `target + alpha * b`, so existing folds are compressed and the target imposed.
+
+Options:
+- `alpha`: default 0.2.
+- `depth` and `fade`: vertices deeper than `depth` (default 2.5), fading over `fade` (default 1.5), keep their place.
+- `minFacing`: vertices must face the view by at least this much (default 0.15), so sides and back stay put.
+- `envelope`: pass a precomputed envelope.
+- `normals = false`: keeps corner normals. Use it for meshes read back from Roblox, then `Normals.unify`.
+
+A typical use transfers relief measured from a photograph onto a sculpt seen from the same direction: `target = smooth:sample(q) + scale * photoHighPass(q)`, where `smooth = envelope:blurred(r)` removes the sculpt's own detail below the wavelength `r`.
+

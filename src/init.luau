@@ -1,5 +1,5 @@
 --!strict
--- Editable3D 0.79.0: headless Luau authoring library. Require has no scene side effects.
+-- Editable3D 0.80.0: headless Luau authoring library. Require has no scene side effects.
 -- Namespaces are listed explicitly so each one keeps its type for callers. A child whose name
 -- matches an Instance member (Capabilities) must be found with FindFirstChild.
 local Types = require(script.Types)
@@ -13,7 +13,7 @@ export type PublishOptions = Types.PublishOptions
 export type PublishReport = Types.PublishReport
 export type ValidationReport = Types.ValidationReport
 local API = {
-	Version = "0.79.0",
+	Version = "0.80.0",
 	Texture = require(script.Texture),
 	Bake = require(script.Bake),
 	Mesh = require(script.Mesh),
