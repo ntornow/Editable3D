@@ -45,6 +45,9 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 
 ## Publishing
 
+- Asset `Name` must be short (a ~60-character name was rejected: "Asset name length is invalid", HTTP 400); keep names under ~50 characters. The rejection happens before creation, so no asset is made.
+- Large bundles exceed the default `maxBytes` (256 MB of cumulative snapshot accounting); pass e.g. `maxBytes = 2^31` for 10+ parts.
+- Meshes created elsewhere may share corners but not edges (each triangle's edges unique). Smoothing with `pinBoundary` then pins every vertex; pin only vertices used by fewer than three triangles instead.
 - `Roblox.publish(bundle, {Name, Description, CreatorId, CreatorType}, {resume = ledger, attempts = 3})`. Keep the `ledger` table across retries; created assets are never auto-deleted.
 - A failed readback does **not** change the scene (`committed = false`); the report lists `assets` already created.
 - Publishing is outward-facing (assets on the user's account): get the user's approval for the project before the first upload.
