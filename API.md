@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.79.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.80.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -223,6 +223,10 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.warp(mesh: Mesh, from: CFrame, to: CFrame, options: any?)`
 - `Deform.taperProfile(mesh: Mesh, profile: any, options: any?)`
 - `Deform.curve(mesh: Mesh, curve: any, options: any?)`
+- `Deform:sample(p: Vector2): number?`
+- `Deform:blurred(radius: number): Envelope`
+- `Deform.envelope(mesh: Mesh, view: CFrame, step: number): Envelope`
+- `Deform.relief(mesh: Mesh, view: CFrame, target: (Vector2, number) -> number?, options: ReliefOptions?): Mesh`
 
 ## Dynamics
 

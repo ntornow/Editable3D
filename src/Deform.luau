@@ -276,7 +276,7 @@ function envelopeMethods.blurred(self: Envelope, radius: number): Envelope
 	end
 	values, weights = pass(values, weights, true)
 	values, weights = pass(values, weights, false)
-	local depth: { number | false } = table.create(w * h, false)
+	local depth: { number | false } = table.create(w * h, false :: number | false)
 	for k, d in self.depth do
 		if d ~= false and weights[k] > 1e-9 then
 			depth[k] = values[k] / weights[k]
@@ -347,7 +347,7 @@ function D.envelope(mesh: Mesh, view: CFrame, step: number): Envelope
 			end
 		end
 	end
-	local depth: { number | false } = table.create(width * height, false)
+	local depth: { number | false } = table.create(width * height, false :: number | false)
 	for k, value in raw do
 		if value < math.huge then
 			depth[k] = value
