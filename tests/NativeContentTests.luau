@@ -153,36 +153,60 @@ return function(_, options)
 	test("Native fingerprints ignore enumeration order and cyclic face start", function()
 		local a, b = fixture(), fixture({ 3, 1, 2 })
 		b.face = { 2, 3, 1 }
-		assert(fingerprint(a) == fingerprint(b))
+		assert(C.equivalent(fingerprint(a), fingerprint(b)))
 		b.positions = { [11] = a.positions[1], [12] = a.positions[2], [13] = a.positions[3] }
 		b.uvs = { [11] = a.uvs[1], [12] = a.uvs[2], [13] = a.uvs[3] }
 		b.vertices = { 12, 13, 11 }
 		b.face = { 11, 12, 13 }
-		assert(fingerprint(a) == fingerprint(b))
+		assert(C.equivalent(fingerprint(a), fingerprint(b)))
 	end)
 	test(
 		"Native fingerprints ignore vertex welding, per-corner splitting and unreferenced vertices",
 		function()
 			-- Roblox's asset pipeline returns one vertex per triangle corner; rendering is unchanged.
 			local welded = fingerprint(pair(false, false))
-			assert(welded == fingerprint(pair(true, false)), "Split corners must match welded vertices")
-			assert(welded == fingerprint(pair(false, true)), "Unreferenced vertices are not rendered content")
+			assert(
+				C.equivalent(welded, fingerprint(pair(true, false))),
+				"Split corners must match welded vertices"
+			)
+			assert(
+				C.equivalent(welded, fingerprint(pair(false, true))),
+				"Unreferenced vertices are not rendered content"
+			)
 		end
 	)
+	test("Native normals compare within the pipeline's quantization tolerance", function()
+		-- Roblox quantizes uploaded normals (observed error up to ~8.4e-4); positions/UVs stay exact.
+		local a, b = pair(true, false), pair(true, false)
+		local function tilt(m, amount)
+			function m:GetNormal()
+				return Vector3.new(amount, 0, 1).Unit
+			end
+		end
+		tilt(b, 8.4e-4)
+		assert(C.equivalent(fingerprint(a), fingerprint(b)), "Quantized normals rejected")
+		local c = pair(true, false)
+		tilt(c, 1e-2)
+		assert(not C.equivalent(fingerprint(a), fingerprint(c)), "Visibly different normals accepted")
+		assert(
+			C.equivalent("image-bytes", "image-bytes") and not C.equivalent("a", "b"),
+			"Images compare exactly"
+		)
+	end)
 	test("Split-corner fingerprints still detect corner, missing and duplicated triangle changes", function()
 		local base = fingerprint(pair(true, false))
 		local moved = pair(true, false)
 		moved.positions[6] = Vector3.new(1, 1, 0.001)
-		assert(fingerprint(moved) ~= base, "Changed corner position accepted")
+		assert(not C.equivalent(fingerprint(moved), base), "Changed corner position accepted")
 		local uv = pair(true, false)
 		uv.uvs[4] = Vector2.new(0, 0.5)
-		assert(fingerprint(uv) ~= base, "Changed corner UV accepted")
+		assert(not C.equivalent(fingerprint(uv), base), "Changed corner UV accepted")
 		local missing = pair(true, false)
 		missing.triangles[20] = nil
-		assert(fingerprint(missing) ~= base, "Missing triangle accepted")
+		assert(not C.equivalent(fingerprint(missing), base), "Missing triangle accepted")
 		local doubled = pair(true, false)
 		doubled.triangles[30] = { 4, 5, 6 }
-		assert(fingerprint(doubled) ~= base, "Duplicated triangle accepted")
+		assert(not C.equivalent(fingerprint(doubled), base), "Duplicated triangle accepted")
 	end)
 	for _, attribute in { "position", "uv", "normal", "color", "alpha", "winding" } do
 		test("Native fingerprint detects same-count change: " .. attribute, function()
@@ -200,7 +224,7 @@ return function(_, options)
 			else
 				b.face = { 1, 3, 2 }
 			end
-			assert(fingerprint(a) ~= fingerprint(b))
+			assert(not C.equivalent(fingerprint(a), fingerprint(b)))
 		end)
 	end
 	test("Native fingerprint verifies skin weights and bind pose", function()
@@ -230,10 +254,10 @@ return function(_, options)
 		end
 		local before = fingerprint(a)
 		a.weight = 0.5
-		assert(fingerprint(a) ~= before)
+		assert(not C.equivalent(fingerprint(a), before))
 		a.weight = 1
 		a.frame = CFrame.new(1, 0, 0)
-		assert(fingerprint(a) ~= before)
+		assert(not C.equivalent(fingerprint(a), before))
 	end)
 	test("Unsupported FACS and nonfinite content fail closed", function()
 		local a = fixture()
@@ -256,7 +280,7 @@ return function(_, options)
 		end
 		local before = C.image(i, B.new(nil, "image"))
 		buffer.writeu8(i.pixels, 7, 1)
-		assert(before ~= C.image(i, B.new(nil, "image")))
+		assert(not C.equivalent(before, C.image(i, B.new(nil, "image"))))
 		rejects(function()
 			C.image(i, B.new({ maxBytes = 7 }, "image"))
 		end, "allocation limit")
@@ -281,7 +305,7 @@ return function(_, options)
 				m:SetVertexBones(a, { bone })
 				m:SetVertexBoneWeights(a, { 1 })
 				local copy = keep(service:CreateEditableMeshAsync(Content.fromObject(m)))
-				assert(fingerprint(m) == fingerprint(copy))
+				assert(C.equivalent(fingerprint(m), fingerprint(copy)))
 				local i = keep(service:CreateEditableImage({ Size = Vector2.new(2, 2) }))
 				local pixels = buffer.create(16)
 				buffer.writeu8(pixels, 0, 37)

@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.77.2 — 2026-10-04
+
+Completes the real-upload fix. With per-corner comparison in place, the second real publish still failed: Roblox also quantizes uploaded normals (maximum observed error 8.4e-4 on an 18,000-triangle mesh) while positions, UVs, colors and alpha return bit-exact. Mesh snapshots are now an exact canonical part plus normals in canonical order, and `NativeContent.equivalent` accepts normals within `NORMAL_TOLERANCE` (2e-3). The publishing pipeline takes an optional backend `equivalent(kind, a, b)` for readback, resume and final source checks, and keeps `==` otherwise. Ledger fingerprints from 0.77.0 are not comparable with this format, so resume refuses them ("Resume source changed") rather than trusting them.
+
 ## 0.77.1 — 2026-10-04
 
 Fixes `Roblox.publish` verification against real Roblox uploads. The first real publish (a statue mesh) failed readback with "Published Mesh content mismatch" even though every position, UV and normal was unchanged: Roblox's asset pipeline stores one vertex per triangle corner (an 18,000-triangle mesh returns 54,000 vertices), and the verifier compared vertex welding. Native verification now compares each triangle corner's exact position, skin weights, UV, normal, color and alpha in winding order, plus bones, and ignores vertex sharing and unreferenced vertices. New tests cover welded vs split vs orphan-carrying meshes and still detect changed corners, missing and duplicated triangles. Earlier automated tests could not catch this because they used in-memory content that is never re-welded.

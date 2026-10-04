@@ -2,12 +2,14 @@
 local Budget = require(script.Parent.OperationBudget)
 local Transaction = require(script.Parent.PublishTransaction)
 local Retry = require(script.Parent.PublishRetry)
-export type LedgerEntry = { object: unknown, kind: string, id: string, fingerprint: string }
+export type LedgerEntry = { object: unknown, kind: string, id: string, fingerprint: unknown }
 export type Map = { object: unknown, read: () -> unknown, write: (unknown) -> (), original: unknown }
 export type Backend = {
 	upload: (unknown, string, unknown) -> string,
 	load: (string, string) -> unknown,
-	snapshot: (unknown, string, Budget.Budget) -> string,
+	snapshot: (unknown, string, Budget.Budget) -> unknown,
+	-- Optional content equivalence (for example tolerant normals); defaults to ==.
+	equivalent: ((string, unknown, unknown) -> boolean)?,
 	destroy: (unknown) -> (),
 	backup: (unknown) -> unknown,
 	stage: (string, unknown) -> unknown,
@@ -36,6 +38,13 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 			budget:step()
 			budget:check()
 		end
+		local function same(kind: string, a: unknown, b: unknown): boolean
+			local equivalent = backend.equivalent
+			if equivalent then
+				return equivalent(kind, a, b)
+			end
+			return a == b
+		end
 		local function asset(object: unknown, kind: string): string
 			for _, entry in verified do
 				if entry.object == object then
@@ -48,7 +57,10 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 			local id: string? = nil
 			for _, entry in ledger do
 				if entry.object == object then
-					assert(entry.kind == kind and entry.fingerprint == fingerprint, "Resume source changed")
+					assert(
+						entry.kind == kind and same(kind, entry.fingerprint, fingerprint),
+						"Resume source changed"
+					)
 					id = entry.id
 					break
 				end
@@ -74,7 +86,7 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 				end
 			end)
 			local actual = backend.snapshot(copy, kind, budget)
-			assert(actual == fingerprint, "Published " .. kind .. " content mismatch")
+			assert(same(kind, fingerprint, actual), "Published " .. kind .. " content mismatch")
 			backend.destroy(copy)
 			disposed = true
 			table.insert(verified, { object = object, kind = kind, id = assetId, fingerprint = fingerprint })
@@ -134,7 +146,11 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 				budget.onComplete = nil
 				for _, entry in verified do
 					assert(
-						backend.snapshot(entry.object, entry.kind, budget) == entry.fingerprint,
+						same(
+							entry.kind,
+							entry.fingerprint,
+							backend.snapshot(entry.object, entry.kind, budget)
+						),
 						"Source changed during publishing"
 					)
 				end

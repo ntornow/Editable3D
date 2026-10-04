@@ -24,6 +24,10 @@ local function backendFor(assetService)
 		snapshot = function(object, kind, budget)
 			return (kind == "Mesh" and Native.mesh or Native.image)(object, budget)
 		end,
+		-- Meshes: exact corners, normals within Native.NORMAL_TOLERANCE (the pipeline quantizes them).
+		equivalent = function(_kind, a, b)
+			return Native.equivalent(a, b)
+		end,
 		destroy = function(object)
 			object:Destroy()
 		end,

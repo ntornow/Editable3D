@@ -1,9 +1,11 @@
 -- Canonical native content, independent of vertex/face/normal/UV IDs, face order and vertex welding.
--- Each triangle corner carries its exact float32 position, skin weights, UV, normal, color and alpha;
--- faces are compared as a multiset in winding order. Vertex sharing is not compared: Roblox's asset
--- pipeline stores one vertex per corner, which renders identically. Unreferenced vertices are not
--- content. Fail closed.
+-- Each triangle corner carries its exact float32 position, skin weights, UV, color and alpha, plus its
+-- normal; faces are compared as a multiset in winding order. Vertex sharing is not compared: Roblox's
+-- asset pipeline stores one vertex per corner, which renders identically. Unreferenced vertices are not
+-- content. Normals are compared within NORMAL_TOLERANCE because the pipeline quantizes them (observed
+-- error up to ~8.4e-4); everything else is exact. Fail closed.
 local C = {}
+C.NORMAL_TOLERANCE = 2e-3
 local function framed(s)
 	return #s .. ":" .. s
 end
@@ -75,21 +77,32 @@ function C.mesh(mesh, budget)
 		local ids, uvs, normals, colors =
 			mesh:GetFaceVertices(fid), mesh:GetFaceUVs(fid), mesh:GetFaceNormals(fid), mesh:GetFaceColors(fid)
 		assert(#ids == 3, "Expected native triangles")
-		local corners = {}
+		local corners, cornerNormals = {}, {}
 		for i, id in ids do
 			corners[i] = framed(byId[id])
 				.. vec(mesh:GetUV(uvs[i]))
-				.. vec(mesh:GetNormal(normals[i]))
 				.. color(mesh:GetColor(colors[i]))
 				.. scalar(mesh:GetColorAlpha(colors[i]))
+			local n = mesh:GetNormal(normals[i])
+			assert(n.X == n.X and n.Y == n.Y and n.Z == n.Z, "Nonfinite native content")
+			cornerNormals[i] = n
 		end
-		local rotations = {
-			corners[1] .. corners[2] .. corners[3],
-			corners[2] .. corners[3] .. corners[1],
-			corners[3] .. corners[1] .. corners[2],
-		}
-		table.sort(rotations)
-		table.insert(faces, rotations[1])
+		-- Canonical starting corner: the smallest exact rotation; normals follow the same order.
+		local best, start = nil, 1
+		for r = 1, 3 do
+			local key = corners[r] .. corners[r % 3 + 1] .. corners[(r + 1) % 3 + 1]
+			if best == nil or key < best then
+				best, start = key, r
+			end
+		end
+		table.insert(faces, {
+			key = best,
+			normals = {
+				cornerNormals[start],
+				cornerNormals[start % 3 + 1],
+				cornerNormals[(start + 1) % 3 + 1],
+			},
+		})
 	end
 	-- Length prefixes prevent ambiguity in variable-length bone/weight records.
 	local function section(values)
@@ -102,7 +115,48 @@ function C.mesh(mesh, budget)
 		end
 		return #values .. ";" .. table.concat(out)
 	end
-	return section(bones) .. section(faces)
+	-- Faces sort by exact key; equal keys sort by normals so tolerant pairing is stable.
+	table.sort(faces, function(a, b)
+		if a.key ~= b.key then
+			return a.key < b.key
+		end
+		for i = 1, 3 do
+			local p, q = a.normals[i], b.normals[i]
+			if p.X ~= q.X then
+				return p.X < q.X
+			elseif p.Y ~= q.Y then
+				return p.Y < q.Y
+			elseif p.Z ~= q.Z then
+				return p.Z < q.Z
+			end
+		end
+		return false
+	end)
+	local keys, flat = {}, {}
+	for _, f in faces do
+		table.insert(keys, f.key)
+		for _, n in f.normals do
+			table.insert(flat, n)
+		end
+	end
+	-- `section` sorts in place; keys are already in face order, so sorting keeps that order.
+	return { exact = section(bones) .. section(keys), normals = flat }
+end
+-- Mesh snapshots: exact parts equal and every normal within tolerance. Strings (images) compare exactly.
+function C.equivalent(a, b, tolerance)
+	if type(a) ~= "table" or type(b) ~= "table" then
+		return a == b
+	end
+	if a.exact ~= b.exact or #a.normals ~= #b.normals then
+		return false
+	end
+	local limit = tolerance or C.NORMAL_TOLERANCE
+	for i, n in a.normals do
+		if (n - b.normals[i]).Magnitude > limit then
+			return false
+		end
+	end
+	return true
 end
 function C.image(image, budget)
 	local size = image.Size
