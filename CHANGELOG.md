@@ -4,7 +4,10 @@
 
 - **`Texture:guided(guide, radius, eps)`:** guided filter (He, Sun and Tang 2013). It is edge-preserving smoothing of a texture's RGB, steered by another image's luminance: edges in the guide stay sharp and flat guide areas are smoothed. Use it to snap soft depth or height fields to the crisp edges of a photograph, or to clean baked maps. Summed-area tables keep the cost independent of the radius.
 
-Test: a step edge is sharpened and noise removed, and the guide size is checked.
+- **Published bundles are protected.** A committed `Roblox.publish` sets `bundle.published`, and `Roblox.destroy` then refuses that bundle unless passed `{ force = true }`, because its model is live scene content. A stale reference to a published bundle had silently deleted a published model.
+- **`Roblox.release(bundle)`** frees only the editables and images, which is what to call after publishing. `destroy` also tolerates handles whose editable was already freed.
+
+Tests: a step edge is sharpened and noise removed, the guide size is checked, and destroy/release behave correctly on published bundles.
 
 ## 0.81.0 — 2026-10-04
 

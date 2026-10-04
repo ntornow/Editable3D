@@ -292,5 +292,33 @@ return function(E)
 			E.UV.box(box, nil, { tile = 0 })
 		end, "tile must be positive")
 	end)
+	test("Roblox.destroy refuses published bundles unless forced; release frees editables only", function()
+		local R = E.Roblox
+		local log = {}
+		local function stub(name)
+			return {
+				Destroy = function()
+					table.insert(log, name)
+				end,
+			}
+		end
+		local bundle: any = {
+			model = stub("model"),
+			handles = { { editable = stub("editable") } },
+			images = { stub("image") },
+			published = true,
+		}
+		local ok, err = pcall(R.destroy, bundle)
+		assert(not ok and string.find(tostring(err), "Bundle is published", 1, true))
+		assert(#log == 0, "nothing may be destroyed")
+		R.release(bundle)
+		assert(table.concat(log, ",") == "editable,image" and bundle.handles[1].editable == nil)
+		R.release(bundle) -- idempotent
+		R.destroy(bundle, { force = true })
+		assert(table.concat(log, ",") == "editable,image,model")
+		local preview: any = { model = stub("m2"), handles = { { editable = stub("e2") } }, images = {} }
+		R.destroy(preview)
+		assert(table.concat(log, ",") == "editable,image,model,m2,e2")
+	end)
 	return report
 end

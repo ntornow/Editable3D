@@ -66,6 +66,8 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 
 ## Publishing
 
+- After a committed publish, the bundle's model is the scene. Clear any session variable that still points at the bundle, or call `Roblox.release(bundle)` to free its editables. Since 0.82, `Roblox.destroy` refuses published bundles. Before that, a later "clean up the previous preview" `destroy` on a stale reference deleted a published model; it had to be rebuilt from its asset IDs by re-running `toModel` on the source mesh (deterministic chunking) and applying each mesh asset with `ApplyMesh`.
+
 - Asset `Name` must be short (a ~60-character name was rejected: "Asset name length is invalid", HTTP 400); keep names under ~50 characters. The rejection happens before creation, so no asset is made.
 - Large bundles exceed the default `maxBytes` (256 MB of cumulative snapshot accounting); pass e.g. `maxBytes = 2^31` for 10+ parts.
 - Meshes created elsewhere may share corners but not edges (each triangle's edges unique). Smoothing with `pinBoundary` then pins every vertex; pin only vertices used by fewer than three triangles instead.

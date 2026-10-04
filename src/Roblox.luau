@@ -32,6 +32,8 @@ export type Bundle = {
 	handles: { Handle },
 	images: { EditableImage },
 	tiles: { columns: number, rows: number }?,
+	-- set by a committed Roblox.publish: the model is now live scene content
+	published: boolean?,
 }
 export type Chunk = { mesh: Mesh, sourceVertices: { [number]: number }, material: number }
 export type EditableOptions = { rig: any?, cframe: CFrame? }
@@ -542,16 +544,35 @@ function R.toTexturedModel(mesh: Mesh, maps: MaterialMaps, options: TexturedMode
 	return bundle
 end
 -- Accepts partial bundles (any field may be missing) so cleanup is safe after failures.
-function R.destroy(bundle: { model: Model?, handles: { Handle }?, images: { EditableImage }? })
-	if bundle.model then
-		bundle.model:Destroy()
-	end
+export type DestroyOptions = { force: boolean? }
+type Disposable = { model: Model?, handles: { Handle }?, images: { EditableImage }?, published: boolean? }
+-- Frees a bundle's editable meshes and images without touching its model. Use it after
+-- publishing, when the parts already render the uploaded assets.
+function R.release(bundle: Disposable)
 	for _, h in (bundle.handles or {}) :: { Handle } do
-		h.editable:Destroy()
+		local editable = (h :: any).editable
+		if editable then
+			editable:Destroy();
+			(h :: any).editable = nil
+		end
 	end
 	for _, im in (bundle.images or {}) :: { EditableImage } do
 		im:Destroy()
 	end
+	bundle.images = {}
+end
+-- Destroys a preview bundle: its model, editables and images. A published bundle's model is live
+-- scene content, so destroying it requires { force = true }; use Roblox.release to free only its
+-- editables. (A stale reference to a published bundle otherwise deletes the scene's parts.)
+function R.destroy(bundle: Disposable, options: DestroyOptions?)
+	assert(
+		not bundle.published or (options ~= nil and options.force == true),
+		"Bundle is published: its model is live scene content. Use Roblox.release, or pass { force = true }"
+	)
+	if bundle.model then
+		bundle.model:Destroy()
+	end
+	R.release(bundle)
 end
 -- Reads a MeshPart's mesh back into an authoring Mesh. space "world" (default) applies the part's
 -- size scale and CFrame and maps corner normals through the transform; "mesh" keeps the stored
@@ -613,6 +634,14 @@ function R.publishImages(
 	)
 end
 function R.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport
-	return (require(script.Parent.RobloxPublish) :: any).run(bundle, metadata, options)
+	local report: Types.PublishReport = (require(script.Parent.RobloxPublish) :: any).run(
+		bundle,
+		metadata,
+		options
+	)
+	if report.committed then
+		bundle.published = true
+	end
+	return report
 end
 return R

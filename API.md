@@ -643,7 +643,8 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.material(maps: MaterialMaps): (SurfaceAppearance, { [string]: EditableImage })`
 - `Roblox.applyMaterial(bundle: Bundle, maps: MaterialMaps, slot: number?): { [string]: EditableImage }`
 - `Roblox.toTexturedModel(mesh: Mesh, maps: MaterialMaps, options: TexturedModelOptions?): Bundle`
-- `Roblox.destroy(bundle: { model: Model?, handles: { Handle }?, images: { EditableImage }? })`
+- `Roblox.release(bundle: Disposable)`
+- `Roblox.destroy(bundle: Disposable, options: DestroyOptions?)`
 - `Roblox.fromPart(part: MeshPart, options: FromPartOptions?): Mesh`
 - `Roblox.publishMaterials(parts: { MeshPart }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publishImages(images: { EditableImage }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
