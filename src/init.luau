@@ -1,0 +1,91 @@
+-- Editable3D 0.76.0: headless Luau authoring library. Require has no scene side effects.
+local Types = require(script.Types)
+export type Texture = Types.Texture
+export type Mesh = Types.Mesh
+export type Limits = Types.Limits
+export type BakeOptions = Types.BakeOptions
+export type PublishOptions = Types.PublishOptions
+export type PublishReport = Types.PublishReport
+local API: Types.API = {
+	Version = "0.76.0",
+	Texture = require(script.Texture),
+	Bake = require(script.Bake),
+	Mesh = require(script.Mesh),
+	Roblox = require(script.Roblox),
+}
+for _, name in
+	{
+		"Mesh",
+		"Attributes",
+		"Connectivity",
+		"Primitives",
+		"Topology",
+		"MeshEdit",
+		"MeshRepair",
+		"Intersections",
+		"Normals",
+		"Subdivision",
+		"Selection",
+		"Sculpt",
+		"Spatial",
+		"Deform",
+		"SurfaceDeform",
+		"Laplacian",
+		"Registration",
+		"ARAP",
+		"Fields",
+		"Remesh",
+		"Curves",
+		"Bezier",
+		"NURBS",
+		"SplineFit",
+		"Cyclic",
+		"SurfaceEdit",
+		"Surfaces",
+		"SplineQuery",
+		"ArcLength",
+		"SurfaceAdaptive",
+		"Predicates",
+		"Planar",
+		"SurfaceTrim",
+		"UV",
+		"Texture",
+		"Rig",
+		"Constraints",
+		"Animation",
+		"Timeline",
+		"Quaternion",
+		"Morph",
+		"Stroke",
+		"Simulation",
+		"Graph",
+		"History",
+		"IO",
+		"Roblox",
+		"Modifiers",
+		"Camera",
+		"Bake",
+		"Render",
+		"Simplify",
+		"Geometry",
+		"RigidBody",
+		"Convex",
+		"Dynamics",
+		"Particles",
+		"Fluid",
+		"PathTrace",
+		"Unwrap",
+		"Jobs",
+		"Boolean",
+		"Conformal",
+		"Adaptive",
+		"GLTF",
+		"BSDF",
+		"Lighting",
+		"Integrator",
+		"Capabilities",
+	}
+do
+	API[name] = require(assert(script:FindFirstChild(name), "Missing module " .. name))
+end
+return table.freeze(API)

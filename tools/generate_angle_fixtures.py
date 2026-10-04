@@ -1,0 +1,124 @@
+"""Independent dense numerical references for native geometry angle flattening. Requires NumPy for regeneration only."""
+import math
+import numpy as np
+
+def model(points, triangles):
+    triangles=np.array(triangles,dtype=int)
+    angles=[]
+    edges={}
+    incident={}
+    for f,t in enumerate(triangles):
+        for k,v in enumerate(t):
+            incident.setdefault(v,[]).append((f,k))
+            a=points[t[(k+1)%3]]-points[v]
+            b=points[t[(k+2)%3]]-points[v]
+            angles.append(math.atan2(np.linalg.norm(np.cross(a,b)),np.dot(a,b)))
+            e=tuple(sorted((int(v),int(t[(k+1)%3]))))
+            edges[e]=edges.get(e,0)+1
+    boundary={v for e,n in edges.items() if n==1 for v in e}
+    interior=[v for v in sorted(incident) if v not in boundary]
+    return np.array(angles),incident,interior
+
+def constraints(alpha,incident,interior):
+    nt=len(alpha)//3
+    n=len(alpha)
+    rows=[];values=[]
+    for f in range(nt):
+        row=np.zeros(n);row[3*f:3*f+3]=1/math.pi
+        rows.append(row);values.append(alpha[3*f:3*f+3].sum()/math.pi-1)
+    for v in interior:
+        fan=incident[v]
+        row=np.zeros(n)
+        for f,k in fan:row[3*f+k]+=1/(2*math.pi)
+        rows.append(row);values.append(row@alpha-1)
+        row=np.zeros(n);value=0
+        for sign,offset in [(1,1),(-1,2)]:
+            ids=[3*f+(k+offset)%3 for f,k in fan]
+            g=math.exp(sum(math.log(math.sin(alpha[i])) for i in ids)/len(fan))
+            value+=sign*g
+            for i in ids:row[i]+=sign*g/len(fan)/math.tan(alpha[i])
+        rows.append(row);values.append(value)
+    return np.array(values),np.array(rows)
+
+def solve(points,triangles):
+    beta,incident,interior=model(points,triangles)
+    alpha=beta.copy()
+    h=2/beta**2
+    history=[]
+    for iteration in range(100):
+        c,j=constraints(alpha,incident,interior)
+        g=h*(alpha-beta)
+        schur=(j/h)@j.T
+        lam=np.linalg.solve(schur,c-j@(g/h))
+        direction=-(g+j.T@lam)/h
+        stationarity=max(abs(direction/beta))
+        cnorm=max(abs(c),default=0)
+        energy=np.sum(((alpha-beta)/beta)**2)
+        history.append((energy,cnorm,stationarity))
+        if cnorm<1e-10 and stationarity<1e-9:break
+        penalty=max(1,2*max(abs(lam),default=0))
+        slope=g@direction-penalty*np.sum(abs(c))
+        assert slope<0,(iteration,cnorm,stationarity,slope)
+        step=1
+        for a,d in zip(alpha,direction):
+            if d<0:step=min(step,.99*(a-1e-6)/(-d))
+            elif d>0:step=min(step,.99*(math.pi-1e-6-a)/d)
+        merit=energy+penalty*np.sum(abs(c))
+        for line in range(50):
+            candidate=alpha+step*direction
+            nc,_=constraints(candidate,incident,interior)
+            ne=np.sum(((candidate-beta)/beta)**2)
+            if ne+penalty*np.sum(abs(nc))<=merit+1e-4*step*slope:
+                alpha=candidate;break
+            step*=.5
+        else:raise RuntimeError(('lineSearch',history[-1]))
+    return alpha,beta,history,incident,interior
+
+
+
+def native(points):
+    return np.asarray(points, dtype=np.float32).astype(np.float64)
+
+
+def fixtures():
+    cases = []
+    for n in (3, 4, 5, 6, 12):
+        points = native([[0, 0, 1]] + [[math.cos(2*math.pi*i/n), math.sin(2*math.pi*i/n), 0] for i in range(n)])
+        triangles = [[0, i+1, (i+1) % n+1] for i in range(n)]
+        cases.append((f"fan{n}", points, triangles))
+    for n, coefficient, saddle in ((3, 0.1, False), (4, 0.15, False), (3, 0.2, True), (4, 0.35, True)):
+        points = native([[i+0.1*j, j+0.05*i,
+                          coefficient*(i*j-0.4*i*i) if saddle else coefficient*(i*i+0.3*j*j)+0.1*math.sin(i*j)]
+                         for i in range(n+1) for j in range(n+1)])
+        triangles = []
+        for i in range(n):
+            for j in range(n):
+                a, b, c, d = i*(n+1)+j, (i+1)*(n+1)+j, (i+1)*(n+1)+j+1, i*(n+1)+j+1
+                triangles.extend(((a, b, c), (a, c, d)))
+        cases.append((f"{'saddle' if saddle else 'curved'}{n}", points, triangles))
+    result = []
+    for name, points, triangles in cases:
+        angles, target, history, _, _ = solve(points, triangles)
+        assert history[-1][1] < 1e-9 and history[-1][2] < 1e-8
+        result.append(dict(name=name, positions=points.tolist(), triangles=[[v+1 for v in t] for t in triangles],
+                           target=target.tolist(), angles=angles.tolist(), energy=float(history[-1][0])))
+    return result
+
+
+def luau(value):
+    if isinstance(value, str):
+        import json
+        return json.dumps(value)
+    if isinstance(value, dict):
+        return "{" + ",".join(key + "=" + luau(v) for key, v in value.items()) + "}"
+    if isinstance(value, list):
+        return "{" + ",".join(luau(v) for v in value) + "}"
+    return format(value, ".17g")
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    cases = fixtures()
+    target = Path(__file__).resolve().parents[1] / "tests" / "AngleBasedFixtures.luau"
+    target.write_text("-- Generated by tools/generate_angle_fixtures.py; independent NumPy dense constrained solves.\nreturn " + luau(cases) + "\n")
+    print(f"{len(cases)} dense reference angle solutions; {sum(len(case['triangles']) for case in cases)} source triangles")

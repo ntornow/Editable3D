@@ -1,0 +1,28 @@
+name: Editable3D
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: editable3d-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Types, regression tests, coverage, performance and portable builds
+        run: python3 tools/validate.py --bootstrap
+      - name: Validation reports and portable packages
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: editable3d-validation
+          include-hidden-files: true
+          path: |
+            .validation/*.json
+            .validation/coverage/lcov.info
+            dist/

@@ -1,0 +1,5 @@
+{
+  "languageMode": "nonstrict",
+  "globals": ["Vector2", "Vector3", "CFrame", "Color3", "Random", "Enum", "Instance", "Content", "game", "workspace", "script", "task"],
+  "lint": {"UnknownType": false}
+}

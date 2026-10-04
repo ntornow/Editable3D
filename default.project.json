@@ -1,0 +1,478 @@
+{
+  "name": "Editable3D",
+  "tree": {
+    "$path": "src",
+    "Tests": {
+      "$path": "tests/Tests.luau"
+    },
+    "TextureTests": {
+      "$path": "tests/TextureTests.luau"
+    },
+    "Benchmarks": {
+      "$path": "tests/Benchmarks.luau"
+    },
+    "Examples": {
+      "$className": "Folder",
+      "$path": "examples"
+    },
+    "GeometryTests": {
+      "$path": "tests/GeometryTests.luau"
+    },
+    "GLTFTests": {
+      "$path": "tests/GLTFTests.luau"
+    },
+    "ShadingTests": {
+      "$path": "tests/ShadingTests.luau"
+    },
+    "RunAllTests": {
+      "$path": "tests/RunAllTests.luau"
+    },
+    "MotionTests": {
+      "$path": "tests/MotionTests.luau"
+    },
+    "GLTFMotionTests": {
+      "$path": "tests/GLTFMotionTests.luau"
+    },
+    "DynamicsTests": {
+      "$path": "tests/DynamicsTests.luau"
+    },
+    "ConstraintTests": {
+      "$path": "tests/ConstraintTests.luau"
+    },
+    "DeformationTests": {
+      "$path": "tests/DeformationTests.luau"
+    },
+    "ARAPTests": {
+      "$path": "tests/ARAPTests.luau"
+    },
+    "NURBSTests": {
+      "$path": "tests/NURBSTests.luau"
+    },
+    "NURBSEditTests": {
+      "$path": "tests/NURBSEditTests.luau"
+    },
+    "SplineFitTests": {
+      "$path": "tests/SplineFitTests.luau"
+    },
+    "NonlinearFitTests": {
+      "$path": "tests/NonlinearFitTests.luau"
+    },
+    "SplineDomainTests": {
+      "$path": "tests/SplineDomainTests.luau"
+    },
+    "CyclicTests": {
+      "$path": "tests/CyclicTests.luau"
+    },
+    "CyclicEditTests": {
+      "$path": "tests/CyclicEditTests.luau"
+    },
+    "SurfaceEditTests": {
+      "$path": "tests/SurfaceEditTests.luau"
+    },
+    "SurfaceConstructionTests": {
+      "$path": "tests/SurfaceConstructionTests.luau"
+    },
+    "SurfaceSeamTests": {
+      "$path": "tests/SurfaceSeamTests.luau"
+    },
+    "SplineQueryTests": {
+      "$path": "tests/SplineQueryTests.luau"
+    },
+    "SurfaceAdaptiveTests": {
+      "$path": "tests/SurfaceAdaptiveTests.luau"
+    },
+    "PredicateTests": {
+      "$path": "tests/PredicateTests.luau"
+    },
+    "PredicateFixtures": {
+      "$path": "tests/PredicateFixtures.luau"
+    },
+    "PlanarTests": {
+      "$path": "tests/PlanarTests.luau"
+    },
+    "SurfaceTrimTests": {
+      "$path": "tests/SurfaceTrimTests.luau"
+    },
+    "MeshPrecisionTests": {
+      "$path": "tests/MeshPrecisionTests.luau"
+    },
+    "AttributeTests": {
+      "$path": "tests/AttributeTests.luau"
+    },
+    "SubdivisionCreaseTests": {
+      "$path": "tests/SubdivisionCreaseTests.luau"
+    },
+    "SubdivisionFaceVaryingTests": {
+      "$path": "tests/SubdivisionFaceVaryingTests.luau"
+    },
+    "ConnectivityTests": {
+      "$path": "tests/ConnectivityTests.luau"
+    },
+    "AttributeDomainTests": {
+      "$path": "tests/AttributeDomainTests.luau"
+    },
+    "ArcLengthTests": {
+      "$path": "tests/ArcLengthTests.luau"
+    },
+    "BezierTests": {
+      "$path": "tests/BezierTests.luau"
+    },
+    "MeshEditTests": {
+      "$path": "tests/MeshEditTests.luau"
+    },
+    "MeshConstructionTests": {
+      "$path": "tests/MeshConstructionTests.luau"
+    },
+    "NormalTests": {
+      "$path": "tests/NormalTests.luau"
+    },
+    "BevelTests": {
+      "$path": "tests/BevelTests.luau"
+    },
+    "PlanarConstraintTests": {
+      "$path": "tests/PlanarConstraintTests.luau"
+    },
+    "KnifeNetworkTests": {
+      "$path": "tests/KnifeNetworkTests.luau"
+    },
+    "SurfaceTrimAdaptiveTests": {
+      "$path": "tests/SurfaceTrimAdaptiveTests.luau"
+    },
+    "IntersectionFixtures": {
+      "$path": "tests/IntersectionFixtures.luau"
+    },
+    "IntersectionTests": {
+      "$path": "tests/IntersectionTests.luau"
+    },
+    "IntersectionRepairTests": {
+      "$path": "tests/IntersectionRepairTests.luau"
+    },
+    "BooleanArrangementTests": {
+      "$path": "tests/BooleanArrangementTests.luau"
+    },
+    "BuilderAttributeTests": {
+      "$path": "tests/BuilderAttributeTests.luau"
+    },
+    "PlanarSimplifyTests": {
+      "$path": "tests/PlanarSimplifyTests.luau"
+    },
+    "UnsubdivideTests": {
+      "$path": "tests/UnsubdivideTests.luau"
+    },
+    "UnsubdivideFixtures": {
+      "$path": "tests/UnsubdivideFixtures.luau"
+    },
+    "UVIslandTests": {
+      "$path": "tests/UVIslandTests.luau"
+    },
+    "AutomaticSeamTests": {
+      "$path": "tests/AutomaticSeamTests.luau"
+    },
+    "UVOverlapFixtures": {
+      "$path": "tests/UVOverlapFixtures.luau"
+    },
+    "ShellTests": {
+      "$path": "tests/ShellTests.luau"
+    },
+    "ProjectionTests": {
+      "$path": "tests/ProjectionTests.luau"
+    },
+    "DeformWorkflowTests": {
+      "$path": "tests/DeformWorkflowTests.luau"
+    },
+    "SubdivisionLimitTests": {
+      "$path": "tests/SubdivisionLimitTests.luau"
+    },
+    "SubdivisionFeatureTests": {
+      "$path": "tests/SubdivisionFeatureTests.luau"
+    },
+    "DeformMaskedTests": {
+      "$path": "tests/DeformMaskedTests.luau"
+    },
+    "RationalCoonsTests": {
+      "$path": "tests/RationalCoonsTests.luau"
+    },
+    "HighDegreeSplineTests": {
+      "$path": "tests/HighDegreeSplineTests.luau"
+    },
+    "SurfaceJoinTests": {
+      "$path": "tests/SurfaceJoinTests.luau"
+    },
+    "SplineIntersectionTests": {
+      "$path": "tests/SplineIntersectionTests.luau"
+    },
+    "IntervalArithmeticTests": {
+      "$path": "tests/IntervalArithmeticTests.luau"
+    },
+    "IntervalFixtures1": {
+      "$path": "tests/IntervalFixtures1.luau"
+    },
+    "IntervalFixtures2": {
+      "$path": "tests/IntervalFixtures2.luau"
+    },
+    "IntervalFixtures3": {
+      "$path": "tests/IntervalFixtures3.luau"
+    },
+    "IntervalSplineFixtures": {
+      "$path": "tests/IntervalSplineFixtures.luau"
+    },
+    "SurfaceIntersectionTests": {
+      "$path": "tests/SurfaceIntersectionTests.luau"
+    },
+    "SurfaceComponentTests": {
+      "$path": "tests/SurfaceComponentTests.luau"
+    },
+    "SurfaceOrderingTests": {
+      "$path": "tests/SurfaceOrderingTests.luau"
+    },
+    "SurfaceQuotientTests": {
+      "$path": "tests/SurfaceQuotientTests.luau"
+    },
+    "AngleBasedTests": {
+      "$path": "tests/AngleBasedTests.luau"
+    },
+    "AngleBasedFixtures": {
+      "$path": "tests/AngleBasedFixtures.luau"
+    },
+    "UVRelaxTests": {
+      "$path": "tests/UVRelaxTests.luau"
+    },
+    "UVRelaxFixtures": {
+      "$path": "tests/UVRelaxFixtures.luau"
+    },
+    "FairingTests": {
+      "$path": "tests/FairingTests.luau"
+    },
+    "FairingFixtures": {
+      "$path": "tests/FairingFixtures.luau"
+    },
+    "BrushTests": {
+      "$path": "tests/BrushTests.luau"
+    },
+    "DecimateTests": {
+      "$path": "tests/DecimateTests.luau"
+    },
+    "CollapseBoundFixtures": {
+      "$path": "tests/CollapseBoundFixtures.luau"
+    },
+    "GridTransitionTests": {
+      "$path": "tests/GridTransitionTests.luau"
+    },
+    "GridOverlayFixtures": {
+      "$path": "tests/GridOverlayFixtures.luau"
+    },
+    "GridOverlayFixturesA": {
+      "$path": "tests/GridOverlayFixturesA.luau"
+    },
+    "GridOverlayFixturesB": {
+      "$path": "tests/GridOverlayFixturesB.luau"
+    },
+    "TrimRegionTests": {
+      "$path": "tests/TrimRegionTests.luau"
+    },
+    "TrimClipFixtures": {
+      "$path": "tests/TrimClipFixtures.luau"
+    },
+    "QuadRetopologyTests": {
+      "$path": "tests/QuadRetopologyTests.luau"
+    },
+    "QuadPatchFixtures": {
+      "$path": "tests/QuadPatchFixtures.luau"
+    },
+    "QuadDensityFixtures": {
+      "$path": "tests/QuadDensityFixtures.luau"
+    },
+    "BoundaryIdentityTests": {
+      "$path": "tests/BoundaryIdentityTests.luau"
+    },
+    "ExactRationalFixtures": {
+      "$path": "tests/ExactRationalFixtures.luau"
+    },
+    "BoundaryIdentityFixtures": {
+      "$path": "tests/BoundaryIdentityFixtures.luau"
+    },
+    "AffineContactTests": {
+      "$path": "tests/AffineContactTests.luau"
+    },
+    "AffineContactFixtures": {
+      "$path": "tests/AffineContactFixtures.luau"
+    },
+    "RationalWindingTests": {
+      "$path": "tests/RationalWindingTests.luau"
+    },
+    "RationalWindingFixtures": {
+      "$path": "tests/RationalWindingFixtures.luau"
+    },
+    "FixedSectorTests": {
+      "$path": "tests/FixedSectorTests.luau"
+    },
+    "FixedSectorFixtures": {
+      "$path": "tests/FixedSectorFixtures.luau"
+    },
+    "PolynomialRootFixtures": {
+      "$path": "tests/PolynomialRootFixtures.luau"
+    },
+    "PolynomialRootTests": {
+      "$path": "tests/PolynomialRootTests.luau"
+    },
+    "CurvePlaneTests": {
+      "$path": "tests/CurvePlaneTests.luau"
+    },
+    "CurvePlaneFixtures": {
+      "$path": "tests/CurvePlaneFixtures.luau"
+    },
+    "CurvePowerFixtures": {
+      "$path": "tests/CurvePowerFixtures.luau"
+    },
+    "AlgebraicFiberTests": {
+      "$path": "tests/AlgebraicFiberTests.luau"
+    },
+    "AlgebraicValueFixtures": {
+      "$path": "tests/AlgebraicValueFixtures.luau"
+    },
+    "RuledPlaneTests": {
+      "$path": "tests/RuledPlaneTests.luau"
+    },
+    "RuledPlaneFixtures": {
+      "$path": "tests/RuledPlaneFixtures.luau"
+    },
+    "RuledQuotientTests": {
+      "$path": "tests/RuledQuotientTests.luau"
+    },
+    "PlanarCADTests": {
+      "$path": "tests/PlanarCADTests.luau"
+    },
+    "TensorPlaneTests": {
+      "$path": "tests/TensorPlaneTests.luau"
+    },
+    "TensorResultantFixtures": {
+      "$path": "tests/TensorResultantFixtures.luau"
+    },
+    "TensorLineFixtures": {
+      "$path": "tests/TensorLineFixtures.luau"
+    },
+    "TensorPowerFixtures": {
+      "$path": "tests/TensorPowerFixtures.luau"
+    },
+    "RuledPairTests": {
+      "$path": "tests/RuledPairTests.luau"
+    },
+    "RuledPairFixtureTests": {
+      "$path": "tests/RuledPairFixtureTests.luau"
+    },
+    "RuledFiberFixtures": {
+      "$path": "tests/RuledFiberFixtures.luau"
+    },
+    "RuledWeightedFixtures": {
+      "$path": "tests/RuledWeightedFixtures.luau"
+    },
+    "JordanSectorTests": {
+      "$path": "tests/JordanSectorTests.luau"
+    },
+    "JordanSectorFixtures": {
+      "$path": "tests/JordanSectorFixtures.luau"
+    },
+    "VertexRegularizationTests": {
+      "$path": "tests/VertexRegularizationTests.luau"
+    },
+    "VertexClusterFixtures": {
+      "$path": "tests/VertexClusterFixtures.luau"
+    },
+    "GraphPairTests": {
+      "$path": "tests/GraphPairTests.luau"
+    },
+    "WeightedGraphFixtures": {
+      "$path": "tests/WeightedGraphFixtures.luau"
+    },
+    "PrincipalSubresultantFixtures": {
+      "$path": "tests/PrincipalSubresultantFixtures.luau"
+    },
+    "MultivariateGcdFixtures": {
+      "$path": "tests/MultivariateGcdFixtures.luau"
+    },
+    "SturmTarskiFixtures": {
+      "$path": "tests/SturmTarskiFixtures.luau"
+    },
+    "GeneralTensorFixtures": {
+      "$path": "tests/GeneralTensorFixtures.luau"
+    },
+    "GeneralCADTests": {
+      "$path": "tests/GeneralCADTests.luau"
+    },
+    "TensorPairTests": {
+      "$path": "tests/TensorPairTests.luau"
+    },
+    "PeriodicTensorTests": {
+      "$path": "tests/PeriodicTensorTests.luau"
+    },
+    "TensorBernsteinFixtures": {
+      "$path": "tests/TensorBernsteinFixtures.luau"
+    },
+    "FeatureClosestFixtures": {
+      "$path": "tests/FeatureClosestFixtures.luau"
+    },
+    "FeatureMotionFixtures": {
+      "$path": "tests/FeatureMotionFixtures.luau"
+    },
+    "FeatureRegularizationTests": {
+      "$path": "tests/FeatureRegularizationTests.luau"
+    },
+    "EdgeClosestFixtures": {
+      "$path": "tests/EdgeClosestFixtures.luau"
+    },
+    "EdgeRegularizationTests": {
+      "$path": "tests/EdgeRegularizationTests.luau"
+    },
+    "ThreeSectorTests": {
+      "$path": "tests/ThreeSectorTests.luau"
+    },
+    "ThreeSectorFixtures": {
+      "$path": "tests/ThreeSectorFixtures.luau"
+    },
+    "ConstrainedJetTests": {
+      "$path": "tests/ConstrainedJetTests.luau"
+    },
+    "ConstrainedJetFixtures": {
+      "$path": "tests/ConstrainedJetFixtures.luau"
+    },
+    "RegularVertexTests": {
+      "$path": "tests/RegularVertexTests.luau"
+    },
+    "AnnularNormalTests": {
+      "$path": "tests/AnnularNormalTests.luau"
+    },
+    "AnnularNormalFixtures": {
+      "$path": "tests/AnnularNormalFixtures.luau"
+    },
+    "SubdivisionHistoryTests": {
+      "$path": "tests/SubdivisionHistoryTests.luau"
+    },
+    "SubdivisionHistoryFixtures": {
+      "$path": "tests/SubdivisionHistoryFixtures.luau"
+    },
+    "NormalGermTests": {
+      "$path": "tests/NormalGermTests.luau"
+    },
+    "TestHarness": {
+      "$path": "tests/TestHarness.luau"
+    },
+    "NativeContentTests": {
+      "$path": "tests/NativeContentTests.luau"
+    },
+    "PublishTests": {
+      "$path": "tests/PublishTests.luau"
+    },
+    "GuardedImageTests": {
+      "$path": "tests/GuardedImageTests.luau"
+    },
+    "OperationBudgetTests": {
+      "$path": "tests/OperationBudgetTests.luau"
+    },
+    "ProductionBenchmarks": {
+      "$path": "tests/ProductionBenchmarks.luau"
+    },
+    "NativePublishTests": {
+      "$path": "tests/NativePublishTests.luau"
+    }
+  }
+}
