@@ -71,6 +71,83 @@ return function(E)
 			assert(area > 0)
 		end
 	end)
+	test("smoothBoundary straightens a staircase edge without shrinking the sheet", function()
+		-- a 12 x 12 grid with every cell above the diagonal x + y > 12 removed: a staircase edge
+		local m = E.Mesh.new()
+		local id = {}
+		for i = 0, 12 do
+			id[i] = {}
+			for j = 0, 12 do
+				id[i][j] = m:addVertex(Vector3.new(i, j, 0))
+			end
+		end
+		for i = 0, 11 do
+			for j = 0, 11 do
+				if i + j < 12 then
+					m:addFace({ id[i][j], id[i + 1][j], id[i + 1][j + 1], id[i][j + 1] })
+				end
+			end
+		end
+		local function stair(mesh)
+			-- mean distance of the diagonal boundary vertices from the line x + y = 12.5
+			local total, n = 0, 0
+			for i = 1, 10 do
+				local p = mesh.vertices[id[i][12 - i]]
+				total += math.abs(p.X + p.Y - 12.5)
+				p = mesh.vertices[id[i][13 - i]]
+				total += math.abs(p.X + p.Y - 12.5)
+				n += 2
+			end
+			return total / n
+		end
+		local before = stair(m)
+		local untouched = E.Sculpt.smooth(m, nil, 10)
+		near(stair(untouched), before, 1e-9) -- smooth pins the boundary
+		local out, moved = E.Sculpt.smoothBoundary(m, nil, 10)
+		assert(moved > 20, "moved " .. moved)
+		assert(stair(out) < 0.25 * before, string.format("staircase %.3f -> %.3f", before, stair(out)))
+		-- straight boundary runs stay on their line; the sheet stays planar
+		assert(math.abs(out.vertices[id[0][5]].X) < 0.02, "straight edge drifted") -- drift spreads from the stair end
+		for _, p in out.vertices do
+			near(p.Z, 0)
+		end
+		-- the masked-out half keeps its staircase
+		local mask = {}
+		for i = 0, 12 do
+			for j = 0, 12 do
+				mask[id[i][j]] = i < 6 and 1 or 0
+			end
+		end
+		local half = E.Sculpt.smoothBoundary(m, mask, 10)
+		near((half.vertices[id[9][3]] - m.vertices[id[9][3]]).Magnitude, 0)
+		assert((half.vertices[id[3][9]] - m.vertices[id[3][9]]).Magnitude > 0.05)
+		-- rings relax the interior next to the edge, but leave the far interior alone
+		local relaxed = E.Sculpt.smoothBoundary(m, nil, 10, { rings = 1 })
+		assert((relaxed.vertices[id[5][6]] - out.vertices[id[5][6]]).Magnitude > 1e-4)
+		near((relaxed.vertices[id[2][2]] - out.vertices[id[2][2]]).Magnitude, 0)
+	end)
+	test("outward lofts face out whichever way the rings are stacked", function()
+		local function volume(m)
+			local v = 0
+			for _, f in m.faces do
+				local a = m.vertices[f.vertices[1]]
+				for k = 2, #f.vertices - 1 do
+					v += a:Dot(m.vertices[f.vertices[k]]:Cross(m.vertices[f.vertices[k + 1]]))
+				end
+			end
+			return v / 6
+		end
+		local up = rows(3, 12, true)
+		local down = { up[3], up[2], up[1] }
+		local plain = E.Curves.loft(down, true)
+		local fixed = E.Curves.loft(down, true, { outward = true })
+		local same = E.Curves.loft(up, true, { outward = true })
+		assert(volume(plain) * volume(E.Curves.loft(up, true)) < 0, "ring order flips the winding")
+		assert(volume(fixed) > 0 and volume(same) > 0)
+		near(volume(fixed), volume(same))
+		local tri = E.Curves.loft(down, true, { triangles = true, outward = true })
+		assert(volume(tri) > 0)
+	end)
 	test("sweep accepts a per-ring profile function in a transported frame", function()
 		local path = {}
 		for i = 0, 10 do

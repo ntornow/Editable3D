@@ -6,7 +6,9 @@ type Mesh = Mesh.Mesh
 export type Curve<T> = (t: number) -> T
 -- closed=false lofts open rows (a sheet, e.g. a curtain); triangles=true emits two triangles per
 -- quad and drops zero-area ones (robust for strongly deformed or pinched rings).
-export type LoftOptions = { closed: boolean?, triangles: boolean? }
+-- outward: for a capped closed loft, reverse the winding when the enclosed volume is negative, so
+-- the normals face out whichever way the rings run (rings stacked along -axis wind inward).
+export type LoftOptions = { closed: boolean?, triangles: boolean?, outward: boolean? }
 -- The frame a sweep places each profile in: point on the path, unit tangent, and the profile's
 -- x and y axes (parallel-transported along the path).
 export type SweepFrame = { point: Vector3, tangent: Vector3, x: Vector3, y: Vector3 }
@@ -196,6 +198,25 @@ function C.loft(rings: { { Vector3 } }, caps: boolean?, options: LoftOptions?): 
 		end
 		m:addFace(first)
 		m:addFace(ids[#ids])
+		if options and options.outward then
+			local volume = 0
+			for _, f in m.faces do
+				local a = m.vertices[f.vertices[1]]
+				for k = 2, #f.vertices - 1 do
+					volume += a:Dot(m.vertices[f.vertices[k]]:Cross(m.vertices[f.vertices[k + 1]]))
+				end
+			end
+			if volume < 0 then
+				for _, f in m.faces do
+					local v, c = {}, {}
+					for k = #f.vertices, 1, -1 do
+						table.insert(v, f.vertices[k])
+						table.insert(c, f.corners[k])
+					end
+					f.vertices, f.corners = v, c
+				end
+			end
+		end
 	end
 	return m:recalculateNormals()
 end

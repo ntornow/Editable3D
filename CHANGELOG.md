@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.90.0 — 2026-10-05
+
+- **`Sculpt.smoothBoundary(mesh, mask, iterations, {lambda, mu, rings, ringIterations})`:** Taubin-smooths each open boundary along its own curve. Each boundary vertex moves toward the mean of its two boundary neighbours; vertices where several boundary runs meet stay put. This straightens the staircase edges left when a sheet is cut along a diagonal of its grid (cloth layers, trimmed shells), which `Sculpt.smooth` cannot fix because it pins the boundary. `rings` relaxes that many interior rings behind the edge. Returns the mesh and the number of boundary vertices moved.
+- **`Curves.loft(..., {outward = true})`:** a capped closed loft reverses its winding when its enclosed volume is negative, so it faces out whichever way the rings are stacked.
+
 ## 0.89.0 — 2026-10-05
 
 - **`Deform.taperComponents(mesh, anchor, baseScale, tipScale, weld)`:** scales each connected piece (rays, spikes, petals, fingers) about its own principal axis. The scale goes from `baseScale` at the end nearer `anchor` to `tipScale` at the far end. It's safe on soups and keeps topology and UVs. It came from thickening a crown's rays at their base.

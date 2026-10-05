@@ -91,6 +91,81 @@ function S.smooth(mesh: Mesh, mask: Mask?, iterations: number?, options: SmoothO
 	end
 	return out:recalculateNormals()
 end
+-- Boundary-curve smoothing: straightens the open edges of a sheet without shrinking it. Each
+-- boundary vertex moves toward the mean of its two neighbours along the boundary loop (Taubin
+-- lambda/mu pairs, so loops keep their length); vertices where several boundary runs meet keep
+-- their place. A sheet cut along a diagonal through a regular grid has a staircase edge, which
+-- `smooth` cannot fix because it pins the boundary. rings > 0 then relaxes that many rings of
+-- interior vertices next to the boundary (plain Taubin, boundary pinned), so the strip behind the
+-- edge follows the straightened curve. Returns the mesh and the number of boundary vertices moved.
+export type BoundarySmoothOptions = { lambda: number?, mu: number?, rings: number?, ringIterations: number? }
+function S.smoothBoundary(
+	mesh: Mesh,
+	mask: Mask?,
+	iterations: number?,
+	options: BoundarySmoothOptions?
+): (Mesh, number)
+	local options: BoundarySmoothOptions = options or {}
+	U.integer(iterations or 1, 0)
+	U.integer(options.rings or 0, 0)
+	local out = mesh:clone()
+	local top = mesh:topology()
+	local along: { [number]: { number } } = {}
+	for _, e in top.edges do
+		if #e.faces == 1 then
+			along[e.a] = along[e.a] or {}
+			along[e.b] = along[e.b] or {}
+			table.insert(along[e.a], e.b)
+			table.insert(along[e.b], e.a)
+		end
+	end
+	local movable: { [number]: number } = {}
+	local count = 0
+	for id, ns in along do
+		local w = U.weight(mask, id)
+		if #ns == 2 and w > 0 then
+			movable[id] = w
+			count += 1
+		end
+	end
+	local function pass(alpha: number)
+		local nextPos: { [number]: Vector3 } = {}
+		for id, w in movable do
+			local ns = along[id]
+			local p = out.vertices[id]
+			nextPos[id] = p + ((out.vertices[ns[1]] + out.vertices[ns[2]]) / 2 - p) * alpha * w
+		end
+		for id, p in nextPos do
+			out.vertices[id] = p
+		end
+	end
+	for _ = 1, iterations or 1 do
+		pass(options.lambda or 0.5)
+		pass(options.mu or -0.53)
+	end
+	local rings = options.rings or 0
+	if rings > 0 then
+		local ring: { [number]: number } = {}
+		local frontier: { number } = {}
+		for id in along do
+			table.insert(frontier, id)
+		end
+		for _ = 1, rings do
+			local nextFrontier: { number } = {}
+			for _, id in frontier do
+				for neighbor in top.neighbors[id] do
+					if not along[neighbor] and not ring[neighbor] then
+						ring[neighbor] = U.weight(mask, neighbor)
+						table.insert(nextFrontier, neighbor)
+					end
+				end
+			end
+			frontier = nextFrontier
+		end
+		out = S.smooth(out, ring, options.ringIterations or 3)
+	end
+	return out:recalculateNormals(), count
+end
 function S.crease(
 	mesh: Mesh,
 	mask: Mask?,

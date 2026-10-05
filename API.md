@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.89.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.90.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -676,6 +676,7 @@ Source: [src/Sculpt.luau](src/Sculpt.luau)
 - `Sculpt.inflate(mesh: Mesh, mask: Mask?, amount: number): Mesh`
 - `Sculpt.flatten(mesh: Mesh, mask: Mask?, point: Vector3, normal: Vector3, strength: number?): Mesh`
 - `Sculpt.smooth(mesh: Mesh, mask: Mask?, iterations: number?, options: SmoothOptions?): Mesh`
+- `Sculpt.smoothBoundary(mesh: Mesh, mask: Mask?, iterations: number?, options: BoundarySmoothOptions?): (Mesh, number)`
 - `Sculpt.crease(mesh: Mesh, mask: Mask?, point: Vector3, normal: Vector3, width: number, depth: number, pinch: number?): Mesh`
 - `Sculpt.displace(mesh: Mesh, field: (position: Vector3, id: number) -> Vector3, mask: Mask?): Mesh`
 - `Sculpt.symmetrize(mesh: Mesh, axis: ("X" | "Y" | "Z")?, sourcePositive: boolean?, tolerance: number?): Mesh`

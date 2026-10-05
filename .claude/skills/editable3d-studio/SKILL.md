@@ -75,6 +75,9 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - A sculpt built as a front "mask" (a face, a relief) looks like a mask in profile. Build a closed volume behind it that tracks the mask's own per-row arcs, set slightly behind the mask's centre but in front of its rim. Then remove the mask's faces where the volume covers them (raycast along the view and compare depths). Coincident rims z-fight as small tears.
 - Before treating a line on a surface as a crack, check it two ways: `MeshRepair.audit` for boundary and crack edges near it, and a front-depth profile across it (raycasts along the view at a few x). A continuous profile with no boundary edges means it's texture, such as a panel seam in the shader, or a fold seen at grazing angles.
 - Run `MeshRepair.unfold` on heavily deformed sculpts (faces after several relief and smoothing passes) before publishing. Folded triangles render as small tears.
+- Serrated, sawtooth lips along folds or layer edges are usually open boundary edges: a sheet cut along a diagonal of its grid leaves a staircase. `Sculpt.smooth` pins the boundary, so smoothing never removes them. Weld, then run `Sculpt.smoothBoundary` (about 12 iterations, `rings = 2`) and map the result back to the soup parts by position key. To confirm, mark boundary vertices with small neon parts and check that they lie on the teeth.
+- A capped loft whose rings run along a negative axis comes out inside-out and is culled, so only its other pieces show. Pass `outward = true`.
+- A preview model built with `toModel` and parented to `workspace` stays there after publishing. Re-parent it into the target model, or later scans of that model will miss it.
 - On a read-back part, a session reference to a hidden original makes `Transparency < 1` filters skip it. Measure on the preview parts you are actually showing.
 
 ## Re-texturing published parts
