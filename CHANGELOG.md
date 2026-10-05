@@ -1,5 +1,18 @@
 # Editable3D changes
 
+## 0.86.0 — 2026-10-04
+
+Helpers promoted from scene work:
+
+- **`Registration.translation(source, target, {quantum, limit})`:** finds the exact offset between two copies of the same geometry (for example, a mesh rebuilt from its published asset against a trimmed or moved copy). Matching triangle edge vectors vote, so it works on soups.
+- **`Registration.icp(source, target, {initial, iterations, maxDistance, rigid, sample})`:** iterative closest point onto a Mesh or a Spatial index. Translation only by default; `rigid = true` also solves the rotation.
+- **`Geometry.principalAxes(mesh)`:** area-weighted principal axes (exact triangle second moments, Jacobi). Returns the centre, sorted axes, variances and a frame whose Z is a flat object's normal.
+- **`Planar.outlineContains`, `outlineDistance`, `offsetOutline`:** helpers for simple Vector2 outlines in either winding. `offsetOutline` grows the outline for positive distances and limits the miter.
+- **`Roblox.rebake(parts, shader, {size, padding, srgb})`:** re-textures existing parts from a world-space shader as a preview, keeping their meshes and other maps. Call `:publish(metadata, options)` to upload only the colour maps, or `:revert()` to undo.
+- **`Roblox.fillTerrain(terrain, outline, options)`:** fills terrain to a polygon outline: land up to `ground`, an `edge` band, an `inset` for a wall mesh, and water to `seaLevel` around it, written in strips.
+
+Tests: the translation vote is exact on a trimmed, shifted copy; ICP recovers translation and a small rotation; principal axes of a box; outline helpers in both windings. Native tests: rebake preview and revert, and the terrain fill (run in a remote region and restored).
+
 ## 0.85.0 — 2026-10-04
 
 - **`Primitives.prism(polygon, y0, y1, {bottomScale})`:** an outward-facing prism over any simple polygon in the XZ plane, convex or concave, in either winding. Side faces are flat-shaded and caps are single polygons (concave caps triangulate by ear clipping). `bottomScale` widens the base for battered walls. A loft of two rings is inside-out or right depending on winding, which isn't obvious until it renders inside-out.
