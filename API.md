@@ -228,6 +228,7 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.envelope(mesh: Mesh, view: CFrame, step: number, fill: number?): Envelope`
 - `Deform.relief(mesh: Mesh, view: CFrame, target: (Vector2, number) -> number?, options: ReliefOptions?): Mesh`
 - `Deform.edge(mesh: Mesh, view: CFrame, polyline: { Vector2 }, options: EdgeOptions?): Mesh`
+- `Deform.taperComponents(mesh: Mesh, anchor: Vector3, baseScale: number, tipScale: number?, weld: number?): Mesh`
 
 ## Dynamics
 

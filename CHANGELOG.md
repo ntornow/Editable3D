@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.89.0 — unreleased
+
+- **`Deform.taperComponents(mesh, anchor, baseScale, tipScale, weld)`:** scales each connected piece (rays, spikes, petals, fingers) about its own principal axis. The scale goes from `baseScale` at the end nearer `anchor` to `tipScale` at the far end. It's safe on soups and keeps topology and UVs. It came from thickening a crown's rays at their base.
+
 ## 0.88.0 — 2026-10-05
 
 - **`Deform.edge(mesh, view, polyline, {height, width, drop, dropWidth, layer, envelope, step})`:** a crisp layer edge, such as a cloth hem or the border of an overlapping sheet, along a polyline in view coordinates. The left side gets a rounded lip toward the viewer and the right side steps back. It moves only the front layer, depends on position alone (so it's safe on soups), and leaves anything beyond the polyline's ends alone. It came from tracing a robe's hem in a photograph: depth-map relief keeps such edges soft.

@@ -731,5 +731,28 @@ return function(E)
 		near(zAt(0, 2.5), 0, 1e-3)
 		near(zAt(3.8, 0.1), 0, 1e-9) -- beyond the polyline's end (q.X = -3.8)
 	end)
+	test("Deform.taperComponents scales each spike about its own axis, base to tip", function()
+		local function spike(dir)
+			local c = E.Primitives.cylinder(0.5, 4, 8)
+			local frame = CFrame.lookAt(dir * 3, dir * 5) * CFrame.Angles(-math.pi / 2, 0, 0)
+			return E.Deform.transform(c, frame, nil, { normals = "transform" })
+		end
+		local m = E.Topology.join({ spike(Vector3.xAxis), spike(-Vector3.xAxis), spike(Vector3.zAxis) })
+		local out = E.Deform.taperComponents(m, Vector3.zero, 2, 1)
+		local function radiusAt(mesh, dir, along)
+			local best = 0
+			for _, v in mesh.vertices do
+				local t = v:Dot(dir)
+				if math.abs(t - along) < 0.05 then
+					best = math.max(best, (v - dir * t).Magnitude)
+				end
+			end
+			return best
+		end
+		for _, dir in { Vector3.xAxis, -Vector3.xAxis, Vector3.zAxis } do
+			near(radiusAt(out, dir, 1), 1.0, 1e-3)
+			near(radiusAt(out, dir, 5), 0.5, 1e-3)
+		end
+	end)
 	return report
 end

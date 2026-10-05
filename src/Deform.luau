@@ -530,4 +530,56 @@ function D.edge(mesh: Mesh, view: CFrame, polyline: { Vector2 }, options: EdgeOp
 		return p + look * (offset * w)
 	end)
 end
+-- Thickens or thins elongated pieces (rays, spikes, petals, fingers) independently: every
+-- connected component (welded within weld, default 1e-4) gets its principal axis, its base is the
+-- end nearer `anchor`, and points are scaled about the axis by baseScale at the base blending
+-- linearly to tipScale at the tip. Works on soups (components come from a welded copy; the
+-- returned mesh keeps the input's topology, corners and UVs).
+function D.taperComponents(
+	mesh: Mesh,
+	anchor: Vector3,
+	baseScale: number,
+	tipScale: number?,
+	weld: number?
+): Mesh
+	local Topology = require(script.Parent.Topology) :: any
+	local Geometry = require(script.Parent.Geometry) :: any
+	local welded = Topology.weld(mesh, weld or 1e-4)
+	local pieces = Topology.components(welded)
+	local tip = tipScale or 1
+	local rays = {}
+	for _, piece in pieces do
+		local pa = Geometry.principalAxes(piece)
+		local axis = pa.axes[1]
+		local lo, hi = math.huge, -math.huge
+		for _, v in piece.vertices do
+			local t = (v - pa.center):Dot(axis)
+			lo, hi = math.min(lo, t), math.max(hi, t)
+		end
+		local baseT = if (anchor - pa.center):Dot(axis) < 0 then lo else hi
+		local tipT = if baseT == lo then hi else lo
+		table.insert(rays, { c = pa.center, a = axis, base = baseT, tip = tipT })
+	end
+	return D.map(mesh, function(v: Vector3): Vector3
+		local best, ray = math.huge, nil
+		for _, r in rays do
+			local d = v - r.c
+			local radial = (d - r.a * d:Dot(r.a)).Magnitude
+			local along = d:Dot(r.a)
+			local outside = math.max(0, math.min(r.base, r.tip) - along, along - math.max(r.base, r.tip))
+			local score = radial + outside
+			if score < best then
+				best, ray = score, r
+			end
+		end
+		if not ray then
+			return v
+		end
+		local t = (v - ray.c):Dot(ray.a)
+		local u = if ray.tip ~= ray.base then math.clamp((t - ray.base) / (ray.tip - ray.base), 0, 1) else 0
+		local k = baseScale + (tip - baseScale) * u
+		local axial = ray.c + ray.a * t
+		return axial + (v - axial) * k
+	end)
+end
 return D
