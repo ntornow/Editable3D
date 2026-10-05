@@ -431,6 +431,8 @@ Source: [src/MeshRepair.luau](src/MeshRepair.luau)
 - `MeshRepair.resolveIntersections(mesh: Mesh, options: ArrangementOptions?): (Mesh, RepairReport)`
 - `MeshRepair.clean(mesh: Mesh, options: CleanOptions?): (Mesh, RepairReport)`
 - `MeshRepair.orient(mesh: Mesh, options: OrientOptions?): (Mesh, RepairReport)`
+- `MeshRepair.audit(mesh: Mesh, options: AuditOptions?): AuditReport`
+- `MeshRepair.unfold(mesh: Mesh, options: UnfoldOptions?): (Mesh, RepairReport)`
 
 ## Modifiers
 

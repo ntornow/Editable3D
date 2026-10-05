@@ -620,5 +620,63 @@ return function(E)
 			end
 		end
 	end)
+	test("MeshRepair.audit finds cracks, folds, isolated faces, duplicates and inside-out solids", function()
+		local box = E.Primitives.box(Vector3.new(2, 2, 2))
+		local good = E.MeshRepair.audit(box)
+		assert(good.closed and not good.insideOut and good.boundaryEdges == 0 and good.foldedEdges == 0)
+		near(good.signedVolume, 8, 1e-9)
+		local bad = E.MeshRepair.audit(E.Topology.reverse(box))
+		assert(bad.insideOut, "reversed box is inside-out")
+		-- a sheet whose shared edge drifted 0.02 apart: cracks, and isolated faces in a soup
+		local m = E.Mesh.new()
+		m:addFace({
+			m:addVertex(Vector3.new(0, 0, 0)),
+			m:addVertex(Vector3.new(1, 0, 0)),
+			m:addVertex(Vector3.new(0, 1, 0)),
+		})
+		m:addFace({
+			m:addVertex(Vector3.new(1.02, 0, 0)),
+			m:addVertex(Vector3.new(1, 1, 0)),
+			m:addVertex(Vector3.new(0.02, 1, 0)),
+		})
+		local cracked = E.MeshRepair.audit(m)
+		assert(cracked.crackEdges >= 2 and cracked.isolatedFaces == 2, "crack edges " .. cracked.crackEdges)
+		-- a folded quad: the second triangle flipped back over the first
+		local f = E.Mesh.new()
+		local a, b, c =
+			f:addVertex(Vector3.new(0, 0, 0)),
+			f:addVertex(Vector3.new(1, 0, 0)),
+			f:addVertex(Vector3.new(0, 1, 0))
+		local d = f:addVertex(Vector3.new(0.3, 0.3, 0.001))
+		f:addFace({ a, b, c })
+		f:addFace({ b, d, c })
+		local folded = E.MeshRepair.audit(f)
+		assert(folded.foldedEdges == 1, "fold found")
+		-- duplicates
+		local dup = E.Mesh.new()
+		local p, q, r =
+			dup:addVertex(Vector3.new(0, 0, 0)),
+			dup:addVertex(Vector3.new(1, 0, 0)),
+			dup:addVertex(Vector3.new(0, 1, 0))
+		dup:addFace({ p, q, r })
+		dup:addFace({ q, r, p })
+		assert(E.MeshRepair.audit(dup).duplicateFaces == 1)
+	end)
+	test("MeshRepair.unfold untangles a crumpled vertex in a grid", function()
+		local g = E.Topology.triangulate(E.Primitives.grid(6, 6, Vector2.new(6, 6)))
+		-- push one interior vertex far across its neighbours, flipping its triangles
+		local target
+		for id, v in g.vertices do
+			if math.abs(v.X) < 1e-6 and math.abs(v.Z) < 1e-6 then
+				target = id
+			end
+		end
+		g.vertices[target] = Vector3.new(2.5, 0.05, 0.4)
+		local before = E.MeshRepair.audit(g)
+		assert(before.foldedEdges > 0, "crumpled")
+		local fixed, rep = E.MeshRepair.unfold(g)
+		assert(rep.before > 0 and rep.after == 0, "no folds left " .. rep.after)
+		assert(E.MeshRepair.audit(fixed).foldedEdges == 0)
+	end)
 	return report
 end

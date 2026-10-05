@@ -257,4 +257,328 @@ function R.orient(mesh: Mesh, options: OrientOptions?): (Mesh, RepairReport)
 	return out,
 		{ flipped = changed, components = components, validation = validation, complete = validation.valid }
 end
+export type AuditOptions = {
+	weld: number?,
+	crack: number?,
+	fold: number?,
+	overlap: number?,
+	stride: number?,
+	limit: number?,
+}
+export type AuditReport = {
+	faces: number,
+	vertices: number,
+	weldedVertices: number,
+	boundaryEdges: number,
+	nonManifoldEdges: number,
+	crackEdges: number,
+	degenerateFaces: number,
+	duplicateFaces: number,
+	foldedEdges: number,
+	isolatedFaces: number,
+	overlapFaces: number,
+	closed: boolean,
+	signedVolume: number,
+	insideOut: boolean,
+	samples: { [string]: { number } },
+}
+-- One-call health check of a mesh (soups included: corners are welded by position first).
+-- boundary/non-manifold edges; crack edges (boundary edges with another boundary edge within
+-- `crack`, i.e. hairline cracks); degenerate and duplicate faces; folded edges (adjacent faces
+-- turned more than acos(fold) against each other, i.e. crumpled or flipped triangles); isolated
+-- faces (no shared edge: a sign of interleaved chunks or an unwelded soup); co-facing
+-- self-overlap within `overlap` (sampled every `stride` faces); signed volume, and insideOut when
+-- the mesh is closed with negative volume. `samples` lists up to `limit` face ids per problem.
+function R.audit(mesh: Mesh, options: AuditOptions?): AuditReport
+	local o: AuditOptions = options or {}
+	local weldTol = o.weld or 1e-4
+	local crackTol = o.crack or 0.06
+	local foldCos = o.fold or -0.3
+	local limit = o.limit or 20
+	local Topology = require(script.Parent.Topology) :: any
+	local nv, nf = 0, 0
+	for _ in mesh.vertices do
+		nv += 1
+	end
+	for _ in mesh.faces do
+		nf += 1
+	end
+	local w = Topology.weld(mesh, weldTol)
+	local wv = 0
+	for _ in w.vertices do
+		wv += 1
+	end
+	local samples: { [string]: { number } } = {}
+	local function note(kind: string, id: number)
+		local list = samples[kind] or {}
+		samples[kind] = list
+		if #list < limit then
+			table.insert(list, id)
+		end
+	end
+	-- edges of the welded mesh
+	local edgeFaces: { [string]: { number } } = {}
+	local degenerate, volume = 0, 0
+	local normals: { [number]: Vector3 } = {}
+	local seen: { [string]: boolean } = {}
+	local duplicates = 0
+	for fid, f in w.faces do
+		local vs = f.vertices
+		local a = w.vertices[vs[1]]
+		local n = Vector3.zero
+		for i = 2, #vs - 1 do
+			local b, c = w.vertices[vs[i]], w.vertices[vs[i + 1]]
+			n += (b - a):Cross(c - a)
+			volume += a:Dot(b:Cross(c)) / 6
+		end
+		if n.Magnitude < 1e-12 then
+			degenerate += 1
+			note("degenerate", fid)
+		else
+			normals[fid] = n.Unit
+		end
+		local sorted = table.clone(vs)
+		table.sort(sorted)
+		local key = table.concat(sorted, ",")
+		if seen[key] then
+			duplicates += 1
+			note("duplicate", fid)
+		end
+		seen[key] = true
+		for i = 1, #vs do
+			local x, y = vs[i], vs[i % #vs + 1]
+			local k = if x < y then x .. "|" .. y else y .. "|" .. x
+			edgeFaces[k] = edgeFaces[k] or {}
+			table.insert(edgeFaces[k], fid)
+		end
+	end
+	local boundary, nonManifold, folded = 0, 0, 0
+	local shared: { [number]: number } = {}
+	local boundaryEdges: { { Vector3 } } = {}
+	for k, fs in edgeFaces do
+		if #fs == 1 then
+			boundary += 1
+			local a, b = string.match(k, "^(%d+)|(%d+)$")
+			table.insert(
+				boundaryEdges,
+				{ w.vertices[tonumber(a) :: number], w.vertices[tonumber(b) :: number] }
+			)
+		elseif #fs > 2 then
+			nonManifold += 1
+			note("nonManifold", fs[1])
+		else
+			shared[fs[1]] = (shared[fs[1]] or 0) + 1
+			shared[fs[2]] = (shared[fs[2]] or 0) + 1
+			local n1, n2 = normals[fs[1]], normals[fs[2]]
+			if n1 and n2 and n1:Dot(n2) < foldCos then
+				folded += 1
+				note("folded", fs[1])
+			end
+		end
+	end
+	local isolated = 0
+	for fid in w.faces do
+		if not shared[fid] then
+			isolated += 1
+			note("isolated", fid)
+		end
+	end
+	-- cracks: boundary edges whose midpoint lies within crackTol of another boundary edge
+	local cell = math.max(crackTol, 1e-3) * 4
+	local grid: { [string]: { number } } = {}
+	local function gkey(p: Vector3): string
+		return math.floor(p.X / cell) .. "," .. math.floor(p.Y / cell) .. "," .. math.floor(p.Z / cell)
+	end
+	for i, e in boundaryEdges do
+		local k = gkey((e[1] + e[2]) / 2)
+		grid[k] = grid[k] or {}
+		table.insert(grid[k], i)
+	end
+	local cracks = 0
+	for i, e in boundaryEdges do
+		local m = (e[1] + e[2]) / 2
+		local cx, cy, cz = math.floor(m.X / cell), math.floor(m.Y / cell), math.floor(m.Z / cell)
+		local found = false
+		for dx = -1, 1 do
+			for dy = -1, 1 do
+				for dz = -1, 1 do
+					local list: { number } = grid[(cx + dx) .. "," .. (cy + dy) .. "," .. (cz + dz)] or {}
+					for _, j in list do
+						if j ~= i then
+							local o2 = boundaryEdges[j]
+							local m2 = (o2[1] + o2[2]) / 2
+							if (m2 - m).Magnitude <= crackTol and (m2 - m).Magnitude > 1e-9 then
+								found = true
+							end
+						end
+					end
+				end
+			end
+		end
+		if found then
+			cracks += 1
+		end
+	end
+	-- co-facing self-overlap (sampled): a face centroid lying on a non-adjacent face
+	local overlap = 0
+	if o.overlap and o.overlap > 0 then
+		local Spatial = require(script.Parent.Spatial) :: any
+		local index = Spatial.new(w)
+		local stride = math.max(1, math.floor(o.stride or 1))
+		local i = 0
+		for fid, f in w.faces do
+			i += 1
+			local n = normals[fid]
+			if n and i % stride == 0 then
+				local vs = f.vertices
+				local c = Vector3.zero
+				for _, v in vs do
+					c += w.vertices[v]
+				end
+				c /= #vs
+				-- probe just above the face: another co-facing face within `overlap` above it
+				local hit = index:raycast(c + n * 1e-4, n, o.overlap)
+				if hit and hit.face ~= fid and hit.normal:Dot(n) > 0.8 then
+					overlap += 1
+					note("overlap", fid)
+				end
+			end
+		end
+	end
+	local closed = boundary == 0 and nonManifold == 0
+	return {
+		faces = nf,
+		vertices = nv,
+		weldedVertices = wv,
+		boundaryEdges = boundary,
+		nonManifoldEdges = nonManifold,
+		crackEdges = cracks,
+		degenerateFaces = degenerate,
+		duplicateFaces = duplicates,
+		foldedEdges = folded,
+		isolatedFaces = isolated,
+		overlapFaces = overlap,
+		closed = closed,
+		signedVolume = volume,
+		insideOut = closed and volume < 0,
+		samples = samples,
+	}
+end
+-- Untangles crumpled and flipped triangles: vertices on folded edges (adjacent faces turned more
+-- than acos(fold) against each other) and their neighbours `rings` deep are moved toward their
+-- neighbours' average, repeating until no fold remains or `iterations` is reached. Works on
+-- soups (welds by position first; the result is welded, corners and UVs kept). Boundary
+-- vertices stay put. Returns the mesh and { folds before, folds after, moved vertices }.
+export type UnfoldOptions =
+	{ fold: number?, iterations: number?, rings: number?, weld: number?, step: number? }
+function R.unfold(mesh: Mesh, options: UnfoldOptions?): (Mesh, RepairReport)
+	local o: UnfoldOptions = options or {}
+	local foldCos = o.fold or -0.3
+	local rings = o.rings or 2
+	local step = o.step or 0.5
+	local Topology = require(script.Parent.Topology) :: any
+	local w = Topology.weld(mesh, o.weld or 1e-4)
+	local neighbours: { [number]: { [number]: boolean } } = {}
+	local edgeFaces: { [string]: { number } } = {}
+	for fid, f in w.faces do
+		local vs = f.vertices
+		for i = 1, #vs do
+			local x, y = vs[i], vs[i % #vs + 1]
+			neighbours[x] = neighbours[x] or {}
+			neighbours[y] = neighbours[y] or {}
+			neighbours[x][y] = true
+			neighbours[y][x] = true
+			local k = if x < y then x .. "|" .. y else y .. "|" .. x
+			edgeFaces[k] = edgeFaces[k] or {}
+			table.insert(edgeFaces[k], fid)
+		end
+	end
+	local boundary: { [number]: boolean } = {}
+	for k, fs in edgeFaces do
+		if #fs ~= 2 then
+			local a, b = string.match(k, "^(%d+)|(%d+)$")
+			boundary[tonumber(a) :: number] = true
+			boundary[tonumber(b) :: number] = true
+		end
+	end
+	local function folds(): { [number]: boolean }
+		local normals = {}
+		for fid, f in w.faces do
+			local vs = f.vertices
+			local a = w.vertices[vs[1]]
+			local n = Vector3.zero
+			for i = 2, #vs - 1 do
+				n += (w.vertices[vs[i]] - a):Cross(w.vertices[vs[i + 1]] - a)
+			end
+			normals[fid] = if n.Magnitude > 1e-12 then n.Unit else nil
+		end
+		local verts = {}
+		for k, fs in edgeFaces do
+			if #fs == 2 then
+				local n1, n2 = normals[fs[1]], normals[fs[2]]
+				if n1 and n2 and n1:Dot(n2) < foldCos then
+					for _, fid in fs do
+						for _, v in w.faces[fid].vertices do
+							verts[v] = true
+						end
+					end
+				end
+			end
+		end
+		return verts
+	end
+	local function count(t: { [number]: boolean }): number
+		local n = 0
+		for _ in t do
+			n += 1
+		end
+		return n
+	end
+	local start = folds()
+	local before = count(start)
+	local movedSet: { [number]: boolean } = {}
+	local current = start
+	local iterations = 0
+	for it = 1, o.iterations or 30 do
+		if next(current) == nil then
+			break
+		end
+		iterations = it
+		local region = table.clone(current)
+		for _ = 1, rings do
+			local grow = {}
+			for v in region do
+				local adjacent: { [number]: boolean } = neighbours[v] or {}
+				for u in adjacent do
+					grow[u] = true
+				end
+			end
+			for u in grow do
+				region[u] = true
+			end
+		end
+		local nextPos = {}
+		for v in region do
+			if not boundary[v] then
+				local sum, n = Vector3.zero, 0
+				local adjacent: { [number]: boolean } = neighbours[v] or {}
+				for u in adjacent do
+					sum += w.vertices[u]
+					n += 1
+				end
+				if n > 0 then
+					nextPos[v] = w.vertices[v]:Lerp(sum / n, step)
+				end
+			end
+		end
+		for v, p in nextPos do
+			w.vertices[v] = p
+			movedSet[v] = true
+		end
+		current = folds()
+	end
+	w.revision += 1
+	return w:recalculateNormals(),
+		{ before = before, after = count(current), moved = count(movedSet), iterations = iterations }
+end
 return R
