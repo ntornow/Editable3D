@@ -689,4 +689,167 @@ function R.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOpti
 	end
 	return report
 end
+export type RebakeOptions = { size: number?, padding: number?, srgb: boolean? }
+export type Rebake = {
+	entries: {
+		{
+			part: MeshPart,
+			previous: SurfaceAppearance?,
+			surface: SurfaceAppearance,
+			image: EditableImage,
+		}
+	},
+	publish: (Rebake, metadata: unknown, options: Types.PublishOptions?) -> Types.PublishReport,
+	revert: (Rebake) -> (),
+}
+-- Re-textures existing (usually published) MeshParts from a world-space shader without touching
+-- their meshes: each part is read back (fromPart), its own UVs are baked with
+-- shader(position, normal, part) -> (Color3, alpha), and a new SurfaceAppearance (other maps,
+-- Color and AlphaMode copied) shows the result as a preview. Then :publish(metadata, options)
+-- uploads only the colour maps (publishMaterials) and frees the previous appearances and images,
+-- or :revert() restores the previous appearances.
+function R.rebake(
+	parts: { MeshPart },
+	shader: (Vector3, Vector3, MeshPart) -> (Color3, number?),
+	options: RebakeOptions?
+): Rebake
+	local o: RebakeOptions = options or {}
+	local size = o.size or 1024
+	local Bake = require(script.Parent.Bake) :: any
+	local entries = {}
+	for _, part in parts do
+		local mesh = R.fromPart(part)
+		local texture = Bake.rasterize(mesh, size, size, function(ctx)
+			return shader(ctx.position, ctx.normal, part)
+		end, { padding = o.padding or 4 })
+		local image = R.toEditableImage(texture, o.srgb)
+		local previous = part:FindFirstChildOfClass("SurfaceAppearance")
+		local surface = Instance.new("SurfaceAppearance")
+		if previous then
+			surface.NormalMapContent = previous.NormalMapContent
+			surface.RoughnessMapContent = previous.RoughnessMapContent
+			surface.MetalnessMapContent = previous.MetalnessMapContent
+			surface.Color = previous.Color
+			surface.AlphaMode = previous.AlphaMode
+			previous.Parent = nil
+		end
+		surface.ColorMapContent = Content.fromObject(image)
+		surface.Parent = part
+		table.insert(entries, { part = part, previous = previous, surface = surface, image = image })
+	end
+	local handle = {} :: any
+	handle.entries = entries
+	function handle.publish(
+		self: Rebake,
+		metadata: unknown,
+		publishOptions: Types.PublishOptions?
+	): Types.PublishReport
+		local list = {}
+		for _, e in self.entries do
+			table.insert(list, e.part)
+		end
+		local report = R.publishMaterials(list, metadata, publishOptions)
+		if report.success then
+			for _, e in self.entries do
+				if e.previous then
+					e.previous:Destroy()
+				end
+				e.image:Destroy()
+			end
+		end
+		return report
+	end
+	function handle.revert(self: Rebake)
+		for _, e in self.entries do
+			e.surface:Destroy()
+			if e.previous then
+				e.previous.Parent = e.part
+			end
+			e.image:Destroy()
+		end
+	end
+	return handle :: Rebake
+end
+export type TerrainFillOptions = {
+	ground: number,
+	seaLevel: number?,
+	top: Enum.Material?,
+	fill: Enum.Material?,
+	edge: Enum.Material?,
+	edgeWidth: number?,
+	inset: number?,
+	bottom: number?,
+	margin: number?,
+	resolution: number?,
+	strip: number?,
+}
+-- Fills Roblox Terrain to a polygon outline (Vector2(x, z), either winding): land up to `ground`
+-- inside the outline (top material, with an `edge` band of `edgeWidth` along the outline, e.g. a
+-- promenade), pulled `inset` studs inside it (so a wall mesh can form the edge), and water up to
+-- `seaLevel` (with air above) everywhere else in the outline's bounding box plus `margin`.
+-- Written in strips to bound memory. Returns the number of land columns.
+function R.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number
+	local Planar = require(script.Parent.Planar) :: any
+	local res = options.resolution or 4
+	local sea = options.seaLevel or 0
+	local ground = options.ground
+	local bottom = options.bottom or (sea - 12)
+	local margin = options.margin or 40
+	local inset = options.inset or 0
+	local edgeWidth = options.edgeWidth or 0
+	local top, fill = options.top or Enum.Material.Grass, options.fill or Enum.Material.Ground
+	local edge = options.edge or top
+	local lo, hi = Vector2.new(math.huge, math.huge), Vector2.new(-math.huge, -math.huge)
+	for _, p in outline do
+		lo, hi = lo:Min(p), hi:Max(p)
+	end
+	lo -= Vector2.one * margin
+	hi += Vector2.one * margin
+	local land = 0
+	local stripSize = options.strip or 160
+	local z0 = lo.Y
+	while z0 < hi.Y do
+		local region = Region3.new(
+			Vector3.new(lo.X, bottom, z0),
+			Vector3.new(hi.X, ground + res * 2, math.min(z0 + stripSize, hi.Y))
+		):ExpandToGrid(res)
+		local mats, occ = terrain:ReadVoxels(region, res)
+		local size = mats.Size
+		local base = region.CFrame.Position - region.Size / 2
+		for ix = 1, size.X do
+			local x = base.X + (ix - 0.5) * res
+			for iz = 1, size.Z do
+				local z = base.Z + (iz - 0.5) * res
+				local p = Vector2.new(x, z)
+				local inside = Planar.outlineContains(outline, p)
+				local d = if inside then Planar.outlineDistance(outline, p) else 0
+				local isLand = inside and d > inset
+				local surface = if isLand and d < inset + edgeWidth then edge else top
+				if isLand then
+					land += 1
+				end
+				for iy = 1, size.Y do
+					local y0 = base.Y + (iy - 1) * res
+					local y1 = y0 + res
+					local level, below, cover = sea, Enum.Material.Water, Enum.Material.Water
+					if isLand then
+						level, below, cover = ground, fill, surface
+					end
+					if y1 <= level - res then
+						mats[ix][iy][iz], occ[ix][iy][iz] = below, 1
+					elseif y1 <= level then
+						mats[ix][iy][iz], occ[ix][iy][iz] = cover, 1
+					elseif y0 < level then
+						mats[ix][iy][iz], occ[ix][iy][iz] = cover, (level - y0) / res
+					else
+						mats[ix][iy][iz], occ[ix][iy][iz] = Enum.Material.Air, 0
+					end
+				end
+			end
+		end
+		terrain:WriteVoxels(region, res, mats, occ)
+		z0 += stripSize
+	end
+	return land
+end
 return R

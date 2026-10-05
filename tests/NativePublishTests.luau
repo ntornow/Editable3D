@@ -139,5 +139,62 @@ return function(E, options)
 			end
 		)
 	end
+	test("Roblox.rebake previews a world-space bake and revert restores the appearance", function()
+		local bundle =
+			E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(4, 4, 4))), { name = "RebakeFixture" })
+		local part = bundle.handles[1].part
+		local original = Instance.new("SurfaceAppearance")
+		original.Color = Color3.new(0.5, 0.6, 0.7)
+		original.Parent = part
+		local ok, err = pcall(function()
+			local handle = E.Roblox.rebake({ part }, function()
+				return Color3.new(1, 0, 0), 1
+			end, { size = 16 })
+			local sa = part:FindFirstChildOfClass("SurfaceAppearance")
+			assert(sa ~= original and sa.Color == original.Color, "new appearance with copied tint")
+			assert(original.Parent == nil, "previous appearance detached")
+			local image = handle.entries[1].image
+			local pixel = image:ReadPixelsBuffer(Vector2.new(8, 8), Vector2.new(1, 1))
+			assert(buffer.readu8(pixel, 0) > 200 and buffer.readu8(pixel, 1) < 40, "baked red")
+			handle:revert()
+			assert(part:FindFirstChildOfClass("SurfaceAppearance") == original, "reverted")
+		end)
+		E.Roblox.destroy(bundle)
+		assert(ok, err)
+	end)
+	test("Roblox.fillTerrain writes land, edge band and sea inside the outline's box", function()
+		local terrain = workspace.Terrain
+		local origin = Vector2.new(4000, 4000)
+		local outline = {}
+		for k = 0, 15 do
+			local a = 2 * math.pi * k / 16
+			table.insert(outline, origin + Vector2.new(math.cos(a), math.sin(a)) * 40)
+		end
+		local region = Region3.new(Vector3.new(3940, -16, 3940), Vector3.new(4060, 24, 4060)):ExpandToGrid(4)
+		local mats, occ = terrain:ReadVoxels(region, 4)
+		local ok, err = pcall(function()
+			local land = E.Roblox.fillTerrain(terrain, outline, {
+				ground = 8,
+				seaLevel = 0,
+				edge = Enum.Material.Pavement,
+				edgeWidth = 8,
+				inset = 2,
+				margin = 12,
+			})
+			assert(land > 200, "land columns " .. land)
+			local function at(x, z, y)
+				local m = terrain:ReadVoxels(
+					Region3.new(Vector3.new(x, y, z), Vector3.new(x + 4, y + 4, z + 4)):ExpandToGrid(4),
+					4
+				)
+				return m[1][1][1]
+			end
+			assert(at(4000, 4000, 4) == Enum.Material.Grass, "lawn at the centre")
+			assert(at(4034, 4000, 4) == Enum.Material.Pavement, "edge band")
+			assert(at(4048, 4000, -4) == Enum.Material.Water, "sea outside")
+		end)
+		terrain:WriteVoxels(region, 4, mats, occ)
+		assert(ok, err)
+	end)
 	return report
 end

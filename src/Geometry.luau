@@ -123,4 +123,91 @@ function G.parametric(
 	end
 	return m:recalculateNormals()
 end
+export type PrincipalAxes = { center: Vector3, axes: { Vector3 }, variances: { number }, frame: CFrame }
+-- Area-weighted principal axes of a surface: centre, axes sorted by decreasing variance and a
+-- right-handed frame (X = largest spread, Z = smallest, which is the normal of a flat object).
+-- Use it to measure the pose of a slab, a limb or any elongated part before re-posing it.
+function G.principalAxes(mesh: Mesh): PrincipalAxes
+	local total, center = 0, Vector3.zero
+	local tris: { { p: { Vector3 }, area: number } } = {}
+	for _, t in mesh:triangles() do
+		local a, b, c = mesh.vertices[t[1]], mesh.vertices[t[2]], mesh.vertices[t[3]]
+		local area = (b - a):Cross(c - a).Magnitude / 2
+		if area > 0 then
+			table.insert(tris, { p = { a, b, c }, area = area })
+			total += area
+			center += (a + b + c) / 3 * area
+		end
+	end
+	assert(total > 0, "Principal axes need a surface with area")
+	center /= total
+	-- covariance of the uniform distribution over each triangle (exact second moments)
+	local m = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 } }
+	for _, t in tris do
+		local p = { t.p[1] - center, t.p[2] - center, t.p[3] - center }
+		local s = p[1] + p[2] + p[3]
+		for i = 1, 3 do
+			for j = 1, 3 do
+				local ax = { "X", "Y", "Z" }
+				local sum = 0
+				for k = 1, 3 do
+					sum += (p[k] :: any)[ax[i]] * (p[k] :: any)[ax[j]]
+				end
+				m[i][j] += t.area * (sum + (s :: any)[ax[i]] * (s :: any)[ax[j]]) / 12
+			end
+		end
+	end
+	for i = 1, 3 do
+		for j = 1, 3 do
+			m[i][j] /= total
+		end
+	end
+	-- Jacobi eigen-decomposition of the symmetric 3x3 covariance
+	local v = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }
+	for _ = 1, 50 do
+		local p, q, largest = 1, 2, math.abs(m[1][2])
+		if math.abs(m[1][3]) > largest then
+			p, q, largest = 1, 3, math.abs(m[1][3])
+		end
+		if math.abs(m[2][3]) > largest then
+			p, q, largest = 2, 3, math.abs(m[2][3])
+		end
+		if largest < 1e-14 then
+			break
+		end
+		local theta = (m[q][q] - m[p][p]) / (2 * m[p][q])
+		local t = (theta >= 0 and 1 or -1) / (math.abs(theta) + math.sqrt(theta * theta + 1))
+		local c = 1 / math.sqrt(t * t + 1)
+		local sn = t * c
+		for k = 1, 3 do
+			local mkp, mkq = m[k][p], m[k][q]
+			m[k][p], m[k][q] = c * mkp - sn * mkq, sn * mkp + c * mkq
+		end
+		for k = 1, 3 do
+			local mpk, mqk = m[p][k], m[q][k]
+			m[p][k], m[q][k] = c * mpk - sn * mqk, sn * mpk + c * mqk
+		end
+		for k = 1, 3 do
+			local vkp, vkq = v[k][p], v[k][q]
+			v[k][p], v[k][q] = c * vkp - sn * vkq, sn * vkp + c * vkq
+		end
+	end
+	local order = { 1, 2, 3 }
+	table.sort(order, function(a, b)
+		return m[a][a] > m[b][b]
+	end)
+	local axes, variances = {}, {}
+	for i, k in order do
+		axes[i] = Vector3.new(v[1][k], v[2][k], v[3][k]).Unit
+		variances[i] = m[k][k]
+	end
+	local z = axes[1]:Cross(axes[2]).Unit
+	axes[3] = z
+	return {
+		center = center,
+		axes = axes,
+		variances = variances,
+		frame = CFrame.fromMatrix(center, axes[1], axes[2], z),
+	}
+end
 return G

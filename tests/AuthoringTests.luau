@@ -569,5 +569,56 @@ return function(E)
 		assert(materials[1] and materials[2] and materials[2] > materials[1], "bark and foliage")
 		assert(#E.Roblox.partition(a, 18000) == 2, "one chunk per material")
 	end)
+	test("Registration.translation and icp recover offsets; principalAxes; outline helpers", function()
+		-- translation: an exact shifted copy with a third of its faces removed
+		local src = E.Primitives.sphere(2, 12, 8)
+		local shift = Vector3.new(3.25, -1.5, 0.75)
+		local moved = E.Deform.transform(src, CFrame.new(shift), nil, { normals = "transform" })
+		local keep = {}
+		local i = 0
+		for fid in moved.faces do
+			i += 1
+			if i % 3 ~= 0 then
+				keep[fid] = true
+			end
+		end
+		local t, votes = E.Registration.translation(src, E.Topology.extract(moved, keep))
+		assert(t and votes > 10, "translation found")
+		near((t - shift).Magnitude, 0, 1e-4)
+		-- icp, translation only, from a nearby start
+		local frame, rep = E.Registration.icp(
+			src,
+			moved,
+			{ initial = CFrame.new(shift + Vector3.new(0.3, -0.2, 0.25)), iterations = 30 }
+		)
+		near((frame.Position - shift).Magnitude, 0, 2e-2)
+		assert(rep.rms < 0.05)
+		-- rigid icp recovers a small rotation of an asymmetric shape
+		local boxy = E.Primitives.box(Vector3.new(4, 2, 1))
+		local turn = CFrame.new(0.2, 0, 0) * CFrame.Angles(0, math.rad(6), 0)
+		local turned = E.Deform.transform(boxy, turn, nil, { normals = "transform" })
+		local rframe = E.Registration.icp(boxy, turned, { rigid = true, iterations = 40 })
+		near((rframe.Position - turn.Position).Magnitude, 0, 5e-2)
+		-- principal axes of a 6 x 2 x 1 box: X longest, Z shortest
+		local pa = E.Geometry.principalAxes(E.Primitives.box(Vector3.new(6, 2, 1)))
+		near(pa.center.Magnitude, 0, 1e-9)
+		assert(math.abs(pa.axes[1].X) > 0.999 and math.abs(pa.axes[3].Z) > 0.999, "axes order")
+		assert(pa.variances[1] > pa.variances[2] and pa.variances[2] > pa.variances[3])
+		-- outlines in both windings
+		local sq = { Vector2.new(0, 0), Vector2.new(4, 0), Vector2.new(4, 4), Vector2.new(0, 4) }
+		local rsq = { sq[4], sq[3], sq[2], sq[1] }
+		for _, poly in { sq, rsq } do
+			assert(
+				E.Planar.outlineContains(poly, Vector2.new(1, 1))
+					and not E.Planar.outlineContains(poly, Vector2.new(5, 1))
+			)
+			near(E.Planar.outlineDistance(poly, Vector2.new(1, 2)), 1, 1e-9)
+			local grown = E.Planar.offsetOutline(poly, 1)
+			for _, q in grown do
+				assert(not E.Planar.outlineContains(poly, q), "offset grows the outline")
+				near(E.Planar.outlineDistance(poly, q), math.sqrt(2), 1e-6)
+			end
+		end
+	end)
 	return report
 end

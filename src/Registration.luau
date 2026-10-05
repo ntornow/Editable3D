@@ -189,4 +189,124 @@ function R.fit(source: { Vector3 }, target: { Vector3 }, options: Options?): Fit
 		totalWeight = total,
 	}
 end
+export type ICPOptions = {
+	initial: CFrame?,
+	iterations: number?,
+	maxDistance: number?,
+	rigid: boolean?,
+	sample: number?,
+}
+export type ICPReport = { rms: number, matched: number, iterations: number }
+-- Exact translation between two copies of the same geometry (for example a mesh rebuilt from its
+-- published asset, against a trimmed or moved copy of it): every triangle of `target` whose edge
+-- vectors match a triangle of `source` votes for target - source at its first corner; the most
+-- voted offset wins. Returns nil when no triangle matches. Works on soups (vertex ids differ).
+function R.translation(
+	source: any,
+	target: any,
+	options: { quantum: number?, limit: number? }?
+): (Vector3?, number)
+	local quantum = (options and options.quantum) or 0.002
+	local limit = (options and options.limit) or 5000
+	local function key(v: Vector3): string
+		return string.format(
+			"%d,%d,%d",
+			math.round(v.X / quantum),
+			math.round(v.Y / quantum),
+			math.round(v.Z / quantum)
+		)
+	end
+	local index: { [string]: Vector3 } = {}
+	for _, t in source:triangles() do
+		local a, b, c = source.vertices[t[1]], source.vertices[t[2]], source.vertices[t[3]]
+		index[key(b - a) .. "|" .. key(c - a)] = a
+	end
+	local votes: { [string]: { offset: Vector3, count: number } } = {}
+	local best: Vector3?, bestCount = nil, 0
+	local seen = 0
+	for _, t in target:triangles() do
+		seen += 1
+		if seen > limit then
+			break
+		end
+		local a, b, c = target.vertices[t[1]], target.vertices[t[2]], target.vertices[t[3]]
+		local anchor = index[key(b - a) .. "|" .. key(c - a)]
+		if anchor then
+			local offset = a - anchor
+			local k = key(offset)
+			local v = votes[k] or { offset = offset, count = 0 }
+			v.count += 1
+			votes[k] = v
+			if v.count > bestCount then
+				best, bestCount = v.offset, v.count
+			end
+		end
+	end
+	return best, bestCount
+end
+-- Iterative closest point: moves `source` (a Mesh or points) onto the surface of `target` (a Mesh or
+-- a Spatial index). Translation only by default; rigid = true also solves the rotation (Horn).
+-- Pairs further than maxDistance are ignored. Returns the transform to apply to the source.
+function R.icp(source: any, target: any, options: ICPOptions?): (CFrame, ICPReport)
+	local o: ICPOptions = options or {}
+	local Spatial = require(script.Parent.Spatial)
+	local index = if getmetatable(target) == Spatial then target else Spatial.new(target)
+	local points: { Vector3 } = {}
+	local stride = math.max(1, math.floor(o.sample or 1))
+	if source.vertices then
+		local i = 0
+		for _, v in source.vertices do
+			i += 1
+			if i % stride == 0 then
+				table.insert(points, v)
+			end
+		end
+	else
+		for i, v in source do
+			if i % stride == 0 then
+				table.insert(points, v)
+			end
+		end
+	end
+	local frame = o.initial or CFrame.identity
+	local maxDistance = o.maxDistance or math.huge
+	local rms, matched, iterations = math.huge, 0, 0
+	for it = 1, o.iterations or 10 do
+		iterations = it
+		local from, to = {}, {}
+		local sum = 0
+		for _, p in points do
+			local q = frame:PointToWorldSpace(p)
+			local hit = index:closest(q, maxDistance)
+			if hit then
+				table.insert(from, q)
+				table.insert(to, hit.position)
+				sum += hit.distance * hit.distance
+			end
+		end
+		matched = #from
+		if matched == 0 then
+			break
+		end
+		rms = math.sqrt(sum / matched)
+		local step: CFrame
+		if o.rigid then
+			step = R.fit(from, to).frame
+		else
+			local d = Vector3.zero
+			for i, q in from do
+				d += to[i] - q
+			end
+			step = CFrame.new(d / matched)
+		end
+		frame = step * frame
+		if
+			step.Position.Magnitude < 1e-7
+			and (not o.rigid or (step.LookVector - Vector3.new(0, 0, -1)).Magnitude < 1e-9)
+		then
+			break
+		end
+	end
+	return frame, { rms = rms, matched = matched, iterations = iterations }
+end
 return R

@@ -302,6 +302,7 @@ Source: [src/Geometry.luau](src/Geometry.luau)
 - `Geometry.vertexColors(mesh: Mesh, field: (Vector3, number) -> (Color3, number?)): Mesh`
 - `Geometry.group(mesh: Mesh, name: string, mask: { [number]: number }): Mesh`
 - `Geometry.parametric(fn: (number, number) -> Vector3, uSegments: number, vSegments: number, wrapU: boolean?, wrapV: boolean?): Mesh`
+- `Geometry.principalAxes(mesh: Mesh): PrincipalAxes`
 
 ## Graph
 
@@ -530,6 +531,9 @@ Source: [src/Planar.luau](src/Planar.luau)
 - `Planar.triangulate(outer: Loop, holes: { Loop }?, options: Options?): Domain`
 - `Planar.toMesh(domain: Domain, frame: CFrame?): Mesh.Mesh`
 - `Planar.constrain(outer: Loop, holes: { Loop }?, paths: any, options: any?)`
+- `Planar.outlineContains(points: { Vector2 }, p: Vector2): boolean`
+- `Planar.outlineDistance(points: { Vector2 }, p: Vector2): number`
+- `Planar.offsetOutline(points: { Vector2 }, distance: number): ({ Vector2 }, { Vector2 })`
 
 ## Predicates
 
@@ -584,6 +588,8 @@ Source: [src/Registration.luau](src/Registration.luau)
 
 - `Registration.rotation(source: { Vector3 }, target: { Vector3 }, options: Options?): (CFrame, RotationReport)`
 - `Registration.fit(source: { Vector3 }, target: { Vector3 }, options: Options?): FitResult`
+- `Registration.translation(source: any, target: any, options: { quantum: number?, limit: number? }?): (Vector3?, number)`
+- `Registration.icp(source: any, target: any, options: ICPOptions?): (CFrame, ICPReport)`
 
 ## Remesh
 
@@ -652,6 +658,8 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.publishMaterials(parts: { MeshPart }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publishImages(images: { EditableImage }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
+- `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart) -> (Color3, number?), options: RebakeOptions?): Rebake`
+- `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`
 
 ## Sculpt
 

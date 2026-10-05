@@ -382,4 +382,53 @@ end
 function D.constrain(outer: Loop, holes: { Loop }?, paths: any, options: any?)
 	return deferredRequire(script.Parent.PlanarConstrain)(outer, holes, paths, options)
 end
+-- Simple polygon outlines as plain Vector2 lists (either winding): point-in-outline (even-odd),
+-- distance to the outline, and an outward offset (positive grows the outline whatever its winding).
+-- Use them for site work such as terrain fills and walls that follow an island or plaza edge.
+function D.outlineContains(points: { Vector2 }, p: Vector2): boolean
+	local inside, j = false, #points
+	for i = 1, #points do
+		local a, b = points[i], points[j]
+		if (a.Y > p.Y) ~= (b.Y > p.Y) and p.X < (b.X - a.X) * (p.Y - a.Y) / (b.Y - a.Y) + a.X then
+			inside = not inside
+		end
+		j = i
+	end
+	return inside
+end
+function D.outlineDistance(points: { Vector2 }, p: Vector2): number
+	local best = math.huge
+	for i = 1, #points do
+		local a, b = points[i], points[i % #points + 1]
+		local ab = b - a
+		local len2 = ab:Dot(ab)
+		local t = if len2 > 0 then math.clamp((p - a):Dot(ab) / len2, 0, 1) else 0
+		best = math.min(best, (a + ab * t - p).Magnitude)
+	end
+	return best
+end
+function D.offsetOutline(points: { Vector2 }, distance: number): ({ Vector2 }, { Vector2 })
+	local n = #points
+	assert(n >= 3, "Outline needs at least three points")
+	local area = 0
+	for i = 1, n do
+		local a, b = points[i], points[i % n + 1]
+		area += a.X * b.Y - b.X * a.Y
+	end
+	local sign = area > 0 and 1 or -1
+	local out, normals = {}, {}
+	for i = 1, n do
+		local prev, cur, nxt = points[(i - 2) % n + 1], points[i], points[i % n + 1]
+		local e1, e2 = (cur - prev), (nxt - cur)
+		local n1 = Vector2.new(e1.Y, -e1.X).Unit * sign
+		local n2 = Vector2.new(e2.Y, -e2.X).Unit * sign
+		local bis = n1 + n2
+		local normal = if bis.Magnitude > 1e-9 then bis.Unit else n1
+		-- miter length, limited to 4x at sharp corners
+		local cosHalf = math.max(normal:Dot(n1), 0.25)
+		normals[i] = normal
+		out[i] = cur + normal * (distance / cosHalf)
+	end
+	return out, normals
+end
 return D
