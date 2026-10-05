@@ -875,7 +875,7 @@ Source: [src/Topology.luau](src/Topology.luau)
 - `Topology.fill(mesh: Mesh, loop: { number }): Mesh`
 - `Topology.splitEdge(mesh: Mesh, a: number, b: number, t: number?): (Mesh, number)`
 - `Topology.dissolveEdge(mesh: Mesh, a: number, b: number): Mesh`
-- `Topology.snap(meshes: { Mesh }, tolerance: number): ({ Mesh }, number)`
+- `Topology.snap(meshes: { Mesh }, tolerance: number): ({ Mesh }, number, number)`
 
 ## UV
 

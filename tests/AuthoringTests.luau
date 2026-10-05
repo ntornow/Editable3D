@@ -440,12 +440,36 @@ return function(E)
 		-- the neighbour's copy of the shared edge drifted by 0.02
 		local q1, q2 = b:addVertex(Vector3.new(0.02, 0, 0)), b:addVertex(Vector3.new(1, 0.02, 0))
 		b:addFace({ q2, q1, b:addVertex(Vector3.new(0.5, -1, 0)) })
-		local out, moved = E.Topology.snap({ a, b }, 0.05)
-		assert(moved == 4, "four corners move: " .. moved)
+		local out, moved, removed = E.Topology.snap({ a, b }, 0.05)
+		assert(moved == 4 and removed == 0, "four corners move: " .. moved)
 		assert(out[1].vertices[p1] == out[2].vertices[q1] and out[1].vertices[p2] == out[2].vertices[q2])
 		near(out[1].vertices[p1].X, 0.01, 1e-9)
 		assert(#out[1]:triangles() == 1 and #out[2]:triangles() == 1)
 		assert(a.vertices[p1] == Vector3.new(0, 0, 0), "inputs are not mutated")
+		-- a sliver narrower than the tolerance collapses and is removed; seeds bound the moves
+		local c = E.Mesh.new()
+		c:addFace({
+			c:addVertex(Vector3.new(0, 0, 0)),
+			c:addVertex(Vector3.new(0.03, 0, 0)),
+			c:addVertex(Vector3.new(0, 0.03, 0)),
+		})
+		local chain = E.Mesh.new()
+		local apex = chain:addVertex(Vector3.new(0.2, 7, 0))
+		local row = {}
+		for k = 0, 9 do
+			row[k] = chain:addVertex(Vector3.new(k * 0.04, 5, 0))
+		end
+		for k = 0, 8 do
+			chain:addFace({ row[k], row[k + 1], apex })
+		end
+		local sealed, _, gone = E.Topology.snap({ c, chain }, 0.05)
+		assert(gone >= 1 and #sealed[1]:triangles() == 0, "collapsed sliver removed")
+		local count = 0
+		for id, v in sealed[2].vertices do
+			assert((v - chain.vertices[id]).Magnitude <= 0.05 + 1e-9, "no chained drift")
+			count += 1
+		end
+		assert(count >= 5, "the chain keeps distinct vertices: " .. count)
 	end)
 	return report
 end
