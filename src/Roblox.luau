@@ -154,6 +154,52 @@ function R.fromEditable(editable: EditableMesh): (Mesh, { [number]: number }, an
 	end
 	return m, map, rig
 end
+-- Splits triangles into chunks of at most `limit` that are compact in space: recursive splits at
+-- the centroid order statistic along the longest axis, sized so every chunk but the last is full.
+-- Cutting in face order instead can interleave chunks (after triangulation, the second triangle of
+-- every quad gets a new face id at the end), and each chunk then carries its own texture.
+local function spatialChunks(mesh: Mesh, tris: { Types.Triangle }, limit: number): { { Types.Triangle } }
+	local items = table.create(#tris)
+	for i, t in tris do
+		items[i] = { t = t, c = (mesh.vertices[t[1]] + mesh.vertices[t[2]] + mesh.vertices[t[3]]) / 3, i = i }
+	end
+	local out: { { Types.Triangle } } = {}
+	local function split(list: { any })
+		if #list <= limit then
+			table.sort(list, function(a, b)
+				return a.i < b.i
+			end)
+			local piece = table.create(#list)
+			for i, item in list do
+				piece[i] = item.t
+			end
+			table.insert(out, piece)
+			return
+		end
+		local lo, hi = list[1].c, list[1].c
+		for _, item in list do
+			lo, hi = lo:Min(item.c), hi:Max(item.c)
+		end
+		local size = hi - lo
+		local axis = if size.X >= size.Y and size.X >= size.Z
+			then "X"
+			elseif size.Y >= size.Z then "Y"
+			else "Z"
+		table.sort(list, function(a, b)
+			local x, y = (a.c :: any)[axis], (b.c :: any)[axis]
+			if x == y then
+				return a.i < b.i
+			end
+			return x < y
+		end)
+		local chunks = math.ceil(#list / limit)
+		local left = math.floor(chunks / 2) * limit
+		split(table.move(list, 1, left, 1, {}))
+		split(table.move(list, left + 1, #list, 1, {}))
+	end
+	split(items)
+	return out
+end
 function R.partition(mesh: Mesh, triangleLimit: number?): { Chunk }
 	local maxTriangles: number = triangleLimit or 18000
 	U.integer(maxTriangles, 1)
@@ -175,7 +221,7 @@ function R.partition(mesh: Mesh, triangleLimit: number?): { Chunk }
 	local chunks: { Chunk } = {}
 	for _, material in materials do
 		local tris = groups[material]
-		for start = 1, #tris, maxTriangles do
+		for _, piece in spatialChunks(mesh, tris, maxTriangles) do
 			local m = Mesh.new()
 			local map: { [number]: number }, reverse: { [number]: number } = {}, {}
 			local maps = {
@@ -185,8 +231,7 @@ function R.partition(mesh: Mesh, triangleLimit: number?): { Chunk }
 				corner = {} :: { [string]: { { any } } },
 				identity = { vertex = false, edge = false, face = false, corner = false },
 			}
-			for i = start, math.min(start + maxTriangles - 1, #tris) do
-				local t = tris[i]
+			for _, t in piece do
 				local vertices: { number }, corners: { Corner } = {}, {}
 				local f = mesh.faces[t.face]
 				for j = 1, 3 do

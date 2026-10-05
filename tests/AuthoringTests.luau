@@ -370,5 +370,68 @@ return function(E)
 		local _, none = E.Spatial.trimCoincident(lower, { sheet(0.01, true), sheet(1, false) })
 		assert(none == 0, "back-to-back and distant layers stay")
 	end)
+	test("Roblox.partition makes spatially compact chunks from interleaved face order", function()
+		-- every quad's first triangle, then every quad's second: the order triangulation can leave
+		local m = E.Mesh.new()
+		local ids = {}
+		for i = 0, 20 do
+			ids[i] = {}
+			for j = 0, 20 do
+				ids[i][j] = m:addVertex(Vector3.new(j, -i, 0))
+			end
+		end
+		for half = 1, 2 do
+			for i = 0, 19 do
+				for j = 0, 19 do
+					local a, b, c, d = ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j]
+					if half == 1 then
+						m:addFace({ a, b, c })
+					else
+						m:addFace({ a, c, d })
+					end
+				end
+			end
+		end
+		local chunks = E.Roblox.partition(m, 100)
+		assert(#chunks == 8, "8 full chunks")
+		local area = 0
+		for _, c in chunks do
+			assert(#c.mesh:triangles() == 100)
+			local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+			for _, v in c.mesh.vertices do
+				lo, hi = lo:Min(v), hi:Max(v)
+			end
+			area += (hi.X - lo.X) * (hi.Y - lo.Y)
+		end
+		-- compact chunks tile the 20 x 20 sheet; interleaved ones would each span all of it
+		assert(area <= 400 * 1.6, "chunk bounds overlap: " .. area)
+	end)
+	test("coincidence needs the point to project inside a triangle, not beside a gap", function()
+		-- fine checkerboard: the keeper holds one triangle of each 0.1-stud quad, the other mesh
+		-- the complementary halves 0.01 in front. Nothing overlaps, although every centroid of the
+		-- second mesh is within 0.03 of a keeper edge.
+		local function halves(which, z)
+			local m = E.Mesh.new()
+			local ids = {}
+			for i = 0, 10 do
+				ids[i] = {}
+				for j = 0, 10 do
+					ids[i][j] = m:addVertex(Vector3.new(j * 0.1, -i * 0.1, z))
+				end
+			end
+			for i = 0, 9 do
+				for j = 0, 9 do
+					local a, b, c, d = ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j]
+					m:addFace(if which == 1 then { a, b, c } else { a, c, d })
+				end
+			end
+			return m
+		end
+		local keeper, other = halves(1, 0), halves(2, 0.01)
+		near(E.Spatial.coincident(other, keeper).same, 0, 1e-9)
+		local _, removed = E.Spatial.trimCoincident(other, { keeper })
+		assert(removed == 0, "complementary halves are not coincident: " .. removed)
+		near(E.Spatial.coincident(other, halves(2, 0.02)).sameFraction, 1, 1e-6)
+	end)
 	return report
 end

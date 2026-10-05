@@ -1,5 +1,12 @@
 # Editable3D changes
 
+## 0.83.1 — 2026-10-04
+
+- **`Roblox.partition` (and `toModel`) makes spatially compact chunks.** Triangles were cut into chunks in face order. After triangulation, every quad's second triangle has a later face id, so a large quad mesh split into a chunk of all first halves and a chunk of all second halves. These checkerboards interleave across the whole surface, and with one texture bake per chunk they render as a fine speckle of two textures. Chunks now come from recursive splits along the longest axis of the triangle centroids. Every chunk except the last is full, and triangle order within a chunk is preserved.
+- **Coincidence tests need interior projection.** `Spatial.coincident`, `coincidentPairs` and `trimCoincident` count a point only when it projects inside a triangle of the other surface. Before, being within `tolerance` of a triangle edge was enough, so a fine tessellation's gaps (for example, the missing halves of a checkerboard chunk) counted as covered, and `trimCoincident` removed the faces filling them.
+
+Tests: interleaved face order gives compact chunks (it failed before), and complementary checkerboard halves are not coincident.
+
 ## 0.83.0 — 2026-10-04
 
 Coincident-surface tools, from tracking down speckled, flickering patches on a multi-part sculpt. Two chunk sets were near-duplicates, a cloth layer lay exactly on the layer beneath it, and plates of a held slab overlapped.

@@ -268,8 +268,24 @@ function Spatial.signedDistance(self: Self, point: Vector3): number
 	return self:contains(point) and -h.distance or h.distance
 end
 -- How much of mesh `a` lies on the surface of `b` (an Index or a Mesh), in area. Each triangle
--- of `a` counts when its centroid is within `tolerance` of `b` and the facings agree within
+-- of `a` counts when its centroid projects onto a triangle of `b` within `tolerance` (not merely
+-- near an edge: a gap in `b` is not coverage) and the facings agree within
 -- `angle` (or are opposite within it). Finds duplicated or overlapping layers that z-fight.
+-- The hit when `point` projects inside a triangle of `index` within `tolerance`. Closest points on a
+-- triangle edge don't count: the point then lies over a gap or beside the surface, which plain
+-- distance can't tell apart on fine tessellations.
+local function onSurface(index: Index, point: Vector3, tolerance: number): Hit?
+	local hit = index:closest(point, tolerance)
+	if not hit then
+		return nil
+	end
+	local offset = hit.position - point
+	local lateral = offset - hit.normal * offset:Dot(hit.normal)
+	if lateral.Magnitude > tolerance * 0.1 then
+		return nil
+	end
+	return hit
+end
 function Spatial.coincident(a: Types.Mesh, b: any, options: CoincidentOptions?): Coincidence
 	local o: CoincidentOptions = options or {}
 	local tolerance = o.tolerance or 0.05
@@ -284,7 +300,7 @@ function Spatial.coincident(a: Types.Mesh, b: any, options: CoincidentOptions?):
 			local size = cross.Magnitude / 2
 			if size > 1e-12 then
 				area += size
-				local hit = index:closest((p + q + r) / 3, tolerance)
+				local hit = onSurface(index, (p + q + r) / 3, tolerance)
 				if hit then
 					local facing = (cross / (2 * size)):Dot(hit.normal)
 					if facing >= cosine then
@@ -388,7 +404,7 @@ function Spatial.trimCoincident(
 			center /= area
 			normal = normal.Unit
 			for _, index in indices do
-				local hit = index:closest(center, tolerance)
+				local hit = onSurface(index, center, tolerance)
 				if hit and normal:Dot(hit.normal) >= cosine then
 					out.faces[id] = nil
 					removed += 1
