@@ -35,6 +35,7 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Keep authoring meshes (`E.Mesh`) in the session as the source of truth; native bundles are previews. Destroy a previous bundle before building its replacement.
 
 ## Measuring against references
+- Cross-check a close-up photo's scale against the full-object photo before sculpting from it. A detail photo calibrated from an assumed distance (say, eye spacing) can be 25% off, and every feature built on it inherits the error. Invert the full-object calibration at each landmark, including its depth (perspective and elevation terms), and compare the ratios. When the close-up's own ratios agree with the full photo at a different scale, the assumed distance was wrong.
 
 - A single frontal photo can't tell which way a flat object (a plaque, a tablet, a shield) is yawed: a face turned 45° left and one turned 45° right project to the same width. Resolve it with a second view (a side or three-quarter photo shows which face is visible) or with lighting (which face catches the sun or sky).
 - Check placement against the body: sample the surface the object rests on, and push parts that must pass behind it (a forearm behind a held slab) out through the correct face. Pushing to the nearest face can flatten them onto the front.
