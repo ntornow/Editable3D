@@ -70,6 +70,13 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Reshape the low frequencies only: blur a frontmost-depth grid, fit a smooth target per row (for example a superellipse through the edge width and the depth near the midline), and offset the front layer by (target − blurred). Weight the front layer from the blurred grid and apply it per vertex with `Deform.map`, which leaves no gaps; the fine detail rides along.
 - World-projected rain streaks and sheet seams from a large-surface shader read as stripes on a face. Give faces their own shader with mottling and orientation weathering only.
 
+## Masks, shells and seams
+
+- A sculpt built as a front "mask" (a face, a relief) looks like a mask in profile. Build a closed volume behind it that tracks the mask's own per-row arcs, set slightly behind the mask's centre but in front of its rim. Then remove the mask's faces where the volume covers them (raycast along the view and compare depths). Coincident rims z-fight as small tears.
+- Before treating a line on a surface as a crack, check it two ways: `MeshRepair.audit` for boundary and crack edges near it, and a front-depth profile across it (raycasts along the view at a few x). A continuous profile with no boundary edges means it's texture, such as a panel seam in the shader, or a fold seen at grazing angles.
+- Run `MeshRepair.unfold` on heavily deformed sculpts (faces after several relief and smoothing passes) before publishing. Folded triangles render as small tears.
+- On a read-back part, a session reference to a hidden original makes `Transparency < 1` filters skip it. Measure on the preview parts you are actually showing.
+
 ## Re-texturing published parts
 
 - Multi-part models made by `toModel`/`partition` are 18k-triangle chunks that can overlap spatially. A part's name doesn't tell you which surface region it covers, so rebuild or re-texture whole groups, not single chunks.
