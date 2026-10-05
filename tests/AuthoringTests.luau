@@ -492,5 +492,57 @@ return function(E)
 		assert(out.vertices[a1] == out.vertices[a2] and out.vertices[b1] == out.vertices[b2], "crack opened")
 		assert(out.vertices[a1] ~= m.vertices[a1], "the shared edge moved")
 	end)
+	test("Primitives.prism faces outward for concave polygons in either winding", function()
+		local function volume(m)
+			local v = 0
+			for _, t in m:triangles() do
+				local a, b, c = m.vertices[t[1]], m.vertices[t[2]], m.vertices[t[3]]
+				v += a:Dot(b:Cross(c)) / 6
+			end
+			return v
+		end
+		assert(volume(E.Primitives.box(Vector3.new(1, 2, 3))) > 0, "sign convention follows box")
+		-- an L shape: area 3 (unit squares), concave corner at (1, 1)
+		local l = {
+			Vector2.new(0, 0),
+			Vector2.new(2, 0),
+			Vector2.new(2, 1),
+			Vector2.new(1, 1),
+			Vector2.new(1, 2),
+			Vector2.new(0, 2),
+		}
+		local reversed = {}
+		for i = #l, 1, -1 do
+			table.insert(reversed, l[i])
+		end
+		for _, poly in { l, reversed } do
+			local m = E.Primitives.prism(poly, 1, 3)
+			near(volume(m), 6, 1e-9)
+			-- each side face's normal points away from the interior
+			for fid, f in m.faces do
+				local n = m:faceNormal(fid)
+				if math.abs(n.Y) < 0.5 then
+					local c = Vector3.zero
+					for _, v in f.vertices do
+						c += m.vertices[v]
+					end
+					c /= #f.vertices
+					local probe = c + n * 0.01
+					local inside = probe.Y > 1
+						and probe.Y < 3
+						and probe.X > 0
+						and probe.Z > 0
+						and (probe.X < 1 and probe.Z < 2 or probe.Z < 1 and probe.X < 2)
+					assert(not inside, "side face points inward")
+				end
+			end
+		end
+		-- a battered base: frustum of a 2 x 2 square, bottom scaled 1.5
+		local sq = { Vector2.new(-1, -1), Vector2.new(1, -1), Vector2.new(1, 1), Vector2.new(-1, 1) }
+		near(volume(E.Primitives.prism(sq, 0, 3, { bottomScale = 1.5 })), (4 + 9 + 6) * 3 / 3, 1e-9)
+		-- stairs: solid volume = sum of step blocks
+		local st = E.Primitives.stairs(2, 4, 2, 4)
+		near(volume(st), 2 * (1 * 0.5 * 4 + 1 * 0.5 * 3 + 1 * 0.5 * 2 + 1 * 0.5 * 1) / 1, 1e-9)
+	end)
 	return report
 end

@@ -1,5 +1,12 @@
 # Editable3D changes
 
+## 0.85.0 — unreleased
+
+- **`Primitives.prism(polygon, y0, y1, {bottomScale})`:** an outward-facing prism over any simple polygon in the XZ plane, convex or concave, in either winding. Side faces are flat-shaded and caps are single polygons (concave caps triangulate by ear clipping). `bottomScale` widens the base for battered walls. A loft of two rings is inside-out or right depending on winding, which isn't obvious until it renders inside-out.
+- **`Primitives.stairs(width, depth, height, steps)`:** a solid flight of stacked step blocks climbing toward +Z.
+
+Tests: an L-shaped prism in both windings has positive volume and outward side faces; a battered frustum and a stair flight have the expected volumes.
+
 ## 0.84.0 — 2026-10-04
 
 - **`Topology.snap(meshes, tolerance)`:** closes hairline cracks across a set of meshes. Vertices join the nearest cluster seed within `tolerance`, so no vertex moves further than that (chained clustering had dragged some corners 0.47 studs at a 0.045 tolerance). Each vertex then moves to its cluster's average. Corners and UVs are kept, so baked textures still fit, and faces that collapse are removed. Returns `(meshes, moved, removed)`. On a six-chunk sculpt whose shared corners had drifted 0.04 apart, a tolerance of 0.05 cut open edges from 221k to 8.7k.

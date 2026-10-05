@@ -553,6 +553,8 @@ Source: [src/Primitives.luau](src/Primitives.luau)
 - `Primitives.sphere(radius: number?, segments: number?, rings: number?): Mesh`
 - `Primitives.cylinder(radius: number?, height: number?, segments: number?, topRadius: number?): Mesh`
 - `Primitives.torus(major: number?, minor: number?, segments: number?, sides: number?): Mesh`
+- `Primitives.prism(polygon: { Vector2 }, y0: number, y1: number, options: { bottomScale: number? }?): Mesh`
+- `Primitives.stairs(width: number, depth: number, height: number, steps: number): Mesh`
 
 ## Quaternion
 
