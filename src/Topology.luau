@@ -463,4 +463,76 @@ function T.dissolveEdge(mesh: Mesh, a: number, b: number): Mesh
 	A.transfer(mesh, out, maps)
 	return out:removeUnused():recalculateNormals()
 end
+-- Closes hairline cracks across a set of meshes: vertices within `tolerance` of each other (in any
+-- of the meshes, chained) move to the average of their cluster. Topology, corners and UVs are kept,
+-- so baked textures still fit. Use it on chunks of one surface whose shared corners drifted apart
+-- (for example, parts deformed separately) before Normals.unify.
+function T.snap(meshes: { Mesh }, tolerance: number): ({ Mesh }, number)
+	assert(tolerance > 0, "Positive tolerance required")
+	local refs: { { mesh: number, id: number, p: Vector3 } } = {}
+	for mi, m in meshes do
+		for id, p in m.vertices do
+			table.insert(refs, { mesh = mi, id = id, p = p })
+		end
+	end
+	local parent = table.create(#refs, 0)
+	for i = 1, #refs do
+		parent[i] = i
+	end
+	local function find(i: number): number
+		while parent[i] ~= i do
+			parent[i] = parent[parent[i]]
+			i = parent[i]
+		end
+		return i
+	end
+	local buckets: { [string]: { number } } = {}
+	local function cell(p: Vector3): (number, number, number)
+		return math.floor(p.X / tolerance), math.floor(p.Y / tolerance), math.floor(p.Z / tolerance)
+	end
+	for i, r in refs do
+		local x, y, z = cell(r.p)
+		for dx = -1, 1 do
+			for dy = -1, 1 do
+				for dz = -1, 1 do
+					local list: { number } = buckets[(x + dx) .. "," .. (y + dy) .. "," .. (z + dz)] or {}
+					for _, j in list do
+						if (refs[j].p - r.p).Magnitude <= tolerance then
+							local a, b = find(i), find(j)
+							if a ~= b then
+								parent[math.max(a, b)] = math.min(a, b)
+							end
+						end
+					end
+				end
+			end
+		end
+		local k = x .. "," .. y .. "," .. z
+		buckets[k] = buckets[k] or {}
+		table.insert(buckets[k], i)
+	end
+	local sum: { [number]: Vector3 }, count: { [number]: number } = {}, {}
+	for i, r in refs do
+		local root = find(i)
+		sum[root] = (sum[root] or Vector3.zero) + r.p
+		count[root] = (count[root] or 0) + 1
+	end
+	local out: { Mesh } = {}
+	for mi, m in meshes do
+		out[mi] = m:clone()
+	end
+	local moved = 0
+	for i, r in refs do
+		local root = find(i)
+		local target = sum[root] / count[root]
+		if target ~= r.p then
+			out[r.mesh].vertices[r.id] = target
+			moved += 1
+		end
+	end
+	for _, m in out do
+		m.revision += 1
+	end
+	return out, moved
+end
 return T
