@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.91.1 — 2026-10-05
+
+- **`Roblox.rebake` forwards budget options** (`maxSeconds`, `maxWork`, `checkpoint`, `cancelled`) to each part's bake. The 60-second default stopped 1024² bakes with expensive shaders.
+- Skill: `EditableImage` previews render about 10 levels brighter than the same pixels published; calibrate colour on published textures.
+
 ## 0.91.0 — 2026-10-05
 
 - **`Bake.vertexOcclusion(mesh, {occluder, samples, distance, bias})`:** ambient occlusion per vertex (cosine-weighted hemisphere rays along the area-weighted vertex normal) instead of per texel. That makes occlusion affordable on meshes with tens of thousands of vertices. Returns `{[vertex] = openness}`.

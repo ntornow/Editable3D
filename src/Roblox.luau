@@ -690,7 +690,10 @@ function R.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOpti
 	return report
 end
 -- readPrevious: read the current colour map back and pass it to the shader (one extra image in memory).
-export type RebakeOptions = { size: number?, padding: number?, srgb: boolean?, readPrevious: boolean? }
+-- Budget fields (maxSeconds, maxWork, checkpoint, cancelled) apply to each part's bake.
+export type RebakeOptions =
+	Types.Limits
+	& { size: number?, padding: number?, srgb: boolean?, readPrevious: boolean? }
 export type Rebake = {
 	entries: {
 		{
@@ -741,7 +744,16 @@ function R.rebake(
 		end
 		local texture = Bake.rasterize(mesh, size, size, function(ctx)
 			return shader(ctx.position, ctx.normal, part, ctx, previousTexture)
-		end, { padding = o.padding or 4 })
+		end, {
+			padding = o.padding or 4,
+			maxSeconds = o.maxSeconds,
+			maxWork = o.maxWork,
+			maxBytes = o.maxBytes,
+			maxPixels = o.maxPixels,
+			checkpointEvery = o.checkpointEvery,
+			checkpoint = o.checkpoint,
+			cancelled = o.cancelled,
+		})
 		if previousImage then
 			previousImage:Destroy()
 		end

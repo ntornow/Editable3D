@@ -92,6 +92,8 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 ## Shading published parts
 
 - Per-texel `Bake.ambientOcclusion` is too slow for large sculpts (1024² texels × rays per part). Weld the parts, run `Bake.vertexOcclusion` once (a 3–5 stud `distance` captures folds without darkening a whole body), wrap the result in `Bake.pointSampler` with the vertex normals, then `Roblox.rebake(parts, shader, {readPrevious = true})`. Multiply `previous:sample(ctx.uv)` by an occlusion factor normalised by the mean, so the calibrated median colour stays put.
+- **Previews render brighter than published textures.** The same pixels shown through an `EditableImage` (`Content.fromObject`) render about 10 levels brighter (on a 0–255 scale) than the published asset: measured 147/197/195 against 135/187/186 on identical copies. Calibrate colour only on published textures, or compare a preview against a preview of the baseline (an unmodified `CreateEditableImageAsync` copy), never a preview against published.
+- Measure before adding shading passes. On a soft overcast sculpt, the median and luminance spread of a fold region can already match the photo; then occlusion only adds risk (edge speckle where inner layers sit under the outer sheet). Drop points that are almost fully occluded (hidden layers) from the sampler, and keep its radius under the layer spacing.
 - A published part's colour map is an asset URI; a preview's is an `EditableImage` object. `readPrevious` handles both.
 
 ## Publishing

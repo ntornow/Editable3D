@@ -187,6 +187,27 @@ return function(E, options)
 		E.Roblox.destroy(bundle)
 		assert(ok, err)
 	end)
+	test("Roblox.rebake forwards budget options to each bake", function()
+		local bundle =
+			E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(4, 4, 4))), { name = "RebakeBudget" })
+		local part = bundle.handles[1].part
+		local ok, err = pcall(function()
+			local checkpoints = 0
+			local handle = E.Roblox.rebake({ part }, function()
+				return Color3.new(0, 0, 1), 1
+			end, {
+				size = 32,
+				checkpointEvery = 16,
+				checkpoint = function()
+					checkpoints += 1
+				end,
+			})
+			assert(checkpoints > 0, "checkpoint callback reached the bake")
+			handle:revert()
+		end)
+		E.Roblox.destroy(bundle)
+		assert(ok, err)
+	end)
 	test("Roblox.fillTerrain writes land, edge band and sea inside the outline's box", function()
 		local terrain = workspace.Terrain
 		local origin = Vector2.new(4000, 4000)
