@@ -320,5 +320,55 @@ return function(E)
 		R.destroy(preview)
 		assert(table.concat(log, ",") == "editable,image,model,m2,e2")
 	end)
+	test("Spatial.coincident measures co-facing and back-to-back overlap by area", function()
+		local function sheet(z, flip, shift)
+			local out = {}
+			for i = 1, 4 do
+				local row = {}
+				for j = 1, 5 do
+					row[j] = Vector3.new(j + (shift or 0), -i, z)
+				end
+				out[if flip then 5 - i else i] = row
+			end
+			return E.Curves.loft(out, true, { closed = false })
+		end
+		local base = sheet(0, false)
+		local c = E.Spatial.coincident(base, sheet(0.01, false))
+		near(c.area, 12, 1e-6)
+		near(c.sameFraction, 1, 1e-6)
+		near(c.oppositeFraction, 0, 1e-6)
+		local back = E.Spatial.coincident(base, sheet(0.01, true))
+		near(back.sameFraction, 0, 1e-6)
+		near(back.oppositeFraction, 1, 1e-6)
+		near(E.Spatial.coincident(base, sheet(0.5, false)).sameFraction, 0, 1e-6)
+		-- half the sheet overlaps a copy shifted by 2 of its 4 columns
+		local half = E.Spatial.coincident(base, E.Spatial.new(sheet(0, false, 2)), { tolerance = 0.01 })
+		near(half.same, 6, 1e-6)
+		local pairs_ = E.Spatial.coincidentPairs({ base, sheet(0.02, false), sheet(3, false) })
+		assert(#pairs_ == 2, "only the first two sheets coincide")
+		for _, pr in pairs_ do
+			assert(pr.a ~= 3 and pr.b ~= 3)
+			near(pr.sameFraction, 1, 1e-6)
+		end
+	end)
+	test("Spatial.trimCoincident removes only the co-facing overlap", function()
+		local function sheet(z, flip, shift)
+			local out = {}
+			for i = 1, 4 do
+				local row = {}
+				for j = 1, 5 do
+					row[j] = Vector3.new(j + (shift or 0), -i, z)
+				end
+				out[if flip then 5 - i else i] = row
+			end
+			return E.Curves.loft(out, true, { closed = false })
+		end
+		local lower = sheet(0, false)
+		local trimmed, removed = E.Spatial.trimCoincident(lower, { sheet(0.01, false, 2) })
+		assert(removed == 6, "two of four columns, 3 rows of quads: " .. removed)
+		near(E.Spatial.coincident(trimmed, sheet(0, false)).area, 6, 1e-6)
+		local _, none = E.Spatial.trimCoincident(lower, { sheet(0.01, true), sheet(1, false) })
+		assert(none == 0, "back-to-back and distant layers stay")
+	end)
 	return report
 end

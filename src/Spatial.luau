@@ -28,6 +28,24 @@ export type Index = {
 	contains: (Index, Vector3) -> boolean,
 	signedDistance: (Index, Vector3) -> number,
 }
+export type CoincidentOptions = {
+	-- largest gap between the surfaces, studs (default 0.05)
+	tolerance: number?,
+	-- largest angle between the facings, degrees (default 30)
+	angle: number?,
+	-- test every n-th triangle of the first mesh (default 1)
+	stride: number?,
+}
+-- Area of a mesh that lies on another surface. "same" is co-facing area (it z-fights when
+-- rendered); "opposite" is back-to-back area (harmless for single-sided rendering).
+export type Coincidence = {
+	area: number,
+	same: number,
+	opposite: number,
+	sameFraction: number,
+	oppositeFraction: number,
+}
+export type CoincidentPair = Coincidence & { a: number, b: number }
 type Self = Index
 local Spatial = {}
 Spatial.__index = Spatial
@@ -248,5 +266,137 @@ end
 function Spatial.signedDistance(self: Self, point: Vector3): number
 	local h = assert(self:closest(point), "Empty spatial index")
 	return self:contains(point) and -h.distance or h.distance
+end
+-- How much of mesh `a` lies on the surface of `b` (an Index or a Mesh), in area. Each triangle
+-- of `a` counts when its centroid is within `tolerance` of `b` and the facings agree within
+-- `angle` (or are opposite within it). Finds duplicated or overlapping layers that z-fight.
+function Spatial.coincident(a: Types.Mesh, b: any, options: CoincidentOptions?): Coincidence
+	local o: CoincidentOptions = options or {}
+	local tolerance = o.tolerance or 0.05
+	local cosine = math.cos(math.rad(o.angle or 30))
+	local stride = math.max(1, math.floor(o.stride or 1))
+	local index: Index = if getmetatable(b) == Spatial then b else Spatial.new(b)
+	local area, same, opposite = 0, 0, 0
+	for i, t in a:triangles() do
+		if (i - 1) % stride == 0 then
+			local p, q, r = a.vertices[t[1]], a.vertices[t[2]], a.vertices[t[3]]
+			local cross = (q - p):Cross(r - p)
+			local size = cross.Magnitude / 2
+			if size > 1e-12 then
+				area += size
+				local hit = index:closest((p + q + r) / 3, tolerance)
+				if hit then
+					local facing = (cross / (2 * size)):Dot(hit.normal)
+					if facing >= cosine then
+						same += size
+					elseif facing <= -cosine then
+						opposite += size
+					end
+				end
+			end
+		end
+	end
+	return {
+		area = area,
+		same = same,
+		opposite = opposite,
+		sameFraction = if area > 0 then same / area else 0,
+		oppositeFraction = if area > 0 then opposite / area else 0,
+	}
+end
+-- Every ordered pair of meshes (bounding boxes within `tolerance`) whose co-facing coincident
+-- area is at least `minFraction` (default 0.01) of the first mesh. Sorted by `same`, largest first.
+function Spatial.coincidentPairs(
+	meshes: { Types.Mesh },
+	options: (CoincidentOptions & { minFraction: number? })?
+): { CoincidentPair }
+	local o: CoincidentOptions & { minFraction: number? } = options or {} :: any
+	local tolerance = o.tolerance or 0.05
+	local minFraction = o.minFraction or 0.01
+	local boxes, indices = {}, {}
+	for i, m in meshes do
+		local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+		for _, v in m.vertices do
+			lo, hi = lo:Min(v), hi:Max(v)
+		end
+		boxes[i] = { lo = lo - Vector3.one * tolerance, hi = hi + Vector3.one * tolerance }
+	end
+	local out: { CoincidentPair } = {}
+	for i, m in meshes do
+		for j = 1, #meshes do
+			local A, B = boxes[i], boxes[j]
+			if
+				i ~= j
+				and A.lo.X <= B.hi.X
+				and B.lo.X <= A.hi.X
+				and A.lo.Y <= B.hi.Y
+				and B.lo.Y <= A.hi.Y
+				and A.lo.Z <= B.hi.Z
+				and B.lo.Z <= A.hi.Z
+			then
+				indices[j] = indices[j] or Spatial.new(meshes[j])
+				local c = Spatial.coincident(m, indices[j], o)
+				if c.sameFraction >= minFraction then
+					table.insert(out, {
+						a = i,
+						b = j,
+						area = c.area,
+						same = c.same,
+						opposite = c.opposite,
+						sameFraction = c.sameFraction,
+						oppositeFraction = c.oppositeFraction,
+					})
+				end
+			end
+		end
+	end
+	table.sort(out, function(x, y)
+		return x.same > y.same
+	end)
+	return out
+end
+-- Removes the faces of `mesh` that lie on any of `keepers` (Indexes or Meshes) and face the same
+-- way, so the keepers alone render there. Returns the trimmed mesh and the removed face count.
+-- Use it to resolve z-fighting between layers built on one surface (cloth over cloth, a frame
+-- over glazing) or chunk borders duplicated when a mesh was split.
+function Spatial.trimCoincident(
+	mesh: Types.Mesh,
+	keepers: { any },
+	options: CoincidentOptions?
+): (Types.Mesh, number)
+	local o: CoincidentOptions = options or {}
+	local tolerance = o.tolerance or 0.05
+	local cosine = math.cos(math.rad(o.angle or 30))
+	local indices: { Index } = {}
+	for i, k in keepers do
+		indices[i] = if getmetatable(k) == Spatial then k else Spatial.new(k)
+	end
+	local out = mesh:clone()
+	local removed = 0
+	for id, f in out.faces do
+		local vs = f.vertices
+		local p0 = out.vertices[vs[1]]
+		local normal, center, area = Vector3.zero, Vector3.zero, 0
+		for i = 2, #vs - 1 do
+			local cross = (out.vertices[vs[i]] - p0):Cross(out.vertices[vs[i + 1]] - p0)
+			local size = cross.Magnitude / 2
+			normal += cross
+			center += (p0 + out.vertices[vs[i]] + out.vertices[vs[i + 1]]) / 3 * size
+			area += size
+		end
+		if area > 1e-12 then
+			center /= area
+			normal = normal.Unit
+			for _, index in indices do
+				local hit = index:closest(center, tolerance)
+				if hit and normal:Dot(hit.normal) >= cosine then
+					out.faces[id] = nil
+					removed += 1
+					break
+				end
+			end
+		end
+	end
+	return out:removeUnused(), removed
 end
 return Spatial

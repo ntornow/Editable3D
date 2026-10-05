@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.82.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.83.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -715,6 +715,9 @@ Source: [src/Spatial.luau](src/Spatial.luau)
 - `Spatial:raycast(origin: Vector3, direction: Vector3, maxDistance: number?): Hit?`
 - `Spatial:contains(point: Vector3): boolean`
 - `Spatial:signedDistance(point: Vector3): number`
+- `Spatial.coincident(a: Types.Mesh, b: any, options: CoincidentOptions?): Coincidence`
+- `Spatial.coincidentPairs(meshes: { Types.Mesh }, options: (CoincidentOptions & { minFraction: number? })?): { CoincidentPair }`
+- `Spatial.trimCoincident(mesh: Types.Mesh, keepers: { any }, options: CoincidentOptions?): (Types.Mesh, number)`
 - `Spatial.closestTriangle(point, a, b, c)`
 
 ## SplineFit

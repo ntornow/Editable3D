@@ -1,5 +1,15 @@
 # Editable3D changes
 
+## 0.83.0 — 2026-10-04
+
+Coincident-surface tools, from tracking down speckled, flickering patches on a multi-part sculpt. Two chunk sets were near-duplicates, a cloth layer lay exactly on the layer beneath it, and plates of a held slab overlapped.
+
+- **`Spatial.coincident(a, b, {tolerance, angle, stride})`:** how much of mesh `a`'s area lies on `b` (a Mesh or an Index), split into co-facing area (`same`, which z-fights) and back-to-back area (`opposite`).
+- **`Spatial.coincidentPairs(meshes, options)`:** audits a set of meshes. It returns every ordered pair whose co-facing overlap is at least `minFraction` of the first mesh, largest first. Bounding boxes are prefiltered.
+- **`Spatial.trimCoincident(mesh, keepers, options)`:** removes the faces of `mesh` that lie on any keeper and face the same way, so the keepers alone render there. Returns the trimmed mesh and the removed face count.
+
+Tests: offset, flipped, distant and half-overlapping sheets.
+
 ## 0.82.0 — 2026-10-04
 
 - **`Texture:guided(guide, radius, eps)`:** guided filter (He, Sun and Tang 2013). It is edge-preserving smoothing of a texture's RGB, steered by another image's luminance: edges in the guide stay sharp and flat guide areas are smoothed. Use it to snap soft depth or height fields to the crisp edges of a photograph, or to clean baked maps. Summed-area tables keep the cost independent of the radius.
