@@ -544,5 +544,30 @@ return function(E)
 		local st = E.Primitives.stairs(2, 4, 2, 4)
 		near(volume(st), 2 * (1 * 0.5 * 4 + 1 * 0.5 * 3 + 1 * 0.5 * 2 + 1 * 0.5 * 1) / 1, 1e-9)
 	end)
+	test("Primitives.tree is deterministic, stands on the ground and splits bark from foliage", function()
+		local a = E.Primitives.tree({ height = 20, seed = 3 })
+		local b = E.Primitives.tree({ height = 20, seed = 3 })
+		local c = E.Primitives.tree({ height = 20, seed = 4 })
+		local function bounds(m)
+			local lo, hi = Vector3.one * math.huge, -Vector3.one * math.huge
+			for _, v in m.vertices do
+				lo, hi = lo:Min(v), hi:Max(v)
+			end
+			return lo, hi
+		end
+		local la, ha = bounds(a)
+		local lb, hb = bounds(b)
+		assert(la == lb and ha == hb, "same seed, same tree")
+		local lc, hc = bounds(c)
+		assert(lc ~= la or hc ~= ha, "different seed, different tree")
+		near(la.Y, 0, 1e-6)
+		assert(ha.Y > 20 * 0.85 and ha.Y < 20 * 1.2, "height " .. ha.Y)
+		local materials = {}
+		for _, f in a.faces do
+			materials[f.material] = (materials[f.material] or 0) + 1
+		end
+		assert(materials[1] and materials[2] and materials[2] > materials[1], "bark and foliage")
+		assert(#E.Roblox.partition(a, 18000) == 2, "one chunk per material")
+	end)
 	return report
 end

@@ -249,4 +249,91 @@ function P.stairs(width: number, depth: number, height: number, steps: number): 
 	end
 	return m:recalculateNormals()
 end
+export type TreeOptions = {
+	height: number?,
+	trunkRadius: number?,
+	crownRadius: number?,
+	lobes: number?,
+	branches: number?,
+	seed: number?,
+	detail: number?,
+}
+-- A broadleaf tree standing on y = 0: a tapered trunk with branches (material 1) and a crown of
+-- overlapping noise-displaced lobes (material 2), so Roblox.toModel puts bark and foliage in
+-- separate parts for separate textures. Deterministic for a given seed. `detail` scales the
+-- lobe tessellation (default 1: about 2,000 crown triangles).
+function P.tree(options: TreeOptions?): Mesh
+	local o: TreeOptions = options or {}
+	local height = o.height or 24
+	local trunkRadius = o.trunkRadius or height * 0.035
+	local crownRadius = o.crownRadius or height * 0.32
+	local lobes = o.lobes or 7
+	local branches = o.branches or 4
+	local seed = o.seed or 1
+	local detail = o.detail or 1
+	assert(height > 0 and trunkRadius > 0 and crownRadius > 0, "Positive tree sizes required")
+	U.integer(lobes, 1)
+	U.integer(branches, 0)
+	local Pattern = require(script.Parent.Pattern)
+	local function rand(i: number, k: number): number
+		return Pattern.hash(i, k, seed, 7919)
+	end
+	local m = Mesh.new()
+	local function append(src: Mesh, place: (Vector3) -> Vector3, material: number)
+		local map = {}
+		for id, v in src.vertices do
+			map[id] = m:addVertex(place(v))
+		end
+		for _, f in src.faces do
+			local ids = {}
+			for i, v in f.vertices do
+				ids[i] = map[v]
+			end
+			m:addFace(ids, nil, material)
+		end
+	end
+	local crownY = height - crownRadius
+	-- trunk: tapered cylinder from the ground to the crown centre
+	local trunk = P.cylinder(trunkRadius, crownY, 10, trunkRadius * 0.55)
+	append(trunk, function(v)
+		return v + Vector3.new(0, crownY / 2, 0)
+	end, 1)
+	-- branches: from the upper trunk out toward the crown, leaning up
+	for b = 1, branches do
+		local yaw = 2 * math.pi * (b - 1 + rand(b, 1) * 0.6) / branches
+		local base = Vector3.new(0, crownY * (0.55 + 0.25 * rand(b, 2)), 0)
+		local dir = Vector3.new(math.cos(yaw), 0.9 + 0.5 * rand(b, 3), math.sin(yaw)).Unit
+		local len = crownRadius * (0.7 + 0.3 * rand(b, 4))
+		local branch = P.cylinder(trunkRadius * 0.4, len, 6, trunkRadius * 0.18)
+		local frame = CFrame.lookAt(base + dir * len / 2, base + dir * len)
+			* CFrame.Angles(-math.pi / 2, 0, 0)
+		append(branch, function(v)
+			return frame:PointToWorldSpace(v)
+		end, 1)
+	end
+	-- crown: lobes around the crown centre, biased upward and outward
+	local segments = math.max(6, math.floor(14 * detail))
+	local rings = math.max(4, math.floor(9 * detail))
+	for l = 1, lobes do
+		local a = 2 * math.pi * (l - 1 + rand(l, 5)) / lobes
+		local up = (rand(l, 6) - 0.35) * 0.8
+		local dir = Vector3.new(math.cos(a), up, math.sin(a)).Unit
+		local r = crownRadius * (0.5 + 0.2 * rand(l, 7))
+		local center = Vector3.new(0, crownY, 0) + dir * crownRadius * (0.35 + 0.15 * rand(l, 8))
+		if l == 1 then
+			center, r = Vector3.new(0, crownY + crownRadius * 0.25, 0), crownRadius * 0.62
+		end
+		local lobe = P.sphere(1, segments, rings)
+		append(lobe, function(v)
+			local n = v.Magnitude > 0 and v.Unit or Vector3.yAxis
+			local bump = Pattern.fbm(
+				center + n * r,
+				{ frequency = 0.45 / math.max(r, 1e-3) * 4, octaves = 3, seed = seed + l }
+			)
+			local flat = 1 - 0.18 * math.max(0, -n.Y) -- flatter undersides
+			return center + n * r * (1 + 0.22 * bump) * Vector3.new(1, flat, 1)
+		end, 2)
+	end
+	return m:recalculateNormals()
+end
 return P

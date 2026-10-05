@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.84.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.85.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -555,6 +555,7 @@ Source: [src/Primitives.luau](src/Primitives.luau)
 - `Primitives.torus(major: number?, minor: number?, segments: number?, sides: number?): Mesh`
 - `Primitives.prism(polygon: { Vector2 }, y0: number, y1: number, options: { bottomScale: number? }?): Mesh`
 - `Primitives.stairs(width: number, depth: number, height: number, steps: number): Mesh`
+- `Primitives.tree(options: TreeOptions?): Mesh`
 
 ## Quaternion
 

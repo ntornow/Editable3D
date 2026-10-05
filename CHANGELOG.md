@@ -1,11 +1,12 @@
 # Editable3D changes
 
-## 0.85.0 — unreleased
+## 0.85.0 — 2026-10-04
 
 - **`Primitives.prism(polygon, y0, y1, {bottomScale})`:** an outward-facing prism over any simple polygon in the XZ plane, convex or concave, in either winding. Side faces are flat-shaded and caps are single polygons (concave caps triangulate by ear clipping). `bottomScale` widens the base for battered walls. A loft of two rings is inside-out or right depending on winding, which isn't obvious until it renders inside-out.
 - **`Primitives.stairs(width, depth, height, steps)`:** a solid flight of stacked step blocks climbing toward +Z.
+- **`Primitives.tree({height, trunkRadius, crownRadius, lobes, branches, seed, detail})`:** a broadleaf tree standing on y = 0. The tapered trunk and branches are material 1, and the crown of noise-displaced lobes is material 2, so `toModel` gives bark and foliage separate parts and textures. It is deterministic per seed.
 
-Tests: an L-shaped prism in both windings has positive volume and outward side faces; a battered frustum and a stair flight have the expected volumes.
+Tests: an L-shaped prism in both windings has positive volume and outward side faces; a battered frustum and a stair flight have the expected volumes; trees are deterministic, stand on the ground and split into two material chunks.
 
 ## 0.84.0 — 2026-10-04
 
