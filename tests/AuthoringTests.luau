@@ -126,6 +126,43 @@ return function(E)
 		assert((relaxed.vertices[id[5][6]] - out.vertices[id[5][6]]).Magnitude > 1e-4)
 		near((relaxed.vertices[id[2][2]] - out.vertices[id[2][2]]).Magnitude, 0)
 	end)
+	test("vertexOcclusion darkens the inside of a fold and pointSampler keeps sheets apart", function()
+		-- a floor with a wall standing on it: floor vertices next to the wall are half enclosed
+		local floor = E.Primitives.grid(10, 10, Vector2.new(10, 10))
+		local wall = E.Deform.map(E.Primitives.grid(10, 4, Vector2.new(10, 4)), function(p)
+			return Vector3.new(0.05, p.Z + 2, p.X)
+		end)
+		local open = E.Bake.vertexOcclusion(floor, { samples = 32, distance = 20 })
+		local closed = E.Bake.vertexOcclusion(
+			floor,
+			{ occluder = E.Topology.join({ floor, wall }), samples = 32, distance = 20 }
+		)
+		local near0, far0 = nil, nil
+		for id, p in floor.vertices do
+			near(open[id], 1)
+			if math.abs(p.X - 1) < 1e-6 and math.abs(p.Z) < 1e-6 then
+				near0 = closed[id]
+			elseif math.abs(p.X - 5) < 1e-6 and math.abs(p.Z) < 1e-6 then
+				far0 = closed[id]
+			end
+		end
+		assert(
+			near0 and far0 and near0 < far0 and near0 < 0.85,
+			string.format("near %s far %s", tostring(near0), tostring(far0))
+		)
+		-- sampler: a smooth blend in space, nil far away, and the normal keeps opposite sheets apart
+		local sample = E.Bake.pointSampler(
+			{ Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 0.2, 0) },
+			{ 0, 1, 5 },
+			1,
+			{ Vector3.yAxis, Vector3.yAxis, -Vector3.yAxis }
+		)
+		local mid = sample(Vector3.new(0.5, 0, 0), Vector3.yAxis)
+		assert(mid and math.abs(mid - 0.5) < 1e-6, tostring(mid))
+		local below = sample(Vector3.new(0, 0.2, 0), -Vector3.yAxis)
+		assert(below and math.abs(below - 5) < 1e-6, tostring(below))
+		assert(sample(Vector3.new(10, 0, 0)) == nil)
+	end)
 	test("outward lofts face out whichever way the rings are stacked", function()
 		local function volume(m)
 			local v = 0

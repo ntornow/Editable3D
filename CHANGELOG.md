@@ -1,5 +1,11 @@
 # Editable3D changes
 
+## 0.91.0 — 2026-10-05
+
+- **`Bake.vertexOcclusion(mesh, {occluder, samples, distance, bias})`:** ambient occlusion per vertex (cosine-weighted hemisphere rays along the area-weighted vertex normal) instead of per texel. That makes occlusion affordable on meshes with tens of thousands of vertices. Returns `{[vertex] = openness}`.
+- **`Bake.pointSampler(points, values, radius, normals?)`:** a smooth lookup of scattered values at any position for bake shaders. It blends with Gaussian weights inside `radius`, times normal agreement, so the two sheets of a thin fold stay apart.
+- **`Roblox.rebake` shaders receive `(position, normal, part, ctx, previous)`:** `ctx` is the full bake context (uv, face, barycentric). With `readPrevious = true`, `previous` is the part's current colour map as a Texture (asset or EditableImage), so a pass can modulate the existing texture, for example by multiplying in occlusion.
+
 ## 0.90.0 — 2026-10-05
 
 - **`Sculpt.smoothBoundary(mesh, mask, iterations, {lambda, mu, rings, ringIterations})`:** Taubin-smooths each open boundary along its own curve. Each boundary vertex moves toward the mean of its two boundary neighbours; vertices where several boundary runs meet stay put. This straightens the staircase edges left when a sheet is cut along a diagonal of its grid (cloth layers, trimmed shells), which `Sculpt.smooth` cannot fix because it pins the boundary. `rings` relaxes that many interior rings behind the edge. Returns the mesh and the number of boundary vertices moved.

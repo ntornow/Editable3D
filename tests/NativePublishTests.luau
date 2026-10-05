@@ -162,6 +162,31 @@ return function(E, options)
 		E.Roblox.destroy(bundle)
 		assert(ok, err)
 	end)
+	test("Roblox.rebake can modulate the previous colour map through ctx.uv", function()
+		local bundle =
+			E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(4, 4, 4))), { name = "RebakeModulate" })
+		local part = bundle.handles[1].part
+		Instance.new("SurfaceAppearance").Parent = part
+		local ok, err = pcall(function()
+			local first = E.Roblox.rebake({ part }, function()
+				return Color3.new(0, 0.8, 0), 1
+			end, { size = 16 })
+			local seen = false
+			local second = E.Roblox.rebake({ part }, function(_, _, _, ctx, previous)
+				seen = previous ~= nil and ctx.uv ~= nil
+				local c = previous and previous:sample(ctx.uv) or Color3.new(1, 0, 0)
+				return Color3.new(c.R * 0.5, c.G * 0.5, c.B * 0.5), 1
+			end, { size = 16, readPrevious = true })
+			assert(seen, "shader received ctx and the previous texture")
+			local pixel = second.entries[1].image:ReadPixelsBuffer(Vector2.new(8, 8), Vector2.new(1, 1))
+			local g = buffer.readu8(pixel, 1)
+			assert(g > 80 and g < 125 and buffer.readu8(pixel, 0) < 20, "halved green " .. g)
+			second:revert()
+			first:revert()
+		end)
+		E.Roblox.destroy(bundle)
+		assert(ok, err)
+	end)
 	test("Roblox.fillTerrain writes land, edge band and sea inside the outline's box", function()
 		local terrain = workspace.Terrain
 		local origin = Vector2.new(4000, 4000)

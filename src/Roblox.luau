@@ -689,7 +689,8 @@ function R.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOpti
 	end
 	return report
 end
-export type RebakeOptions = { size: number?, padding: number?, srgb: boolean? }
+-- readPrevious: read the current colour map back and pass it to the shader (one extra image in memory).
+export type RebakeOptions = { size: number?, padding: number?, srgb: boolean?, readPrevious: boolean? }
 export type Rebake = {
 	entries: {
 		{
@@ -704,13 +705,16 @@ export type Rebake = {
 }
 -- Re-textures existing (usually published) MeshParts from a world-space shader without touching
 -- their meshes: each part is read back (fromPart), its own UVs are baked with
--- shader(position, normal, part) -> (Color3, alpha), and a new SurfaceAppearance (other maps,
+-- shader(position, normal, part, ctx) -> (Color3, alpha), where ctx is the full bake context (uv,
+-- face, barycentric, tangent frame) and previous is the part's current colour map read back as a
+-- Texture (nil without one), so a shader can modulate the existing texture: previous:sample(ctx.uv).
+-- A new SurfaceAppearance (other maps,
 -- Color and AlphaMode copied) shows the result as a preview. Then :publish(metadata, options)
 -- uploads only the colour maps (publishMaterials) and frees the previous appearances and images,
 -- or :revert() restores the previous appearances.
 function R.rebake(
 	parts: { MeshPart },
-	shader: (Vector3, Vector3, MeshPart) -> (Color3, number?),
+	shader: (Vector3, Vector3, MeshPart, any, Texture?) -> (Color3, number?),
 	options: RebakeOptions?
 ): Rebake
 	local o: RebakeOptions = options or {}
@@ -719,9 +723,28 @@ function R.rebake(
 	local entries = {}
 	for _, part in parts do
 		local mesh = R.fromPart(part)
+		local current = part:FindFirstChildOfClass("SurfaceAppearance")
+		local previousTexture: Texture? = nil
+		local previousImage: EditableImage? = nil
+		if o.readPrevious and current then
+			local content = current.ColorMapContent
+			if
+				content.SourceType == Enum.ContentSourceType.Object
+				and content.Object
+				and content.Object:IsA("EditableImage")
+			then
+				previousTexture = R.fromEditableImage(content.Object :: EditableImage, o.srgb)
+			elseif content.SourceType == Enum.ContentSourceType.Uri then
+				previousImage = game:GetService("AssetService"):CreateEditableImageAsync(content)
+				previousTexture = R.fromEditableImage(previousImage :: EditableImage, o.srgb)
+			end
+		end
 		local texture = Bake.rasterize(mesh, size, size, function(ctx)
-			return shader(ctx.position, ctx.normal, part)
+			return shader(ctx.position, ctx.normal, part, ctx, previousTexture)
 		end, { padding = o.padding or 4 })
+		if previousImage then
+			previousImage:Destroy()
+		end
 		local image = R.toEditableImage(texture, o.srgb)
 		local previous = part:FindFirstChildOfClass("SurfaceAppearance")
 		local surface = Instance.new("SurfaceAppearance")

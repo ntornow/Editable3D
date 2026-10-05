@@ -89,6 +89,11 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Publish with `Roblox.publishMaterials(parts, metadata, {resume = ledger, maxBytes = 2^31})`: only the editable maps upload, and the meshes are guarded but not replaced. Asset-URI maps are skipped, so one changed map per part means one image asset.
 - Keep color-map encoding consistent with earlier bakes (`toEditableImage(texture, srgb)`); switching the flag shifts every tone.
 
+## Shading published parts
+
+- Per-texel `Bake.ambientOcclusion` is too slow for large sculpts (1024² texels × rays per part). Weld the parts, run `Bake.vertexOcclusion` once (a 3–5 stud `distance` captures folds without darkening a whole body), wrap the result in `Bake.pointSampler` with the vertex normals, then `Roblox.rebake(parts, shader, {readPrevious = true})`. Multiply `previous:sample(ctx.uv)` by an occlusion factor normalised by the mean, so the calibrated median colour stays put.
+- A published part's colour map is an asset URI; a preview's is an `EditableImage` object. `readPrevious` handles both.
+
 ## Publishing
 
 - After a committed publish, the bundle's model is the scene. Clear any session variable that still points at the bundle, or call `Roblox.release(bundle)` to free its editables. Since 0.82, `Roblox.destroy` refuses published bundles. Before that, a later "clean up the previous preview" `destroy` on a stale reference deleted a published model; it had to be rebuilt from its asset IDs by re-running `toModel` on the source mesh (deterministic chunking) and applying each mesh asset with `ApplyMesh`.

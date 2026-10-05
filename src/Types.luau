@@ -157,6 +157,8 @@ export type BakeLibrary = {
 	dilate: (Texture, buffer, number, Limits?) -> Texture,
 	normalMap: (Mesh, Mesh, number, number, BakeOptions?) -> (Texture, BakeReport),
 	ambientOcclusion: (Mesh, number, number, BakeOptions?) -> (Texture, BakeReport),
+	vertexOcclusion: (Mesh, BakeOptions?) -> ({ [number]: number }, Progress),
+	pointSampler: ({ Vector3 }, { number }, number, { Vector3 }?) -> (Vector3, Vector3?) -> number?,
 	project: (Mesh, Texture, Camera, number, number, BakeOptions?) -> (Texture, BakeReport),
 }
 export type PublishOptions = Publishing.Options

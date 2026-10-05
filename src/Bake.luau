@@ -248,6 +248,101 @@ function B.ambientOcclusion(
 	report.operation = complete(budget, owned)
 	return image, report
 end
+-- Per-vertex ambient occlusion: the same cosine-weighted hemisphere rays as ambientOcclusion, but
+-- cast once per vertex (along its area-weighted normal) instead of once per texel, which makes
+-- occlusion affordable on meshes of tens of thousands of vertices. Returns {[vertex] = openness}
+-- (1 = unoccluded, 0 = fully enclosed). Combine with pointSampler to shade textures with it.
+function B.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: number }, Types.Progress)
+	local options: BakeOptions = options or {}
+	local budget, owned = Budget.acquire(options, "Bake.vertexOcclusion")
+	local index = spatial(options.occluder or mesh, budget, options)
+	local samples = options.samples or 16
+	U.integer(samples, 1)
+	local distance = options.distance or 10
+	local bias = options.bias or 0.001
+	local normals: { [number]: Vector3 } = {}
+	for fid, f in mesh.faces do
+		local n, area = mesh:faceNormal(fid)
+		for _, v in f.vertices do
+			normals[v] = (normals[v] or Vector3.zero) + n * area
+		end
+	end
+	local result: { [number]: number } = {}
+	for id, p in mesh.vertices do
+		local n = normals[id]
+		if n and n.Magnitude > 1e-12 then
+			n = n.Unit
+			local x, y = U.frame(n)
+			local blocked = 0
+			for i = 0, samples - 1 do
+				budget:step()
+				local r = math.sqrt((i + 0.5) / samples)
+				local a = i * 2.399963229728653
+				local direction = x * (r * math.cos(a)) + y * (r * math.sin(a)) + n * math.sqrt(1 - r * r)
+				if index:raycast(p + n * bias, direction, distance) then
+					blocked += 1
+				end
+			end
+			result[id] = 1 - blocked / samples
+		end
+	end
+	return result, complete(budget, owned)
+end
+-- A smooth lookup of scattered point values (per-vertex occlusion, curvature, wetness) at any
+-- position, for use inside bake shaders. Points are hashed into cells of size `radius`; a query
+-- blends the points within `radius` with weights exp(-(d / (radius / 2))^2), times the agreement of
+-- their normal with the query normal when both are given (so the two sheets of a thin fold do not
+-- bleed into each other). Returns nil where no point contributes.
+function B.pointSampler(
+	points: { Vector3 },
+	values: { number },
+	radius: number,
+	normals: { Vector3 }?
+): (Vector3, Vector3?) -> number?
+	assert(radius > 0 and #points == #values, "pointSampler needs one value per point and a positive radius")
+	local cells: { [string]: { number } } = {}
+	local function cell(x: number, y: number, z: number): string
+		return string.format("%d,%d,%d", x, y, z)
+	end
+	local function cellOf(p: Vector3): (number, number, number)
+		return math.floor(p.X / radius), math.floor(p.Y / radius), math.floor(p.Z / radius)
+	end
+	for i, p in points do
+		local c = cell(cellOf(p))
+		local list = cells[c]
+		if not list then
+			list = {}
+			cells[c] = list
+		end
+		table.insert(list, i)
+	end
+	local sigma2 = (radius / 2) ^ 2
+	return function(position: Vector3, normal: Vector3?): number?
+		local cx, cy, cz = cellOf(position)
+		local sum, weight = 0, 0
+		for dx = -1, 1 do
+			for dy = -1, 1 do
+				for dz = -1, 1 do
+					local list = cells[cell(cx + dx, cy + dy, cz + dz)]
+					if list then
+						for _, i in list do
+							local d2 = (points[i] - position):Dot(points[i] - position)
+							if d2 <= radius * radius then
+								local w = math.exp(-d2 / sigma2)
+								if normal and normals then
+									w *= math.max(0, normals[i]:Dot(normal))
+								end
+								sum += values[i] * w
+								weight += w
+							end
+						end
+					end
+				end
+			end
+		end
+		return if weight > 1e-9 then sum / weight else nil
+	end
+end
 function B.project(
 	mesh: Mesh,
 	texture: Texture,

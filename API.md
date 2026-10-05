@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.90.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.91.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -79,6 +79,8 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.dilate(image: Texture, coverage: buffer, iterations: number, options: Types.Limits?): Texture`
 - `Bake.normalMap(low: Mesh, high: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
+- `Bake.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: number }, Types.Progress)`
+- `Bake.pointSampler(points: { Vector3 }, values: { number }, radius: number, normals: { Vector3 }?): (Vector3, Vector3?) -> number?`
 - `Bake.project(mesh: Mesh, texture: Texture, camera: Types.Camera, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 
 ## Bezier
@@ -662,7 +664,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.publishMaterials(parts: { MeshPart }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publishImages(images: { EditableImage }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
-- `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart) -> (Color3, number?), options: RebakeOptions?): Rebake`
+- `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart, any, Texture?) -> (Color3, number?), options: RebakeOptions?): Rebake`
 - `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`
 
 ## Sculpt
