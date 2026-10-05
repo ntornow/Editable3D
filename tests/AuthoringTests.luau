@@ -704,5 +704,32 @@ return function(E)
 		-- the silhouette does not grow
 		assert(filled:sample(Vector2.new(2.3, 0)) == nil)
 	end)
+	test("Deform.edge raises a lip on the left of the polyline and steps down on the right", function()
+		local g = E.Topology.triangulate(E.Primitives.grid(40, 40, Vector2.new(8, 8)))
+		g = E.Deform.transform(g, CFrame.Angles(-math.pi / 2, 0, 0)) -- sheet in the XY plane at z = 0
+		local view = CFrame.lookAt(Vector3.new(0, 0, -10), Vector3.zero)
+		-- view coordinates: q.X = -x (right vector is -X), q.Y = y; a horizontal line from q.X -3 to 3
+		local out = E.Deform.edge(
+			g,
+			view,
+			{ Vector2.new(-3, 0), Vector2.new(3, 0) },
+			{ height = 0.3, width = 0.5, drop = 0.2, dropWidth = 0.4 }
+		)
+		local function zAt(x, y)
+			local best, z = math.huge, 0
+			for id, v in g.vertices do
+				local d = (Vector2.new(v.X, v.Y) - Vector2.new(x, y)).Magnitude
+				if d < best then
+					best, z = d, out.vertices[id].Z
+				end
+			end
+			return z
+		end
+		-- left of the direction (+q.X) is +q.Y = +y: raised toward the viewer (negative z)
+		assert(zAt(0, 0.1) < -0.2, "lip " .. zAt(0, 0.1))
+		assert(zAt(0, -0.1) > 0.05, "step down " .. zAt(0, -0.1))
+		near(zAt(0, 2.5), 0, 1e-3)
+		near(zAt(3.8, 0.1), 0, 1e-9) -- beyond the polyline's end (q.X = -3.8)
+	end)
 	return report
 end

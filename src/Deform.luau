@@ -463,4 +463,71 @@ function D.relief(
 	end
 	return out:recalculateNormals()
 end
+export type EdgeOptions = {
+	height: number?,
+	width: number?,
+	drop: number?,
+	dropWidth: number?,
+	layer: number?,
+	envelope: Envelope?,
+	step: number?,
+}
+-- Raises a crisp layer edge (a cloth hem, the border of an overlapping sheet) along a polyline
+-- given in view coordinates (Vector2, as Deform.relief's q). The side to the LEFT of the polyline
+-- direction is the upper layer: it is pushed toward the viewer by height * exp(-(d/width)^2), a
+-- rounded lip; the right side is pushed back by drop, fading over dropWidth, so a step forms
+-- at the line. Only the front layer moves (vertices within `layer` of the view envelope), and the
+-- offset depends on position alone, so coincident corners in soups move together. Beyond the
+-- polyline's ends nothing moves. Returns the mesh with normals recalculated (pass the result
+-- through Normals.unify for soups).
+function D.edge(mesh: Mesh, view: CFrame, polyline: { Vector2 }, options: EdgeOptions?): Mesh
+	assert(#polyline >= 2, "Edge needs a polyline")
+	local o: EdgeOptions = options or {}
+	local height, width = o.height or 0.3, o.width or 0.7
+	local drop, dropWidth = o.drop or 0.2, o.dropWidth or 0.5
+	local layer = o.layer or 0.9
+	local env = o.envelope or D.envelope(mesh, view, o.step or 0.2, 3)
+	local look = view.LookVector
+	local function smoothstep(e0: number, e1: number, x: number): number
+		local t = math.clamp((x - e0) / (e1 - e0), 0, 1)
+		return t * t * (3 - 2 * t)
+	end
+	local function signedDistance(q: Vector2): number?
+		local best, signed: number? = math.huge, nil
+		for i = 1, #polyline - 1 do
+			local a, b = polyline[i], polyline[i + 1]
+			local ab = b - a
+			local t = (q - a):Dot(ab) / ab:Dot(ab)
+			local c = a + ab * math.clamp(t, 0, 1)
+			local d = (q - c).Magnitude
+			if d < best then
+				best = d
+				local inside = (i > 1 or t >= 0) and (i < #polyline - 1 or t <= 1)
+				-- left of the direction a -> b is positive
+				local cross = ab.X * (q - a).Y - ab.Y * (q - a).X
+				signed = if inside then (if cross >= 0 then d else -d) else nil
+			end
+		end
+		return signed
+	end
+	return D.map(mesh, function(p: Vector3): Vector3
+		local q, depth = viewCoordinates(view, p)
+		local d = signedDistance(q)
+		if not d then
+			return p
+		end
+		local front = env:sample(q)
+		if not front then
+			return p
+		end
+		local w = 1 - smoothstep(layer * 0.4, layer, depth - front)
+		if w <= 0 then
+			return p
+		end
+		local offset = if d >= 0
+			then -height * math.exp(-(d / width) ^ 2)
+			else drop * (1 - smoothstep(0, dropWidth, -d))
+		return p + look * (offset * w)
+	end)
+end
 return D
