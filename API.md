@@ -225,7 +225,7 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.curve(mesh: Mesh, curve: any, options: any?)`
 - `Deform:sample(p: Vector2): number?`
 - `Deform:blurred(radius: number): Envelope`
-- `Deform.envelope(mesh: Mesh, view: CFrame, step: number): Envelope`
+- `Deform.envelope(mesh: Mesh, view: CFrame, step: number, fill: number?): Envelope`
 - `Deform.relief(mesh: Mesh, view: CFrame, target: (Vector2, number) -> number?, options: ReliefOptions?): Mesh`
 
 ## Dynamics

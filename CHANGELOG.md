@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.88.0 — unreleased
+
+- **`Deform.envelope(mesh, view, step, fill)`:** an optional `fill` count of hole-filling passes. Empty cells with filled neighbours on both sides along a row or column get their average, so interior gaps close without growing the silhouette. `Deform.relief` now builds its own envelope with 3 passes. A step finer than the mesh's spacing had left gaps, and vertices over a gap were skipped while their neighbours moved, which crinkled the surface.
+
 ## 0.87.0 — 2026-10-04
 
 - **`MeshRepair.audit(mesh, {weld, crack, fold, overlap, stride, limit})`:** a one-call health check that works on soups (corners are welded by position first). It reports:

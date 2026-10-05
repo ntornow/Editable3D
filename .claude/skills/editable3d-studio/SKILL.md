@@ -64,6 +64,12 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Layers behind a surface can hide its holes and cracks. Removing a "hidden" layer exposes them, so seal the front surface first, then trim what's behind.
 - To restore a deleted or replaced part, recreate it from its mesh ID with `AssetService:CreateMeshPartAsync`, then find its translation from triangle edge vectors (identical for exact copies) or a translation-only ICP. Destroyed instances keep their properties, so a session reference still gives the old CFrame.
 
+## Reshaping faces and organic forms
+
+- Print horizontal cross-sections (frontmost z per |x| bin at a few heights) before and after any change. A "mask on an egg" shows up as a flat run followed by a cliff.
+- Reshape the low frequencies only: blur a frontmost-depth grid, fit a smooth target per row (for example a superellipse through the edge width and the depth near the midline), and offset the front layer by (target − blurred). Weight the front layer from the blurred grid and apply it per vertex with `Deform.map`, which leaves no gaps; the fine detail rides along.
+- World-projected rain streaks and sheet seams from a large-surface shader read as stripes on a face. Give faces their own shader with mottling and orientation weathering only.
+
 ## Re-texturing published parts
 
 - Multi-part models made by `toModel`/`partition` are 18k-triangle chunks that can overlap spatially. A part's name doesn't tell you which surface region it covers, so rebuild or re-texture whole groups, not single chunks.

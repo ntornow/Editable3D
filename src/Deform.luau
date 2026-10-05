@@ -303,7 +303,11 @@ end
 -- Front envelope of a mesh seen from `view`: the smallest depth at each cell centre of a
 -- `step`-sized grid, rasterized from the mesh's triangles (any tessellation, soups included).
 -- Sample it bilinearly with envelope:sample(Vector2); envelope:blurred(radius) low-passes it.
-function D.envelope(mesh: Mesh, view: CFrame, step: number): Envelope
+-- fill (default 0): passes of hole filling. A step finer than the mesh's triangles leaves empty
+-- cells between rasterized ones; each pass fills empty cells that have filled 4-neighbours on
+-- both sides along a row or a column (average of the filled 4-neighbours), so holes inside the
+-- surface close while the silhouette stays where it is.
+function D.envelope(mesh: Mesh, view: CFrame, step: number, fill: number?): Envelope
 	assert(step > 0, "Envelope step must be positive")
 	local lo, hi = Vector2.new(math.huge, math.huge), Vector2.new(-math.huge, -math.huge)
 	for _, v in mesh.vertices do
@@ -353,6 +357,36 @@ function D.envelope(mesh: Mesh, view: CFrame, step: number): Envelope
 			depth[k] = value
 		end
 	end
+	for _ = 1, fill or 0 do
+		local updates: { [number]: number } = {}
+		for j = 0, height - 1 do
+			for i = 0, width - 1 do
+				local k = j * width + i + 1
+				if depth[k] == false then
+					local l = i > 0 and depth[k - 1] or false
+					local r = i < width - 1 and depth[k + 1] or false
+					local d = j > 0 and depth[k - width] or false
+					local u = j < height - 1 and depth[k + width] or false
+					if (l ~= false and r ~= false) or (d ~= false and u ~= false) then
+						local sum, n = 0, 0
+						for _, x in { l, r, d, u } do
+							if x ~= false then
+								sum += x :: number
+								n += 1
+							end
+						end
+						updates[k] = sum / n
+					end
+				end
+			end
+		end
+		if next(updates) == nil then
+			break
+		end
+		for k, x in updates do
+			depth[k] = x
+		end
+	end
 	return makeEnvelope(view, step, origin, width, height, depth)
 end
 -- alpha: fraction of the existing relief below the envelope that survives (0 replaces it).
@@ -383,7 +417,7 @@ function D.relief(
 	local alpha, maxDepth, fade = o.alpha or 0.2, o.depth or 2.5, o.fade or 1.5
 	local minFacing = o.minFacing or 0.15
 	assert(alpha >= 0 and maxDepth >= 0 and fade > 0, "Invalid relief options")
-	local env = o.envelope or D.envelope(mesh, view, o.step or 0.25)
+	local env = o.envelope or D.envelope(mesh, view, o.step or 0.25, 3)
 	local look = view.LookVector
 	-- Facing is gathered per position, not per vertex id: in a triangle soup (meshes read back from
 	-- Roblox) every corner is its own vertex, and per-id weights would move coincident corners by

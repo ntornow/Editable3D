@@ -678,5 +678,31 @@ return function(E)
 		assert(rep.before > 0 and rep.after == 0, "no folds left " .. rep.after)
 		assert(E.MeshRepair.audit(fixed).foldedEdges == 0)
 	end)
+	test("Deform.envelope fills interior holes when the step is finer than the mesh", function()
+		-- a coarse 4 x 4 grid quad sheet facing the view, sampled at a step much finer than its edges
+		local g = E.Topology.triangulate(E.Primitives.grid(2, 2, Vector2.new(4, 4)))
+		g = E.Deform.transform(g, CFrame.Angles(-math.pi / 2, 0, 0)) -- into the XY plane
+		local view = CFrame.lookAt(Vector3.new(0, 0, -10), Vector3.zero)
+		local plain = E.Deform.envelope(g, view, 0.05)
+		local filled = E.Deform.envelope(g, view, 0.05, 3)
+		local holes, filledHoles = 0, 0
+		for k, d in plain.depth do
+			if d == false and filled.depth[k] ~= false then
+				filledHoles += 1
+			end
+			if d == false then
+				holes += 1
+			end
+		end
+		assert(filledHoles >= 0 and holes >= filledHoles)
+		-- every sample inside the sheet is defined after filling
+		for x = -1.9, 1.9, 0.13 do
+			for y = -1.9, 1.9, 0.17 do
+				assert(filled:sample(Vector2.new(x, y)) ~= nil, "hole at " .. x .. "," .. y)
+			end
+		end
+		-- the silhouette does not grow
+		assert(filled:sample(Vector2.new(2.3, 0)) == nil)
+	end)
 	return report
 end
