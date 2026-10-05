@@ -1,6 +1,6 @@
 # Editable3D changes
 
-## 0.89.0 — unreleased
+## 0.89.0 — 2026-10-05
 
 - **`Deform.taperComponents(mesh, anchor, baseScale, tipScale, weld)`:** scales each connected piece (rays, spikes, petals, fingers) about its own principal axis. The scale goes from `baseScale` at the end nearer `anchor` to `tipScale` at the far end. It's safe on soups and keeps topology and UVs. It came from thickening a crown's rays at their base.
 
