@@ -56,6 +56,12 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - View coordinates are relative to the view frame (`q.Y` is height minus the camera's height). Mixing them up with world heights silently moves nothing.
 - Check the result as numbers, not only in renders: print cross-sections (frontmost z per x bin at a few heights) before and after. A face whose cross-section is flat for most of its width reads as "a mask on a ball" from three-quarter views.
 
+## Diagnosing speckle and see-through
+
+- **Render each suspect part alone, close up, before changing anything.** A checkerboard means interleaved chunks (merge and re-chunk). Hatching along triangle edges means cracks (`Topology.snap`). Two textures alternating as the camera moves means co-facing coincident layers (`Spatial.trimCoincident`).
+- Layers behind a surface can hide its holes and cracks. Removing a "hidden" layer exposes them, so seal the front surface first, then trim what's behind.
+- To restore a deleted or replaced part, recreate it from its mesh ID with `AssetService:CreateMeshPartAsync`, then find its translation from triangle edge vectors (identical for exact copies) or a translation-only ICP. Destroyed instances keep their properties, so a session reference still gives the old CFrame.
+
 ## Re-texturing published parts
 
 - Multi-part models made by `toModel`/`partition` are 18k-triangle chunks that can overlap spatially. A part's name doesn't tell you which surface region it covers, so rebuild or re-texture whole groups, not single chunks.

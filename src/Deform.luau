@@ -385,13 +385,24 @@ function D.relief(
 	assert(alpha >= 0 and maxDepth >= 0 and fade > 0, "Invalid relief options")
 	local env = o.envelope or D.envelope(mesh, view, o.step or 0.25)
 	local look = view.LookVector
-	local facing: { [number]: number } = {}
+	-- Facing is gathered per position, not per vertex id: in a triangle soup (meshes read back from
+	-- Roblox) every corner is its own vertex, and per-id weights would move coincident corners by
+	-- different amounts and crack the surface open.
+	local function positionKey(p: Vector3): string
+		return string.format("%.5f,%.5f,%.5f", p.X, p.Y, p.Z)
+	end
+	local facingAt: { [string]: number } = {}
 	for fid, f in mesh.faces do
 		local normal = mesh:faceNormal(fid)
 		for i, v in f.vertices do
 			local n = f.corners[i].normal or normal
-			facing[v] = math.max(facing[v] or -1, -(n :: Vector3):Dot(look))
+			local k = positionKey(mesh.vertices[v])
+			facingAt[k] = math.max(facingAt[k] or -1, -(n :: Vector3):Dot(look))
 		end
+	end
+	local facing: { [number]: number } = {}
+	for id, v in mesh.vertices do
+		facing[id] = facingAt[positionKey(v)]
 	end
 	local function smoothstep(e0: number, e1: number, x: number): number
 		local t = math.clamp((x - e0) / (e1 - e0), 0, 1)

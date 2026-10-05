@@ -1,5 +1,12 @@
 # Editable3D changes
 
+## 0.84.0 — 2026-10-04
+
+- **`Topology.snap(meshes, tolerance)`:** closes hairline cracks across a set of meshes. Vertices join the nearest cluster seed within `tolerance`, so no vertex moves further than that (chained clustering had dragged some corners 0.47 studs at a 0.045 tolerance). Each vertex then moves to its cluster's average. Corners and UVs are kept, so baked textures still fit, and faces that collapse are removed. Returns `(meshes, moved, removed)`. On a six-chunk sculpt whose shared corners had drifted 0.04 apart, a tolerance of 0.05 cut open edges from 221k to 8.7k.
+- **`Deform.relief` no longer cracks soups.** The facing weight was gathered per vertex id. In a triangle soup (meshes read back from Roblox), coincident corners have their own ids and normals, so they moved by different amounts and the surface cracked open. Facing is now gathered per position.
+
+Tests: snap closes a drifted edge, removes a collapsed sliver and bounds each move; relief moves coincident soup corners together (this failed before).
+
 ## 0.83.1 — 2026-10-04
 
 - **`Roblox.partition` (and `toModel`) makes spatially compact chunks.** Triangles were cut into chunks in face order. After triangulation, every quad's second triangle has a later face id, so a large quad mesh split into a chunk of all first halves and a chunk of all second halves. These checkerboards interleave across the whole surface, and with one texture bake per chunk they render as a fine speckle of two textures. Chunks now come from recursive splits along the longest axis of the triangle centroids. Every chunk except the last is full, and triangle order within a chunk is preserved.

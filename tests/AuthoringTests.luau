@@ -471,5 +471,26 @@ return function(E)
 		end
 		assert(count >= 5, "the chain keeps distinct vertices: " .. count)
 	end)
+	test("Deform.relief moves coincident soup corners together", function()
+		-- two triangles meeting at a crease, as an unwelded soup: the shared edge has one vertex
+		-- id per triangle and the faces turn different amounts toward the view
+		local m = E.Mesh.new()
+		local a1, b1 = m:addVertex(Vector3.new(0, 0, 0)), m:addVertex(Vector3.new(0, 1, 0))
+		m:addFace({ b1, a1, m:addVertex(Vector3.new(-1, 0.5, 0)) })
+		local a2, b2 = m:addVertex(Vector3.new(0, 0, 0)), m:addVertex(Vector3.new(0, 1, 0))
+		m:addFace({ a2, b2, m:addVertex(Vector3.new(0.7, 0.5, 0.7)) })
+		-- a backdrop far behind keeps the envelope defined around the edge's end points
+		m:addFace({
+			m:addVertex(Vector3.new(-3, -3, 5)),
+			m:addVertex(Vector3.new(0, 4, 5)),
+			m:addVertex(Vector3.new(3, -3, 5)),
+		})
+		local view = CFrame.lookAt(Vector3.new(0, 0.5, -10), Vector3.new(0, 0.5, 0))
+		local out = E.Deform.relief(m, view, function()
+			return 9
+		end, { normals = false, minFacing = 0.5, depth = 3, step = 0.05 })
+		assert(out.vertices[a1] == out.vertices[a2] and out.vertices[b1] == out.vertices[b2], "crack opened")
+		assert(out.vertices[a1] ~= m.vertices[a1], "the shared edge moved")
+	end)
 	return report
 end
