@@ -1,5 +1,21 @@
 # Editable3D changes
 
+## 0.87.0 — 2026-10-04
+
+- **`MeshRepair.audit(mesh, {weld, crack, fold, overlap, stride, limit})`:** a one-call health check that works on soups (corners are welded by position first). It reports:
+  - boundary and non-manifold edges;
+  - crack edges (boundary edges with a near-coincident partner, i.e. hairline cracks);
+  - degenerate and duplicate faces;
+  - folded edges (crumpled or flipped triangles);
+  - isolated faces (no shared edge: interleaved chunks or an unwelded soup);
+  - co-facing self-overlap (sampled);
+  - signed volume, with `insideOut` for closed meshes.
+
+  `samples` lists face ids for each problem.
+- **`MeshRepair.unfold(mesh, {fold, iterations, rings, step})`:** untangles crumpled triangles by relaxing the vertices around folded edges until no fold remains, keeping boundaries fixed. Returns the welded mesh and before/after fold counts.
+
+Tests: a box and its reverse (inside-out), a cracked soup, a folded quad, a duplicate face, and a grid with one vertex dragged across its neighbours (unfolded to zero folds).
+
 ## 0.86.0 — 2026-10-04
 
 Helpers promoted from scene work:
