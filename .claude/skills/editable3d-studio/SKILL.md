@@ -76,7 +76,7 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Judge a sculpt against a photo like for like: render it from the photo's own viewpoint (solve the yaw, use a narrow FOV), place the sun where the photo's light comes from (search `GeographicLatitude` and `ClockTime` until `Lighting:GetSunDirection()` matches), drop saturation and haze, and compare greyscale crops at the same scale. Outline overlap and drawn silhouettes cannot see a face; judging by eye at different scales misleads.
 - Monocular depth estimates get the layout of a face right but are band-limited, giving soft lids, thin lips and a flat chin. Estimated surface normals (for example Marigold, Apache-2.0) keep those forms. Integrate the normals (Frankot-Chellappa) and keep only their high frequencies, over the low frequencies of a depth calibrated to a profile photo. Fade the normal detail out near the mask edge, where normals jump at hair.
 - Hand-adding features (almond eye rims, a mouth slot, brow arches) on top of photo-derived relief made the face less like the subject. Prefer measured relief.
-- Studio's shadow maps do not resolve small cast shadows (eye sockets, nostrils, lip lines, under a chin) at statue scale. Bake horizon-based ambient occlusion of the relief into the colour map, measuring horizons relative to the local tangent plane (not the view axis), or turned-away surfaces read as occluded.
+- Studio's shadow maps do not resolve small cast shadows (eye sockets, nostrils, lip lines, under a chin) on large sculpted parts. Bake horizon-based ambient occlusion of the relief into the colour map, measuring horizons relative to the local tangent plane (not the view axis), or turned-away surfaces read as occluded.
 
 ## Masks, shells and seams
 
