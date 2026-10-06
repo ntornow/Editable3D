@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.93.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.94.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -665,6 +665,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.publishMaterials(parts: { MeshPart }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publishImages(images: { EditableImage }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
+- `Roblox.publishInChunks(bundle: Bundle, metadata: unknown, options: (Types.PublishOptions & { partsPerTransaction: number? })?): Types.PublishReport`
 - `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart, any, Texture?) -> (Color3, number?), options: RebakeOptions?): Rebake`
 - `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart) -> Vector3, options: ReshapeOptions?): Reshape`
 - `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`

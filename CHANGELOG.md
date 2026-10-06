@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.94.0 — 2026-10-06
+
+- **`Roblox.publishInChunks(bundle, metadata, {partsPerTransaction = 8, ...})`:** publishes a large bundle as several transactions, each with its own operation budget and all sharing one resume ledger, so a texture shared by every part uploads once. `Roblox.publish` snapshots every part before upload, after read-back and again at validation, and its budget counts total allocations. So a 27-part head of about 470k triangles exceeded `maxBytes = 2^31` at validation, after every asset had uploaded. Each chunk is atomic: a failure stops before the later chunks, keeps the committed ones and reports `committedParts`, `partial` and the per-chunk reports. Rerunning with the returned `resume` ledger finishes the job without re-uploading.
+
 ## 0.93.0 — 2026-10-05
 
 - **`Curves.loft(..., {capFan = true})`:** closes each end with a triangle fan around the ring's centroid, skipping zero-area triangles, with ring UVs on the fan corners. A single cap polygon cannot be triangulated when the end ring is collinear, repeats points or self-intersects; this happens with clipped rings (a jaw cut through a head loft) and rings that taper to a point. Fans always work, and `outward` still applies.

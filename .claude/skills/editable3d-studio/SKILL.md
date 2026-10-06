@@ -138,6 +138,8 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 
 - Asset `Name` must be short (a ~60-character name was rejected: "Asset name length is invalid", HTTP 400); keep names under ~50 characters. The rejection happens before creation, so no asset is made.
 - Large bundles exceed the default `maxBytes` (256 MB of cumulative snapshot accounting); pass e.g. `maxBytes = 2^31` for 10+ parts.
+- Even 2^31 is not enough for a bundle of ~25+ parts at ~18k triangles each (a ~470k-triangle head). Every part is snapshotted before upload, after read-back and again at validation, so the transaction failed at **validate**, after every asset had uploaded. Use `Roblox.publishInChunks(bundle, meta, {partsPerTransaction = 6, resume = ledger, maxBytes = 2^31})` (0.94+): each chunk gets its own budget, and the shared ledger resumes the uploads already made. Before 0.94, publish `{handles = {subset}, images = {}}` sub-bundles in a loop with the same ledger.
+- Rebuilding a mesh creates new EditableMesh objects, and the ledger matches by object, so a rebuilt bundle uploads all its meshes again even when the geometry is unchanged. To change only colour, re-texture the published parts instead (`Roblox.rebake` / `publishMaterials`).
 - Meshes created elsewhere may share corners but not edges (each triangle's edges unique). Smoothing with `pinBoundary` then pins every vertex; pin only vertices used by fewer than three triangles instead.
 - `Roblox.publish(bundle, {Name, Description, CreatorId, CreatorType}, {resume = ledger, attempts = 3})`. Keep the `ledger` table across retries; created assets are never auto-deleted.
 - A failed readback does **not** change the scene (`committed = false`); the report lists `assets` already created.

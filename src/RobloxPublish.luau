@@ -117,4 +117,13 @@ end
 local function run(bundle, metadata, options)
 	return Pipeline.run(bundle, metadata, options, backendFor(game:GetService("AssetService")))
 end
-return table.freeze({ run = run, backend = backendFor })
+local function runChunked(bundle, metadata, options, perTransaction)
+	return Pipeline.runChunked(
+		bundle,
+		metadata,
+		options,
+		backendFor(game:GetService("AssetService")),
+		perTransaction
+	)
+end
+return table.freeze({ run = run, runChunked = runChunked, backend = backendFor })

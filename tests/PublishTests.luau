@@ -405,6 +405,88 @@ return function()
 		assert(not bad.success and string.find(tostring(bad.error), "content mismatch", 1, true))
 		cleaned(s)
 	end)
+	local function many(count)
+		local bundle, b, s, p, m, img = fixture()
+		local parts = { p }
+		for k = 2, count do
+			local part = { mesh = "old" .. k, size = 3, map = img }
+			table.insert(parts, part)
+			table.insert(bundle.handles, { editable = { data = "mesh" .. k }, part = part })
+		end
+		return bundle, b, s, parts, m, img
+	end
+	test("Chunked publish commits every part, sharing one ledger across chunks", function()
+		local bundle, b, s, parts = many(5)
+		local r = P.runChunked(bundle, {}, nil, b, 2)
+		assert(
+			r.success and r.committed and not r.partial and r.committedParts == 5 and #r.chunks == 3,
+			tostring(r.error)
+		)
+		for _, part in parts do
+			assert(
+				part.mesh ~= nil and string.match(part.mesh, "^%d+$") and part.map ~= nil,
+				"part not published"
+			)
+		end
+		-- 5 meshes + the shared image once
+		assert(s.uploads == 6 and #r.resume == 6, "uploads " .. s.uploads)
+		cleaned(s)
+	end)
+	test("Chunked publish stops at a failing chunk and keeps the committed ones", function()
+		local bundle, b, s, parts, _m, img = many(5)
+		local stage = b.stage
+		b.stage = function(id)
+			if s.stages >= 3 then
+				error("stage failed")
+			end
+			return stage(id)
+		end
+		local r = P.runChunked(bundle, {}, { attempts = 1 }, b, 2)
+		assert(not r.success and r.partial and r.committedParts == 2 and #r.chunks == 2)
+		assert(string.find(tostring(r.error), "stage failed", 1, true))
+		assert(string.match(parts[1].mesh, "^%d+$") and string.match(parts[2].mesh, "^%d+$"))
+		assert(parts[3].mesh == "old3" and parts[3].map == img and parts[5].mesh == "old5")
+		-- finishing with the same ledger re-uploads nothing already uploaded: parts 3 and 4 (uploaded
+		-- before the failing stage) and the shared image resume; only part 5's mesh is new
+		b.stage = stage
+		local before = s.uploads
+		local rest = P.runChunked(
+			{ handles = { bundle.handles[3], bundle.handles[4], bundle.handles[5] } },
+			{},
+			{ resume = r.resume },
+			b,
+			2
+		)
+		assert(rest.success and rest.committedParts == 3)
+		assert(s.uploads == before + 1, "uploads " .. (s.uploads - before))
+		local resumed = 0
+		for _, a in rest.assets do
+			if a.resumed then
+				resumed += 1
+			end
+		end
+		assert(resumed >= 3, "resumed " .. resumed)
+		cleaned(s)
+	end)
+	test("Chunked publish gives each chunk its own allocation budget", function()
+		local bundle, b, s = many(6)
+		local snapshot = b.snapshot
+		b.snapshot = function(object, kind, budget)
+			budget:reserve(1000)
+			return snapshot(object, kind, budget)
+		end
+		local whole = P.run(bundle, {}, { maxBytes = 12000 }, b)
+		assert(not whole.success and string.find(tostring(whole.error), "allocation limit", 1, true))
+		local chunked = P.runChunked(bundle, {}, { maxBytes = 12000 }, b, 2)
+		assert(chunked.success and chunked.committedParts == 6, tostring(chunked.error))
+		cleaned(s)
+	end)
+	test("Chunked publish rejects an invalid chunk size", function()
+		local bundle, b = fixture()
+		rejects(function()
+			P.runChunked(bundle, {}, nil, b, 0)
+		end, "parts per transaction")
+	end)
 	test("Validation failure precedes all live actions", function()
 		local applied = false
 		local r = Transaction.run(function()

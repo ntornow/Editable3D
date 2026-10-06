@@ -689,6 +689,26 @@ function R.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOpti
 	end
 	return report
 end
+-- Publishes a large bundle as several transactions of at most partsPerTransaction parts (default 8), each
+-- with its own operation budget, sharing one resume ledger (options.resume, or a fresh one returned as
+-- report.resume) so a texture shared by every part uploads once. Each chunk is atomic; a failure stops
+-- before the later chunks, the committed ones stay, and report.committedParts / report.partial say how far
+-- it got. Rerun with the same ledger to finish without re-uploading. Use it when one Roblox.publish over
+-- the bundle would exceed maxBytes (every part is snapshotted several times within one transaction).
+function R.publishInChunks(
+	bundle: Bundle,
+	metadata: unknown,
+	options: (Types.PublishOptions & { partsPerTransaction: number? })?
+): Types.PublishReport
+	local o: any = table.clone(options or {})
+	local per = o.partsPerTransaction or 8
+	o.partsPerTransaction = nil
+	local report: any = (require(script.Parent.RobloxPublish) :: any).runChunked(bundle, metadata, o, per)
+	if report.committed then
+		bundle.published = true
+	end
+	return report
+end
 -- readPrevious: read the current colour map back and pass it to the shader (one extra image in memory).
 -- Budget fields (maxSeconds, maxWork, checkpoint, cancelled) apply to each part's bake.
 export type RebakeOptions =

@@ -196,4 +196,72 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 		operation = budget:report(),
 	}
 end
+-- Publishes a bundle as consecutive transactions of at most `perTransaction` parts. Each chunk gets its own
+-- operation budget (the budget counts total allocations, and every part is snapshotted several times, so
+-- one transaction over a large bundle can exceed maxBytes) and all chunks share one resume ledger
+-- (options.resume, or a fresh one), so a texture shared by every part uploads once. Each chunk is atomic;
+-- a failure stops before the later chunks and the committed ones stay. bundle.images go with the last chunk.
+function P.runChunked(
+	bundle: Bundle,
+	metadata: unknown,
+	options: Options?,
+	backend: Backend,
+	perTransaction: number
+)
+	assert(
+		type(perTransaction) == "number" and perTransaction >= 1 and perTransaction % 1 == 0,
+		"Invalid parts per transaction"
+	)
+	local o: any = table.clone((options or {}) :: any)
+	o.resume = o.resume or {}
+	local handles = bundle.handles
+	local n = #handles
+	local count = math.max(1, math.ceil(n / perTransaction))
+	local chunks = {}
+	local assets: { { kind: string, id: string, resumed: boolean } } = {}
+	local rollbackErrors, cleanupErrors = {}, {}
+	local committedParts = 0
+	local failed = nil
+	for k = 1, count do
+		local first, last = (k - 1) * perTransaction + 1, math.min(k * perTransaction, n)
+		local sub: Bundle = { handles = table.move(handles, first, last, 1, {}) }
+		if k == count then
+			sub.images = bundle.images
+		end
+		local r = P.run(sub, metadata, o, backend)
+		table.insert(chunks, r)
+		for _, a in r.assets do
+			table.insert(assets, a)
+		end
+		for _, e in r.rollbackErrors do
+			table.insert(rollbackErrors, e)
+		end
+		for _, e in r.cleanupErrors do
+			table.insert(cleanupErrors, e)
+		end
+		if not r.success then
+			failed = r
+			break
+		end
+		committedParts += last - first + 1
+	end
+	local final = failed or chunks[#chunks]
+	return {
+		success = failed == nil,
+		committed = failed == nil,
+		partial = failed ~= nil and committedParts > 0,
+		committedParts = committedParts,
+		rolledBack = failed ~= nil and failed.rolledBack,
+		stage = final.stage,
+		error = failed and failed.error,
+		rollbackErrors = rollbackErrors,
+		cleanupErrors = cleanupErrors,
+		assets = assets,
+		resumeAvailable = true,
+		resume = o.resume,
+		imageIds = failed == nil and final.imageIds or {},
+		chunks = chunks,
+		operation = final.operation,
+	}
+end
 return table.freeze(P)
