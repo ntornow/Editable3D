@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.91.1. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.92.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -524,6 +524,7 @@ Source: [src/PathTrace.luau](src/PathTrace.luau)
 Source: [src/Pattern.luau](src/Pattern.luau)
 
 - `Pattern.hash(i: number, j: number?, k: number?, seed: number?): number`
+- `Pattern.band(x: number, low: number, high: number, edge: number?): number`
 - `Pattern.smoothstep(edge0: number, edge1: number, x: number): number`
 - `Pattern.fbm(p: Vector3, options: FbmOptions?): number`
 - `Pattern.panels(p: Vector3, options: PanelOptions): PanelSample`
@@ -665,6 +666,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.publishImages(images: { EditableImage }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart, any, Texture?) -> (Color3, number?), options: RebakeOptions?): Rebake`
+- `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart) -> Vector3, options: ReshapeOptions?): Reshape`
 - `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`
 
 ## Sculpt

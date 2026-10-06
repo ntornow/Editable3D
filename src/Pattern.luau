@@ -60,6 +60,12 @@ function P.hash(i: number, j: number?, k: number?, seed: number?): number
 	h = mix(bit32.bxor(h, bit32.band(math.floor(k or 0), 0xFFFFFFFF)))
 	return h / 4294967296
 end
+-- Soft window: 1 well inside [low, high], 0 outside, with smoothstep shoulders of half-width
+-- `edge` centred on each bound. For masks such as "this height band, fading over 0.2".
+function P.band(x: number, low: number, high: number, edge: number?): number
+	local e = edge or 0
+	return P.smoothstep(low - e, low + e, x) * (1 - P.smoothstep(high - e, high + e, x))
+end
 function P.smoothstep(edge0: number, edge1: number, x: number): number
 	if edge0 == edge1 then
 		return if x < edge0 then 0 else 1

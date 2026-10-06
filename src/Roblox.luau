@@ -805,6 +805,122 @@ function R.rebake(
 	end
 	return handle :: Rebake
 end
+-- Reshapes existing (usually published) MeshParts with a world-space point map, as a preview:
+-- each part is read back (fromPart), every vertex goes through map(position, part), normals are
+-- re-derived across all parts together (Normals.unify, so seams between chunks stay smooth), and
+-- a new bundle with the part's material, colour, DoubleSided and SurfaceAppearance is shown in
+-- the part's parent while the original is hidden. :publish(metadata, options) uploads each bundle
+-- and puts it in the original's place (a single-part holder model of the same name is replaced
+-- whole); :revert() restores the originals. metadata is a table (its Name gets " <part name>"
+-- appended, trimmed to 50 characters) or a function of the part.
+export type ReshapeOptions = {
+	unify: boolean?,
+	angle: number?,
+	tolerance: number?,
+	maxTriangles: number?,
+	collisionFidelity: Enum.CollisionFidelity?,
+}
+export type ReshapeEntry = { part: MeshPart, bundle: Bundle, transparency: number }
+export type ReshapeReport = {
+	success: boolean,
+	published: { [string]: string },
+	failures: { [string]: string },
+}
+export type Reshape = {
+	entries: { ReshapeEntry },
+	publish: (Reshape, metadata: any, options: Types.PublishOptions?) -> ReshapeReport,
+	revert: (Reshape) -> (),
+}
+function R.reshape(
+	parts: { MeshPart },
+	map: (Vector3, MeshPart) -> Vector3,
+	options: ReshapeOptions?
+): Reshape
+	local o: ReshapeOptions = options or {}
+	local Deform = require(script.Parent.Deform) :: any
+	local Normals = require(script.Parent.Normals) :: any
+	local meshes = {}
+	for i, part in parts do
+		meshes[i] = Deform.map(R.fromPart(part), function(position: Vector3): Vector3
+			return map(position, part)
+		end)
+	end
+	if o.unify ~= false then
+		meshes = Normals.unify(meshes, { tolerance = o.tolerance or 1e-3, angle = o.angle or math.rad(75) })
+	end
+	local entries: { ReshapeEntry } = {}
+	for i, part in parts do
+		local bundle = R.toModel(meshes[i], {
+			name = part.Name,
+			maxTriangles = o.maxTriangles or 18000,
+			collisionFidelity = o.collisionFidelity or Enum.CollisionFidelity.Box,
+		})
+		local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
+		for _, handle in bundle.handles do
+			local copy = assert(handle.part, "Reshape bundle part missing")
+			copy.Name = part.Name
+			copy.Material = part.Material
+			copy.Color = part.Color
+			copy.DoubleSided = part.DoubleSided
+			copy.CastShadow = part.CastShadow
+			if appearance then
+				appearance:Clone().Parent = copy
+			end
+		end
+		bundle.model.Parent = part.Parent
+		table.insert(entries, { part = part, bundle = bundle, transparency = part.Transparency })
+		part.Transparency = 1
+	end
+	local handle = {} :: any
+	handle.entries = entries
+	function handle.publish(
+		self: Reshape,
+		metadata: any,
+		publishOptions: Types.PublishOptions?
+	): ReshapeReport
+		local report: ReshapeReport = { success = true, published = {}, failures = {} }
+		for _, e in self.entries do
+			local part = e.part
+			local meta = metadata
+			if type(metadata) == "function" then
+				meta = metadata(part)
+			elseif type(metadata) == "table" then
+				meta = table.clone(metadata)
+				meta.Name = string.sub((metadata.Name or "Editable3D") .. " " .. part.Name, 1, 50)
+			end
+			local result = R.publish(e.bundle, meta, publishOptions)
+			if result.success then
+				local holder = part.Parent
+				if
+					holder
+					and holder:IsA("Model")
+					and holder.Name == part.Name
+					and #holder:GetChildren() == 2 -- the original and its preview bundle
+					and holder.Parent
+				then
+					e.bundle.model.Parent = holder.Parent
+					holder:Destroy()
+				else
+					part:Destroy()
+				end
+				local first = e.bundle.handles[1]
+				local firstPart = first and first.part
+				report.published[part.Name] = if firstPart then tostring(firstPart.MeshId) else ""
+			else
+				report.success = false
+				report.failures[part.Name] = tostring(result.stage) .. ": " .. tostring(result.error)
+			end
+		end
+		return report
+	end
+	function handle.revert(self: Reshape)
+		for _, e in self.entries do
+			R.destroy(e.bundle)
+			e.part.Transparency = e.transparency
+		end
+	end
+	return handle :: Reshape
+end
 export type TerrainFillOptions = {
 	ground: number,
 	seaLevel: number?,

@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.92.0 — 2026-10-05
+
+- **`Roblox.reshape(parts, map, options)`:** the geometry counterpart of `rebake`. It reads back published MeshParts, moves every vertex through `map(position, part)`, re-derives normals across all the parts together (so seams between chunks stay smooth), and shows each result in the original's parent with its material, colour and SurfaceAppearance, hiding the original. `:publish(metadata, options)` uploads each one and puts it in the original's place, replacing a single-part holder model of the same name. `:revert()` restores the originals. It replaces about 20 lines of session code per sculpt pass.
+- **`Pattern.band(x, low, high, edge)`:** a soft window with smoothstep shoulders, for masks like "this height band, fading over 0.2 studs".
+
 ## 0.91.1 — 2026-10-05
 
 - **`Roblox.rebake` forwards budget options** (`maxSeconds`, `maxWork`, `checkpoint`, `cancelled`) to each part's bake. The 60-second default stopped 1024² bakes with expensive shaders.

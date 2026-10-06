@@ -208,6 +208,38 @@ return function(E, options)
 		E.Roblox.destroy(bundle)
 		assert(ok, err)
 	end)
+	test("Roblox.reshape previews a deformed copy in place and revert restores the original", function()
+		local source =
+			E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(4, 4, 4))), { name = "ReshapeFixture" })
+		local part = source.handles[1].part
+		part.Material = Enum.Material.Metal
+		part.Color = Color3.new(0.2, 0.5, 0.4)
+		local appearance = Instance.new("SurfaceAppearance")
+		appearance.Parent = part
+		local holder = Instance.new("Folder")
+		source.model.Parent = holder
+		local ok, err = pcall(function()
+			local handle = E.Roblox.reshape({ part }, function(p)
+				return p + Vector3.new(0, p.Y > 0 and 1 or 0, 0)
+			end)
+			local entry = handle.entries[1]
+			assert(part.Transparency == 1, "original hidden")
+			assert(entry.bundle.model.Parent == part.Parent, "preview shown beside the original")
+			local copy = entry.bundle.handles[1].part
+			assert(copy.Material == Enum.Material.Metal and copy.Color == part.Color, "appearance copied")
+			assert(copy:FindFirstChildOfClass("SurfaceAppearance"), "surface appearance cloned")
+			local hi = -math.huge
+			for _, v in E.Roblox.fromPart(copy).vertices do
+				hi = math.max(hi, v.Y)
+			end
+			assert(math.abs(hi - (part.Position.Y + 3)) < 1e-3, "top face raised by the map: " .. hi)
+			handle:revert()
+			assert(part.Transparency == 0 and entry.bundle.model.Parent == nil, "reverted")
+		end)
+		holder:Destroy()
+		E.Roblox.destroy(source)
+		assert(ok, err)
+	end)
 	test("Roblox.fillTerrain writes land, edge band and sea inside the outline's box", function()
 		local terrain = workspace.Terrain
 		local origin = Vector2.new(4000, 4000)

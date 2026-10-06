@@ -7,6 +7,16 @@ return function(E)
 	local function near(a, b, tolerance)
 		assert(math.abs(a - b) <= (tolerance or 1e-5), tostring(a) .. " != " .. tostring(b))
 	end
+	test("band is a soft window with smoothstep shoulders on both bounds", function()
+		near(P.band(5, 0, 10, 1), 1)
+		near(P.band(-3, 0, 10, 1), 0)
+		near(P.band(13, 0, 10, 1), 0)
+		near(P.band(0, 0, 10, 1), 0.5)
+		near(P.band(10, 0, 10, 1), 0.5)
+		near(P.band(0.5, 0, 10, 1), P.smoothstep(-1, 1, 0.5))
+		near(P.band(5, 0, 10), 1)
+		near(P.band(-0.01, 0, 10), 0)
+	end)
 	test("hash is deterministic, uniform in [0, 1) and sensitive to every input", function()
 		local seen, sum, n = {}, 0, 0
 		for i = -20, 19 do

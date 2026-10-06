@@ -81,6 +81,12 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - A preview model built with `toModel` and parented to `workspace` stays there after publishing. Re-parent it into the target model, or later scans of that model will miss it.
 - On a read-back part, a session reference to a hidden original makes `Transparency < 1` filters skip it. Measure on the preview parts you are actually showing.
 
+## Reshaping published parts
+
+- Use `Roblox.reshape(parts, function(p, part) ... end)` for any field deformation of published parts (a band of heights scaled, an edge rolled under, ends bent). Build the field from `Pattern.band` and `smoothstep` windows so it fades to identity at its edges and neighbouring parts stay attached. Apply the same field to every part that shares a surface (face, skull and neck together) and they stay aligned.
+- Judge a reshape against a matched-scale side-by-side with the reference photo, not by eye. One judgement about "a thin neck" from a blurry crop was off by 25%, and the first fix overshot.
+- Bend only the part of a form that should move. A rigid bend of a hair roll gave horn-like ends and opened a gap under the crown; weighting the bend by height, so the bottom flares and the top stays put, matched the photo.
+
 ## Re-texturing published parts
 
 - Multi-part models made by `toModel`/`partition` are 18k-triangle chunks that can overlap spatially. A part's name doesn't tell you which surface region it covers, so rebuild or re-texture whole groups, not single chunks.
