@@ -104,6 +104,11 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Publish with `Roblox.publishMaterials(parts, metadata, {resume = ledger, maxBytes = 2^31})`: only the editable maps upload, and the meshes are guarded but not replaced. Asset-URI maps are skipped, so one changed map per part means one image asset.
 - Keep color-map encoding consistent with earlier bakes (`toEditableImage(texture, srgb)`); switching the flag shifts every tone.
 
+## Published meshes differ from previews
+
+- Sliver triangles (rows or columns a few thousandths of a stud apart) render as light stripes once the mesh is published, though the EditableMesh preview looks fine. Interleaving two sets of sample rows (`unique(concat(linspace(...), linspace(...)))`) causes it. Keep row spacing even, or merge near-duplicate rows before lofting.
+- After publishing, a new texture renders white for a few seconds while it loads. Wait before judging it, and before measuring colour.
+
 ## Lofting organic forms from rings
 
 - Sample each ring by arc length, with extra density where detail lives (a face), rather than by angle. A superellipse sampled uniformly in angle bunches its points away from the front (`|sin|^(2/n)` has an infinite slope at 0), so a nose ridge gets three samples.
