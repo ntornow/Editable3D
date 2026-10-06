@@ -104,6 +104,13 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Publish with `Roblox.publishMaterials(parts, metadata, {resume = ledger, maxBytes = 2^31})`: only the editable maps upload, and the meshes are guarded but not replaced. Asset-URI maps are skipped, so one changed map per part means one image asset.
 - Keep color-map encoding consistent with earlier bakes (`toEditableImage(texture, srgb)`); switching the flag shifts every tone.
 
+## Lofting organic forms from rings
+
+- Sample each ring by arc length, with extra density where detail lives (a face), rather than by angle. A superellipse sampled uniformly in angle bunches its points away from the front (`|sin|^(2/n)` has an infinite slope at 0), so a nose ridge gets three samples.
+- Keep the loft's grid UVs (u around the ring, v along the rings) for lofted heads and limbs. Box UVs put every downward-facing patch (the underside of a hair roll, of a nose, of a jaw) into one chart; they overwrite each other in the bake as speckles.
+- A head that ends in a jaw: clip the rings below the jaw line (a smooth minimum against the cut, not a hard `min`, or the edge stair-steps) and close each ring along the cut, so consecutive rings form the sloping underside. Make the neck a separate closed tube that rises into the head. Use `capFan` on such lofts: the bottom ring is nearly collinear.
+- Keep the ring point order going one way round the whole ring (for example the arc from -theta across the front to +theta, then the closing chord back). Appending the chord after an arc that already wrapped around connects the back to the front through the inside, which shows as a seam down the middle.
+
 ## Shading published parts
 
 - Per-texel `Bake.ambientOcclusion` is too slow for large sculpts (1024² texels × rays per part). Weld the parts, run `Bake.vertexOcclusion` once (a 3–5 stud `distance` captures folds without darkening a whole body), wrap the result in `Bake.pointSampler` with the vertex normals, then `Roblox.rebake(parts, shader, {readPrevious = true})`. Multiply `previous:sample(ctx.uv)` by an occlusion factor normalised by the mean, so the calibrated median colour stays put.

@@ -8,7 +8,10 @@ export type Curve<T> = (t: number) -> T
 -- quad and drops zero-area ones (robust for strongly deformed or pinched rings).
 -- outward: for a capped closed loft, reverse the winding when the enclosed volume is negative, so
 -- the normals face out whichever way the rings run (rings stacked along -axis wind inward).
-export type LoftOptions = { closed: boolean?, triangles: boolean?, outward: boolean? }
+-- capFan: close each end with a triangle fan around the ring's centroid instead of one polygon,
+-- skipping zero-area triangles. End rings that are collinear, repeat points or self-intersect cannot
+-- be triangulated as one polygon; fans always can. Fan corners carry the ring's UVs (v = 0 or 1).
+export type LoftOptions = { closed: boolean?, triangles: boolean?, outward: boolean?, capFan: boolean? }
 -- The frame a sweep places each profile in: point on the path, unit tangent, and the profile's
 -- x and y axes (parallel-transported along the path).
 export type SweepFrame = { point: Vector3, tangent: Vector3, x: Vector3, y: Vector3 }
@@ -191,13 +194,40 @@ function C.loft(rings: { { Vector3 } }, caps: boolean?, options: LoftOptions?): 
 			end
 		end
 	end
-	if caps and closed then
+	if caps and closed and options and options.capFan then
+		local function fan(i: number, flip: boolean)
+			local centre = Vector3.zero
+			for j = 1, n do
+				centre += m.vertices[ids[i][j]]
+			end
+			centre /= n
+			local c = m:addVertex(centre)
+			local v = (i - 1) / (#rings - 1)
+			for j = 1, n do
+				local k = j % n + 1
+				local a, b = ids[i][j], ids[i][k]
+				if (m.vertices[a] - centre):Cross(m.vertices[b] - centre).Magnitude > 1e-12 then
+					local ua, ub = Vector2.new((j - 1) / columns, v), Vector2.new(j / columns, v)
+					local uc = Vector2.new((j - 0.5) / columns, v)
+					if flip then
+						m:addFace({ c, b, a }, { { uv = uc }, { uv = ub }, { uv = ua } })
+					else
+						m:addFace({ c, a, b }, { { uv = uc }, { uv = ua }, { uv = ub } })
+					end
+				end
+			end
+		end
+		fan(1, true)
+		fan(#rings, false)
+	elseif caps and closed then
 		local first: { number } = {}
 		for j = n, 1, -1 do
 			table.insert(first, ids[1][j])
 		end
 		m:addFace(first)
 		m:addFace(ids[#ids])
+	end
+	if caps and closed then
 		if options and options.outward then
 			local volume = 0
 			for _, f in m.faces do

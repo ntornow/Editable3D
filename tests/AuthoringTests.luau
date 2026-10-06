@@ -163,6 +163,52 @@ return function(E)
 		assert(below and math.abs(below - 5) < 1e-6, tostring(below))
 		assert(sample(Vector3.new(10, 0, 0)) == nil)
 	end)
+	test("capFan closes lofts whose end rings cannot be one polygon", function()
+		local function volume(m)
+			local v = 0
+			for _, f in m.faces do
+				local a = m.vertices[f.vertices[1]]
+				for k = 2, #f.vertices - 1 do
+					v += a:Dot(m.vertices[f.vertices[k]]:Cross(m.vertices[f.vertices[k + 1]]))
+				end
+			end
+			return v / 6
+		end
+		local rings = rows(5, 16, true)
+		-- the first ring collapses to a line (collinear), the last repeats one point for half its samples
+		for j = 1, 16 do
+			rings[1][j] = Vector3.new(math.cos((j - 1) / 16 * 2 * math.pi), 1, 0)
+			if j > 8 then
+				rings[5][j] = rings[5][8]
+			end
+		end
+		local m = E.Curves.loft(rings, true, { triangles = true, capFan = true, outward = true })
+		for fid in m.faces do
+			local tris = m:faceTriangles(fid)
+			assert(#tris >= 1)
+		end
+		assert(volume(m) > 0, "outward")
+		-- every fan corner has a UV on the end ring's v
+		local ok = 0
+		for _, f in m.faces do
+			for _, c in f.corners do
+				assert(c.uv ~= nil, "uv")
+				ok += 1
+			end
+		end
+		assert(ok > 0)
+		-- polygon caps on the same rings fail to triangulate, which is why the option exists
+		local poly = E.Curves.loft(rings, true, { triangles = true })
+		local failed = false
+		for fid in poly.faces do
+			if not pcall(function()
+				poly:faceTriangles(fid)
+			end) then
+				failed = true
+			end
+		end
+		assert(failed, "polygon cap of a collinear ring should be degenerate")
+	end)
 	test("outward lofts face out whichever way the rings are stacked", function()
 		local function volume(m)
 			local v = 0

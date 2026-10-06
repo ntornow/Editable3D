@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.93.0 — 2026-10-05
+
+- **`Curves.loft(..., {capFan = true})`:** closes each end with a triangle fan around the ring's centroid, skipping zero-area triangles, with ring UVs on the fan corners. A single cap polygon cannot be triangulated when the end ring is collinear, repeats points or self-intersects; this happens with clipped rings (a jaw cut through a head loft) and rings that taper to a point. Fans always work, and `outward` still applies.
+
 ## 0.92.0 — 2026-10-05
 
 - **`Roblox.reshape(parts, map, options)`:** the geometry counterpart of `rebake`. It reads back published MeshParts, moves every vertex through `map(position, part)`, re-derives normals across all the parts together (so seams between chunks stay smooth), and shows each result in the original's parent with its material, colour and SurfaceAppearance, hiding the original. `:publish(metadata, options)` uploads each one and puts it in the original's place, replacing a single-part holder model of the same name. `:revert()` restores the originals. It replaces about 20 lines of session code per sculpt pass.
