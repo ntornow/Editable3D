@@ -106,6 +106,11 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Measure before adding shading passes. On a soft overcast sculpt, the median and luminance spread of a fold region can already match the photo; then occlusion only adds risk (edge speckle where inner layers sit under the outer sheet). Drop points that are almost fully occluded (hidden layers) from the sampler, and keep its radius under the layer spacing.
 - A published part's colour map is an asset URI; a preview's is an `EditableImage` object. `readPrevious` handles both.
 
+## Box UV pitfalls
+
+- `UV.box` puts every face that faces +Z into one chart. Two shells stacked along an axis (a bun in front of a cap, a strap over a foot) overlap in that chart and fight in the bake as speckle. Give stacked shells separate parts and textures, or use island-based UVs.
+- Grooves that converge at a point (spirals into a bun centre) go below the triangle size near it and alias into noise. Fade the groove amplitude to zero near the convergence point.
+
 ## Publishing
 
 - After a committed publish, the bundle's model is the scene. Clear any session variable that still points at the bundle, or call `Roblox.release(bundle)` to free its editables. Since 0.82, `Roblox.destroy` refuses published bundles. Before that, a later "clean up the previous preview" `destroy` on a stale reference deleted a published model; it had to be rebuilt from its asset IDs by re-running `toModel` on the source mesh (deterministic chunking) and applying each mesh asset with `ApplyMesh`.
