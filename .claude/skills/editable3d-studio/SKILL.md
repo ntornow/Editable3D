@@ -90,6 +90,8 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 
 ## Reshaping published parts
 
+- A `Deform` mask moves only the listed vertices: unlisted ids weigh 0 (without a mask every vertex weighs 1).
+
 - Use `Roblox.reshape(parts, function(p, part) ... end)` for any field deformation of published parts (a band of heights scaled, an edge rolled under, ends bent). Build the field from `Pattern.band` and `smoothstep` windows so it fades to identity at its edges and neighbouring parts stay attached. Apply the same field to every part that shares a surface (face, skull and neck together) and they stay aligned.
 - Judge a reshape against a matched-scale side-by-side with the reference photo, not by eye. One judgement about "a thin neck" from a blurry crop was off by 25%, and the first fix overshot.
 - A position-only reshape stretches the texture with it. Moves of more than about a stud on a textured, read-back part (cloth pushed out over a foot) smear the colour map into streaks. Keep such moves under about a stud, or re-bake the part afterwards.
@@ -126,6 +128,18 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Setting `ColorMapContent` on an existing SurfaceAppearance to a new EditableImage did not change the render. Create a new SurfaceAppearance (copy the other maps) and destroy the old one, as `Roblox.rebake` does.
 - Under memory pressure (about 20 GB in Studio, with several large editable previews alive), a newly baked EditableImage renders white even though its pixels are correct (check with `ReadPixelsBuffer`). Publishing the previews frees the editables, and the textures then render.
 - A published part's colour map is an asset URI; a preview's is an `EditableImage` object. `readPrevious` handles both.
+- Looking up per-vertex occlusion through a nearest-cell 3D grid prints the grid on the surface as a faint square pattern, and few samples per vertex add dark blotches. Interpolate (`Bake.pointSampler`), and compare the re-bake against the existing texture from the same camera (swap the SurfaceAppearances back and forth) before publishing it.
+
+## Fitting a figure to measured drawings and photo cameras
+
+- Measured orthographic elevations (survey drawings) beat photos for proportions. Render the model orthographically against a flat backdrop at a known pixels-per-stud, register each drawing by the horizontal shift that maximises silhouette IoU, and print both outlines' extents per height. Opposite elevations (front/back, left/right) must agree, but drawings can differ by 1–2 studs in places; average them rather than trusting one.
+- A silhouette only sees the outermost surface. Anything inside the outline (a held object in front of the body, a limb against the torso) is unconstrained by it, and a silhouette-only fit can leave it badly posed. Read its corners and edges off the drawing's interior lines, from a zoomed side-by-side of the drawing and the render at the same scale, and fit the pose to those points (a least-squares rotation in the drawing plane often explains most of the error).
+- Fit body sections with `Deform.sectionScale` (one half-axis at a time, per height, about the section's mid-point). Exclude heights where something else defines the drawing's outline (a held object, a raised limb) and interpolate the correction across them; fade fits out where the drawing's outline becomes the head or neck.
+- Give each region one corrective mechanism. A lateral section fit and a limb bulge applied to the same shoulder both widened it, and it came out about 4 studs too wide. Decide which owns the region, and order them (global fit first, local shape after).
+- Fix photo cameras' focal length from EXIF and solve only the pose. A free-focal solve trades focal length against distance and hides proportion errors behind fake perspective. Pass the solved camera to `Deform.relief` (0.95) to transfer relief in the photo's own pixels.
+- Cloth over a limb: move cloth points outward (along the horizontal ray from the torso's axis) until they clear a capsule along the limb, then smooth that displacement with `Deform.smoothDisplacement` across all the parts of the cloth layer. Unsmoothed, every fold inside the capsule lands on its surface and the bulge reads as a plain tube; smoothed, the folds ride over it and part seams stay closed. Give under-layers a smaller clearance so the outer layer stays on top.
+- Work out a hand's grip in the held object's own frame (PCA of a box: long axis, width, face normal). A hand mesh sculpted for one grip cannot be rotated rigidly into another (its wrist direction and knuckle row are fixed relative to each other). Keep the part that wraps the object, trim the rest with `Roblox.reshape(..., {keep = ...})`, and attach a new wrist and forearm.
+- Rigid moves of published parts need no republish: set `part.CFrame = T * part.CFrame` (store the previous CFrame in an attribute). Use `Roblox.reshape` only when the mesh itself changes.
 
 ## Box UV pitfalls
 

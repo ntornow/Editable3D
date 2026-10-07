@@ -832,19 +832,26 @@ end
 -- the part's parent while the original is hidden. :publish(metadata, options) uploads each bundle
 -- and puts it in the original's place (a single-part holder model of the same name is replaced
 -- whole); :revert() restores the originals. metadata is a table (its Name gets " <part name>"
--- appended, trimmed to 50 characters) or a function of the part.
+-- appended, trimmed to 50 characters) or a function of the part. keep(centroid, part) -> boolean
+-- trims faces while reshaping: a face whose ORIGINAL centroid fails it is removed (cut away a part of
+-- a published mesh that a new piece replaces); faces that survive keep their UVs and textures.
 export type ReshapeOptions = {
 	unify: boolean?,
 	angle: number?,
 	tolerance: number?,
 	maxTriangles: number?,
 	collisionFidelity: Enum.CollisionFidelity?,
+	keep: ((Vector3, MeshPart) -> boolean)?,
 }
 export type ReshapeEntry = { part: MeshPart, bundle: Bundle, transparency: number }
+-- published and failures are keyed by part name (parts sharing a name overwrite each other there);
+-- parts lists every entry in order, so same-named parts each keep their result.
+export type ReshapeResult = { part: string, meshId: string?, error: string? }
 export type ReshapeReport = {
 	success: boolean,
 	published: { [string]: string },
 	failures: { [string]: string },
+	parts: { ReshapeResult },
 }
 export type Reshape = {
 	entries: { ReshapeEntry },
@@ -861,7 +868,22 @@ function R.reshape(
 	local Normals = require(script.Parent.Normals) :: any
 	local meshes = {}
 	for i, part in parts do
-		meshes[i] = Deform.map(R.fromPart(part), function(position: Vector3): Vector3
+		local source = R.fromPart(part)
+		local keep = o.keep
+		if keep then
+			for fid, f in source.faces do
+				local c = Vector3.zero
+				for _, v in f.vertices do
+					c += source.vertices[v]
+				end
+				if not keep(c / #f.vertices, part) then
+					source:removeFace(fid)
+				end
+			end
+			source:removeUnused()
+			assert(next(source.faces) ~= nil, "Reshape keep removed every face of " .. part.Name)
+		end
+		meshes[i] = Deform.map(source, function(position: Vector3): Vector3
 			return map(position, part)
 		end)
 	end
@@ -898,7 +920,7 @@ function R.reshape(
 		metadata: any,
 		publishOptions: Types.PublishOptions?
 	): ReshapeReport
-		local report: ReshapeReport = { success = true, published = {}, failures = {} }
+		local report: ReshapeReport = { success = true, published = {}, failures = {}, parts = {} }
 		for _, e in self.entries do
 			local part = e.part
 			local meta = metadata
@@ -925,10 +947,14 @@ function R.reshape(
 				end
 				local first = e.bundle.handles[1]
 				local firstPart = first and first.part
-				report.published[part.Name] = if firstPart then tostring(firstPart.MeshId) else ""
+				local meshId = if firstPart then tostring(firstPart.MeshId) else ""
+				report.published[part.Name] = meshId
+				table.insert(report.parts, { part = part.Name, meshId = meshId })
 			else
 				report.success = false
-				report.failures[part.Name] = tostring(result.stage) .. ": " .. tostring(result.error)
+				local message = tostring(result.stage) .. ": " .. tostring(result.error)
+				report.failures[part.Name] = message
+				table.insert(report.parts, { part = part.Name, error = message })
 			end
 		end
 		return report

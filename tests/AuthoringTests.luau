@@ -431,6 +431,181 @@ return function(E)
 			end, { fade = 0 })
 		end, "Invalid relief options")
 	end)
+	test("envelope of several meshes keeps the frontmost surface of all of them", function()
+		local back = E.Primitives.box(Vector3.new(4, 4, 2)) -- front face at z = -1, depth 9
+		local front = E.Deform.transform(E.Primitives.box(Vector3.new(2, 2, 2)), CFrame.new(0, 0, -3)) -- depth 6
+		local env = E.Deform.envelope({ back, front }, view, 0.25)
+		near(env:sample(Vector2.new(0, 0)) :: number, 6, 1e-6)
+		-- view x is world -X: x = -1.5 is covered by the back box alone
+		near(env:sample(Vector2.new(1.5, 0)) :: number, 9, 1e-6)
+		near(E.Deform.envelope(back, view, 0.25):sample(Vector2.new(0, 0)) :: number, 9, 1e-6)
+	end)
+	-- a camera 10 studs in front of the origin looking along +Z (pixel x grows toward world -X)
+	local camera = E.Camera.new(CFrame.lookAt(Vector3.new(0, 0, -10), Vector3.zero), 40, 200, 200)
+	local focal = 100 / math.tan(math.rad(20))
+	local function tiltedSheet(n: number)
+		-- the plane z = 0.5 x over |x|, |y| <= 3, facing the camera
+		local m = E.Mesh.new()
+		local ids = {}
+		for i = 0, n do
+			ids[i] = {}
+			for j = 0, n do
+				local x, y = -3 + 6 * i / n, -3 + 6 * j / n
+				ids[i][j] = m:addVertex(Vector3.new(x, y, 0.5 * x))
+			end
+		end
+		for i = 0, n - 1 do
+			for j = 0, n - 1 do
+				m:addFace({ ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j] })
+			end
+		end
+		m:recalculateNormals()
+		if m:faceNormal((next(m.faces))).Z > 0 then
+			m = E.Topology.reverse(m):recalculateNormals()
+		end
+		return m
+	end
+	test("camera envelope interpolates depth perspective-correctly across large faces", function()
+		local env = E.Deform.envelope(tiltedSheet(1), camera, 2)
+		for _, du in { -60, -25, 0, 30, 60 } do
+			-- along the pixel row through the principal point: x = -du * d / f on z = 0.5 x
+			local expected = 10 / (1 + 0.5 * du / focal)
+			near(env:sample(Vector2.new(100 + du, 100)) :: number, expected, 1e-4)
+		end
+		assert(env:sample(Vector2.new(5, 100)) == nil, "outside the sheet")
+	end)
+	test("camera relief moves points along their rays", function()
+		local sheet = tiltedSheet(30)
+		local out = E.Deform.relief(sheet, camera, function(_, front)
+			return front - 0.5 -- pull the visible surface 0.5 toward the camera
+		end, { alpha = 0, step = 2 })
+		local moved = 0
+		local origin = camera.frame.Position
+		for id, v in out.vertices do
+			local p = sheet.vertices[id]
+			if (v - p).Magnitude > 1e-6 then
+				moved += 1
+				local a, b = p - origin, v - origin
+				assert(a.Unit:Cross(b.Unit).Magnitude < 1e-6, "left its ray")
+				local before = camera.frame:PointToObjectSpace(p)
+				local after = camera.frame:PointToObjectSpace(v)
+				near(-after.Z, -before.Z - 0.5, 1e-3)
+			end
+		end
+		assert(moved > 500, "moved " .. moved)
+	end)
+	test("sectionScale scales each side of a per-height centre separately", function()
+		local box = E.Primitives.box(Vector3.new(2, 10, 4)) -- z in [-2, 2], y in [-5, 5]
+		local out = E.Deform.sectionScale(box, CFrame.identity, function(h)
+			if h < 0 then
+				return nil
+			end
+			return 0.5, 2, 0.5
+		end)
+		for id, v in out.vertices do
+			local p = box.vertices[id]
+			if p.Y < 0 then
+				near((v - p).Magnitude, 0)
+			else
+				near(v.X, p.X)
+				near(v.Z, if p.Z < 0.5 then 0.5 + (p.Z - 0.5) * 2 else 0.5 + (p.Z - 0.5) * 0.5)
+			end
+		end
+		-- blended: points beyond centre +- blend take the full scale on their side
+		local blended = E.Deform.sectionScale(box, CFrame.identity, function()
+			return 0, 2, 0.5
+		end, { blend = 1 })
+		for id, v in blended.vertices do
+			local p = box.vertices[id]
+			near(v.Z, p.Z * (if p.Z < 0 then 2 else 0.5))
+		end
+		-- a rotated frame scales world X (local Z = world -X); the mask holds a vertex
+		local wide = E.Primitives.box(Vector3.new(4, 10, 2))
+		local held = next(wide.vertices)
+		local mask = {}
+		for id in wide.vertices do
+			mask[id] = if id == held then 0 else 1 -- with a mask, unlisted vertices stay put
+		end
+		local sideways = E.Deform.sectionScale(
+			wide,
+			CFrame.fromMatrix(Vector3.zero, Vector3.zAxis, Vector3.yAxis, -Vector3.xAxis),
+			function()
+				return 0, 3, 1
+			end,
+			{ mask = mask }
+		)
+		for id, v in sideways.vertices do
+			local p = wide.vertices[id]
+			near(v.X, if id == held or p.X < 0 then p.X else p.X * 3)
+			near(v.Z, p.Z)
+		end
+		rejects(function()
+			E.Deform.sectionScale(box, CFrame.identity, function()
+				return 0, 1, 1
+			end, { blend = -1 })
+		end, "Section blend must be nonnegative")
+	end)
+	test("smoothDisplacement keeps linear fields, softens steps and agrees across meshes", function()
+		local function sheet(x0: number, x1: number)
+			local m = E.Mesh.new()
+			local ids = {}
+			for i = 0, math.round((x1 - x0) / 0.25) do
+				ids[i] = {}
+				for j = 0, 24 do
+					ids[i][j] = m:addVertex(Vector3.new(x0 + i * 0.25, -3 + j * 0.25, 0))
+				end
+			end
+			for i = 0, math.round((x1 - x0) / 0.25) - 1 do
+				for j = 0, 23 do
+					m:addFace({ ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j] })
+				end
+			end
+			return m
+		end
+		-- two sheets sharing the column x = 0
+		local left, right = sheet(-4, 0), sheet(0, 4)
+		local linear = E.Deform.smoothDisplacement({ left, right }, function(p)
+			return Vector3.new(0, 0, 0.1 * p.X + 0.3)
+		end, { sigma = 0.4 })
+		-- interior points: the Gaussian mean of a linear field is the field itself
+		near(linear(Vector3.new(1, 0, 0)).Z, 0.4, 1e-6)
+		near(linear(Vector3.new(-2, 0.5, 0)).Z, 0.1, 1e-6)
+		local step = E.Deform.smoothDisplacement({ left, right }, function(p)
+			return if p.X > 0.01 then Vector3.new(0, 0, 1) else Vector3.zero
+		end, { sigma = 0.5 })
+		local at0 = step(Vector3.new(0, 0, 0)).Z
+		assert(at0 > 0.3 and at0 < 0.6, "step not softened at the edge: " .. at0)
+		near(step(Vector3.new(3, 0, 0)).Z, 1, 1e-6)
+		near(step(Vector3.new(-3, 0, 0)).Z, 0, 1e-9)
+		local previous = -1
+		for x = -1.5, 1.5, 0.25 do
+			local z = step(Vector3.new(x, 0, 0)).Z
+			assert(z >= previous - 1e-9, "not monotone")
+			previous = z
+		end
+		-- the shared column gets one value whichever sheet asks
+		local moved = E.Deform.map(left, function(p)
+			return p + step(p)
+		end)
+		local movedRight = E.Deform.map(right, function(p)
+			return p + step(p)
+		end)
+		for id, v in left.vertices do
+			if math.abs(v.X) < 1e-9 then
+				local zl = moved.vertices[id].Z
+				for rid, w in right.vertices do
+					if (w - v).Magnitude < 1e-9 then
+						near(movedRight.vertices[rid].Z, zl, 1e-12)
+					end
+				end
+			end
+		end
+		rejects(function()
+			E.Deform.smoothDisplacement(left, function()
+				return Vector3.zero
+			end, { sigma = 0 })
+		end, "Invalid smoothing options")
+	end)
 	test("box UVs with tile are world-aligned studs / tile and unpacked", function()
 		local box = E.Deform.transform(E.Primitives.box(Vector3.new(8, 4, 2)), CFrame.new(10, 3, -5))
 		local m, info = E.UV.box(box, nil, { tile = 4 })

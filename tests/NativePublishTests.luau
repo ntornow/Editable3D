@@ -233,7 +233,32 @@ return function(E, options)
 				hi = math.max(hi, v.Y)
 			end
 			assert(math.abs(hi - (part.Position.Y + 3)) < 1e-3, "top face raised by the map: " .. hi)
+			-- a cancelled publish fails before any upload and reports each part in the list
+			local report = handle:publish({ Name = "ReshapeFixture" }, {
+				cancelled = function()
+					return true
+				end,
+			})
+			assert(not report.success and #report.parts == 1, "one failed entry")
+			assert(report.parts[1].part == part.Name and report.parts[1].error ~= nil, "entry names its part")
+			assert(report.failures[part.Name] == report.parts[1].error, "keyed failure kept")
+			assert(part.Parent ~= nil and part.Transparency == 1, "preview kept after a failed publish")
 			handle:revert()
+			-- keep trims faces by their original centroid: the top half of the box is cut away
+			local trimmed = E.Roblox.reshape({ part }, function(p)
+				return p
+			end, {
+				keep = function(c)
+					return c.Y < part.Position.Y + 0.5
+				end,
+			})
+			local copy2 = trimmed.entries[1].bundle.handles[1].part
+			local top = -math.huge
+			for _, v in E.Roblox.fromPart(copy2).vertices do
+				top = math.max(top, v.Y)
+			end
+			assert(top < part.Position.Y + 2 - 1e-3, "faces at the top removed: " .. top)
+			trimmed:revert()
 			assert(part.Transparency == 0 and entry.bundle.model.Parent == nil, "reverted")
 		end)
 		holder:Destroy()

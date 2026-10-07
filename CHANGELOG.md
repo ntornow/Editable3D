@@ -1,5 +1,15 @@
 # Editable3D changes
 
+## 0.95.0 — 2026-10-07
+
+- **Photo cameras in `Deform.envelope`, `Deform.relief` and `Deform.edge`:** a view may now be a `Camera` (`Camera.new`, the pinhole camera that `Camera.fit` solves from landmarks) as well as an orthographic `CFrame`. View coordinates are then the camera's pixel coordinates, envelope depth is interpolated perspective-correctly (inverse depth is linear across the image), faces reaching behind the camera are skipped, and points move along their own rays, so relief measured in a photo (a depth or normal map integrated in its pixels) transfers without first re-projecting it orthographically. The default step is the pixel size of 0.25 studs at the mesh's mean depth.
+- **`Deform.envelope({meshes}, view, step)`:** the front envelope of several meshes together, so the parts of a model occlude each other. Pass it to `relief` as `options.envelope` and parts hidden behind other parts stay put.
+- **`Deform.sectionScale(mesh, frame, section, {blend, mask})`:** scales each height section along one axis, separately on either side of a per-height centre (`section(height) -> centre, below, above`). This is how a figure's front and back, or left and right, profiles are fitted to measured elevations independently.
+- **`Deform.smoothDisplacement(meshes, displace, {sigma, reach})`:** turns a per-point displacement rule into a field smoothed over neighbouring positions across several meshes at once, so seams between parts stay closed. A rule such as "push cloth points out of the arm capsule" flattens every fold it touches; smoothing the displacement instead lets the folds ride over the bulge.
+- **`Roblox.reshape` options.`keep(centroid, part)`:** trims faces while reshaping. A face whose original centroid fails the test is removed, and the surviving faces keep their UVs and textures. Use it to cut away the part of a published mesh that a new piece replaces.
+- **`Roblox.reshape` report.`parts`:** a list of `{part, meshId?, error?}` in entry order. `published` and `failures` are keyed by part name, so parts sharing a name overwrote each other there.
+- Docs: a `Deform` mask leaves unlisted vertices in place (weight 0); the header comment said 1.
+
 ## 0.94.0 — 2026-10-06
 
 - **`Roblox.publishInChunks(bundle, metadata, {partsPerTransaction = 8, ...})`:** publishes a large bundle as several transactions, each with its own operation budget and all sharing one resume ledger, so a texture shared by every part uploads once. `Roblox.publish` snapshots every part before upload, after read-back and again at validation, and its budget counts total allocations. So a 27-part head of about 470k triangles exceeded `maxBytes = 2^31` at validation, after every asset had uploaded. Each chunk is atomic: a failure stops before the later chunks, keeps the committed ones and reports `committedParts`, `partial` and the per-chunk reports. Rerunning with the returned `resume` ledger finishes the job without re-uploading.
