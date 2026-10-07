@@ -642,6 +642,61 @@ function D.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (
 		return p + proj.toward(p) * (offset * w)
 	end
 end
+-- A position map from a table of per-vertex moves computed elsewhere (offline relaxation, repair or
+-- fitting passes on exported geometry): moves[i] = { x, y, z, dx, dy, dz } moves a vertex found at
+-- (x, y, z) by (dx, dy, dz). Positions are matched in a hash of `cell` (default 0.01) within
+-- `tolerance` (default 0.003) per axis, so every split copy of a vertex (UV seams, soups, chunked
+-- parts) moves with it; unmatched positions pass through. Returns the field and a live stats table
+-- { size, hits }. Use it as Roblox.reshape's map to apply corrections without re-deriving them in Luau.
+export type MoveTableOptions = { cell: number?, tolerance: number? }
+function D.moveTable(
+	moves: { { number } },
+	options: MoveTableOptions?
+): ((Vector3) -> Vector3, { size: number, hits: number })
+	local o: MoveTableOptions = options or {}
+	local cell = o.cell or 0.01
+	local tol = o.tolerance or 0.003
+	assert(cell > 0 and tol >= 0 and tol < cell, "moveTable needs 0 <= tolerance < cell")
+	local hash: { [string]: { { number } } } = {}
+	local function key(x: number, y: number, z: number): string
+		return string.format("%d,%d,%d", x, y, z)
+	end
+	for _, m in moves do
+		assert(#m >= 6, "moveTable entries are { x, y, z, dx, dy, dz }")
+		local k = key(math.floor(m[1] / cell), math.floor(m[2] / cell), math.floor(m[3] / cell))
+		local list = hash[k]
+		if not list then
+			list = {}
+			hash[k] = list
+		end
+		table.insert(list, m)
+	end
+	local stats = { size = #moves, hits = 0 }
+	local function field(p: Vector3): Vector3
+		local cx, cy, cz = math.floor(p.X / cell), math.floor(p.Y / cell), math.floor(p.Z / cell)
+		for dx = -1, 1 do
+			for dy = -1, 1 do
+				for dz = -1, 1 do
+					local list = hash[key(cx + dx, cy + dy, cz + dz)]
+					if list then
+						for _, m in list do
+							if
+								math.abs(m[1] - p.X) <= tol
+								and math.abs(m[2] - p.Y) <= tol
+								and math.abs(m[3] - p.Z) <= tol
+							then
+								stats.hits += 1
+								return Vector3.new(p.X + m[4], p.Y + m[5], p.Z + m[6])
+							end
+						end
+					end
+				end
+			end
+		end
+		return p
+	end
+	return field, stats
+end
 -- Thickens or thins elongated pieces (rays, spikes, petals, fingers) independently: every
 -- connected component (welded within weld, default 1e-4) gets its principal axis, its base is the
 -- end nearer `anchor`, and points are scaled about the axis by baseScale at the base blending

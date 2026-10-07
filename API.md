@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.96.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.97.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -232,6 +232,7 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.relief(mesh: Mesh, view: View, target: (Vector2, number) -> number?, options: ReliefOptions?): Mesh`
 - `Deform.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOptions?): Mesh`
 - `Deform.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (Vector3) -> Vector3`
+- `Deform.moveTable(moves: { { number } }, options: MoveTableOptions?): ((Vector3) -> Vector3, { size: number, hits: number })`
 - `Deform.taperComponents(mesh: Mesh, anchor: Vector3, baseScale: number, tipScale: number?, weld: number?): Mesh`
 - `Deform.sectionScale(mesh: Mesh, frame: CFrame, section: (number) -> (number?, number?, number?), options: SectionScaleOptions?): Mesh`
 - `Deform.smoothDisplacement(meshes: Mesh | { Mesh }, displace: (Vector3) -> Vector3, options: SmoothDisplacementOptions?): (Vector3) -> Vector3`
@@ -440,6 +441,7 @@ Source: [src/MeshRepair.luau](src/MeshRepair.luau)
 - `MeshRepair.clean(mesh: Mesh, options: CleanOptions?): (Mesh, RepairReport)`
 - `MeshRepair.orient(mesh: Mesh, options: OrientOptions?): (Mesh, RepairReport)`
 - `MeshRepair.audit(mesh: Mesh, options: AuditOptions?): AuditReport`
+- `MeshRepair.despike(mesh: Mesh, options: DespikeOptions?): (Mesh, RepairReport)`
 - `MeshRepair.unfold(mesh: Mesh, options: UnfoldOptions?): (Mesh, RepairReport)`
 
 ## Modifiers
@@ -890,6 +892,7 @@ Source: [src/Topology.luau](src/Topology.luau)
 
 - `Topology.triangulate(mesh: Mesh): Mesh`
 - `Topology.join(meshes: { Mesh }): Mesh`
+- `Topology.gridSheet(rows: { { Vector3 | false } }, options: GridSheetOptions?): Mesh`
 - `Topology.extract(mesh: Mesh, faces: FaceSet): Mesh`
 - `Topology.components(mesh: Mesh): { Mesh }`
 - `Topology.reverse(mesh: Mesh): Mesh`

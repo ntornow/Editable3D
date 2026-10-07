@@ -1063,6 +1063,108 @@ return function(E)
 		dup:addFace({ q, r, p })
 		assert(E.MeshRepair.audit(dup).duplicateFaces == 1)
 	end)
+	test("MeshRepair.despike pulls a pit back onto the surface and keeps real relief", function()
+		-- a 2 x 2 stud sheet at 0.1 spacing with one vertex pushed 0.6 behind it, and a broad bump
+		local rowsA = {}
+		for r = 1, 21 do
+			local row = {}
+			for c = 1, 21 do
+				local x, y = (c - 11) * 0.1, (r - 11) * 0.1
+				row[c] = Vector3.new(x, y, 0.3 * math.exp(-(x * x + y * y) / 0.5))
+			end
+			rowsA[r] = row
+		end
+		local sheet = E.Topology.gridSheet(rowsA)
+		local pit
+		for id, v in sheet.vertices do
+			if math.abs(v.X - 0.3) < 1e-6 and math.abs(v.Y + 0.4) < 1e-6 then
+				pit = id
+			end
+		end
+		local expected = sheet.vertices[pit]
+		sheet:setPosition(pit, expected - Vector3.new(0, 0, 0.6))
+		local fixed, rep = E.MeshRepair.despike(sheet, { distance = 0.2 })
+		assert(rep.spikes == 1, "spikes " .. rep.spikes)
+		near((fixed.vertices[pit] - expected).Magnitude, 0, 0.05)
+		-- the bump (0.3 high over 1 stud) is real relief: nothing else moved
+		for id, v in sheet.vertices do
+			if id ~= pit then
+				near((fixed.vertices[id] - v).Magnitude, 0, 1e-9)
+			end
+		end
+		-- split copies of a vertex (a soup) move together
+		local soup = E.Mesh.new()
+		for _, f in sheet.faces do
+			local vs = {}
+			for i, v in f.vertices do
+				vs[i] = soup:addVertex(sheet.vertices[v])
+			end
+			soup:addFace(vs)
+		end
+		local displaced = expected - Vector3.new(0, 0, 0.6)
+		local copiesBefore = 0
+		for _, v in soup.vertices do
+			if (v - displaced).Magnitude < 1e-9 then
+				copiesBefore += 1
+			end
+		end
+		assert(copiesBefore >= 4, "the soup splits the pit vertex " .. copiesBefore)
+		local fixedSoup = E.MeshRepair.despike(soup, { distance = 0.2 })
+		local copies = 0
+		for _, v in fixedSoup.vertices do
+			if (v - expected).Magnitude < 0.05 then
+				copies += 1
+			end
+			assert((v - displaced).Magnitude > 1e-6, "a copy stayed behind")
+		end
+		assert(copies == copiesBefore, "copies moved " .. copies .. " of " .. copiesBefore)
+	end)
+	test("Topology.gridSheet builds a masked sheet with grid UVs, winding toward +Z", function()
+		local rowsB = {}
+		for r = 1, 4 do
+			local row = {}
+			for c = 1, 5 do
+				row[c] = if r == 2 and c == 3 then false else Vector3.new(c - 1, r - 1, 0)
+			end
+			rowsB[r] = row
+		end
+		local m = E.Topology.gridSheet(rowsB)
+		-- 3 x 4 cells, the hole removes the 4 cells around (2, 3): 8 cells, 16 triangles; vertex (1, 3)
+		-- belonged only to removed cells, so 20 - 2 vertices remain
+		assert(count(m.faces) == 16, "faces " .. count(m.faces))
+		assert(count(m.vertices) == 18, "vertices " .. count(m.vertices))
+		for fid, f in m.faces do
+			local n = m:faceNormal(fid)
+			near(n.Z, 1)
+			for i, v in f.vertices do
+				local p = m.vertices[v]
+				near(f.corners[i].uv.X, p.X / 4)
+				near(f.corners[i].uv.Y, p.Y / 3)
+			end
+		end
+		local flipped = E.Topology.gridSheet(rowsB, { flip = true })
+		for fid in flipped.faces do
+			near(flipped:faceNormal(fid).Z, -1)
+		end
+		rejects(function()
+			E.Topology.gridSheet({ { Vector3.zero, Vector3.xAxis } })
+		end, "gridSheet needs at least two rows")
+	end)
+	test("Deform.moveTable moves every copy of a listed position and passes others through", function()
+		local field, stats = E.Deform.moveTable({
+			{ 1, 2, 3, 0.5, 0, 0 },
+			{ -4, 0.004, 9.99, 0, -1, 0 },
+		})
+		near((field(Vector3.new(1, 2, 3)) - Vector3.new(1.5, 2, 3)).Magnitude, 0)
+		near((field(Vector3.new(1.002, 1.999, 3.001)) - Vector3.new(1.502, 1.999, 3.001)).Magnitude, 0)
+		near((field(Vector3.new(-4, 0.006, 9.99)) - Vector3.new(-4, -0.994, 9.99)).Magnitude, 0)
+		local p = Vector3.new(1.01, 2, 3)
+		assert(field(p) == p, "outside the tolerance passes through")
+		assert(stats.hits == 3 and stats.size == 2, "hits " .. stats.hits)
+		rejects(function()
+			E.Deform.moveTable({ { 1, 2, 3 } })
+		end, "moveTable entries are { x, y, z, dx, dy, dz }")
+	end)
 	test("MeshRepair.unfold untangles a crumpled vertex in a grid", function()
 		local g = E.Topology.triangulate(E.Primitives.grid(6, 6, Vector2.new(6, 6)))
 		-- push one interior vertex far across its neighbours, flipping its triangles

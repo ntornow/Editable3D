@@ -104,6 +104,77 @@ function T.join(meshes: { Mesh }): Mesh
 	end
 	return out
 end
+-- A sheet from a grid of points: rows[r][c] is a Vector3 or false (a hole). Every cell whose four
+-- corners exist becomes two triangles (split along the shorter diagonal), so a masked grid gives a
+-- sheet with an arbitrary outline: a re-surfaced panel over part of a figure, a terrain patch, a
+-- height field sampled along curved rows (each row following a hem, say). Corner UVs are
+-- (c - 1) / (columns - 1), (r - 1) / (rows - 1) unless options.uv(r, c, position) supplies them.
+-- Faces wind counter-clockwise seen from the side where rows advance up and columns advance right
+-- (the +Z side for rows along +Y and columns along +X); pass flip = true for the other side.
+-- Vertices that no cell uses are not added.
+export type GridSheetOptions = { uv: ((number, number, Vector3) -> Vector2)?, flip: boolean? }
+function T.gridSheet(rows: { { Vector3 | false } }, options: GridSheetOptions?): Mesh
+	local o: GridSheetOptions = options or {}
+	local nr = #rows
+	assert(nr >= 2, "gridSheet needs at least two rows")
+	local nc = #rows[1]
+	assert(nc >= 2, "gridSheet needs at least two columns")
+	for r = 2, nr do
+		assert(#rows[r] == nc, "gridSheet rows must have matching lengths")
+	end
+	local out = Mesh.new()
+	local ids: { [number]: number } = {}
+	local function vid(r: number, c: number): number
+		local k = (r - 1) * nc + c
+		local id = ids[k]
+		if not id then
+			id = out:addVertex(rows[r][c] :: Vector3)
+			ids[k] = id
+		end
+		return id
+	end
+	local function uv(r: number, c: number): Vector2
+		if o.uv then
+			return o.uv(r, c, rows[r][c] :: Vector3)
+		end
+		return Vector2.new((c - 1) / (nc - 1), (r - 1) / (nr - 1))
+	end
+	local function tri(a: { number }, b: { number }, c: { number })
+		local pa = rows[a[1]][a[2]] :: Vector3
+		local pb = rows[b[1]][b[2]] :: Vector3
+		local pc = rows[c[1]][c[2]] :: Vector3
+		if (pb - pa):Cross(pc - pa).Magnitude <= 1e-12 then
+			return
+		end
+		local va, vb, vc = vid(a[1], a[2]), vid(b[1], b[2]), vid(c[1], c[2])
+		local ca, cb, cc = { uv = uv(a[1], a[2]) }, { uv = uv(b[1], b[2]) }, { uv = uv(c[1], c[2]) }
+		if o.flip then
+			out:addFace({ va, vc, vb }, { ca, cc, cb })
+		else
+			out:addFace({ va, vb, vc }, { ca, cb, cc })
+		end
+	end
+	for r = 1, nr - 1 do
+		for c = 1, nc - 1 do
+			local p00, p01 = rows[r][c], rows[r][c + 1]
+			local p10, p11 = rows[r + 1][c], rows[r + 1][c + 1]
+			if p00 and p01 and p10 and p11 then
+				local a, b, d, e = { r, c }, { r, c + 1 }, { r + 1, c }, { r + 1, c + 1 }
+				if
+					((p11 :: Vector3) - (p00 :: Vector3)).Magnitude
+					<= ((p01 :: Vector3) - (p10 :: Vector3)).Magnitude
+				then
+					tri(a, b, e)
+					tri(a, e, d)
+				else
+					tri(a, b, d)
+					tri(b, e, d)
+				end
+			end
+		end
+	end
+	return out
+end
 function T.extract(mesh: Mesh, faces: FaceSet): Mesh
 	local out = mesh:clone()
 	for id in out.faces do

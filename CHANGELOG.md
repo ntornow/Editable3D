@@ -1,5 +1,17 @@
 # Editable3D changes
 
+## 0.97.0 — 2026-10-07
+
+- **`MeshRepair.despike(mesh, {distance, ratio, rings, maxRings, minNeighbours, iterations, maxMove, weld})`:** finds vertices that sit off the plane of their mesh neighbourhood, by more than `distance` and more than `ratio` times the neighbours' own spread. These are the pits and spikes that render as dark holes in sculpted or relief-transferred surfaces. Each one moves to the middle of its edge ring on that plane.
+  - The neighbourhood is topological (edge rings), so a vertex pushed far off its surface still finds that surface. A radius search would miss it.
+  - Split copies of a position (soups, UV seams) move together. Topology, corners and UVs are kept.
+- **`Topology.gridSheet(rows, {uv, flip})`:** builds a sheet from a grid of points. A `false` entry is a hole. Every cell with four corners becomes two triangles split along the shorter diagonal, with grid UVs or `options.uv(r, c, p)`.
+  - Use it to re-surface part of a figure whose old mesh is too crumpled to deform; rows can follow a curved edge such as a hem.
+  - Also for terrain patches and height fields over a masked domain.
+- **`Deform.moveTable(moves, {cell, tolerance})` -> `field(position)`, stats:** applies per-vertex moves computed elsewhere (`{x, y, z, dx, dy, dz}`) as a position map for `Roblox.reshape` or `Deform.map`.
+  - Positions are matched through a spatial hash, so every split copy of a vertex moves. Unmatched positions pass through.
+  - `stats.hits` counts the matches.
+
 ## 0.96.0 — 2026-10-07
 
 - **`Deform.edgeField(view, polyline, options) -> field(position)`:** the position map behind `Deform.edge`, for deformers that work one position at a time, such as `Roblox.reshape`'s map or `Deform.map` over several parts. It needs `options.envelope`: the view envelope of all the surfaces being edited (`Deform.envelope({ ...meshes }, view, step, 3)`), so a layer edge across several published parts tests depth against all of them. `Deform.edge` now builds on it.

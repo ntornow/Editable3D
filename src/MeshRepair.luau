@@ -464,6 +464,205 @@ function R.audit(mesh: Mesh, options: AuditOptions?): AuditReport
 		samples = samples,
 	}
 end
+-- Removes spikes and pits: a vertex that sits off the plane of its mesh neighbourhood (positions
+-- within `rings` edge rings, default 2, grown up to `maxRings` until `minNeighbours` are found) by
+-- more than `distance` and more than `ratio` times the neighbours' own spread off that plane moves
+-- to the middle of its edge ring, projected onto that plane; repeated `iterations` times (spikes
+-- often come in pairs). The neighbourhood is topological, so a vertex pushed far off the surface
+-- still finds the surface it belongs to. Positions are matched by `weld`, so every split copy of a
+-- vertex (soups, UV seams) moves together and topology, corners and UVs are kept. Deviations of
+-- `maxMove` or more are left alone (real layered geometry, not noise). Returns the mesh and
+-- { spikes, moved (vertex ids), maxMove }.
+export type DespikeOptions = {
+	distance: number?,
+	ratio: number?,
+	rings: number?,
+	maxRings: number?,
+	minNeighbours: number?,
+	iterations: number?,
+	maxMove: number?,
+	weld: number?,
+}
+local function smallestAxis(m: { { number } }): Vector3
+	-- Jacobi rotations on a symmetric 3x3 matrix; returns the eigenvector of the smallest eigenvalue
+	local a = { { m[1][1], m[1][2], m[1][3] }, { m[2][1], m[2][2], m[2][3] }, { m[3][1], m[3][2], m[3][3] } }
+	local v = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }
+	for _ = 1, 24 do
+		local p, q, big = 1, 2, math.abs(a[1][2])
+		if math.abs(a[1][3]) > big then
+			p, q, big = 1, 3, math.abs(a[1][3])
+		end
+		if math.abs(a[2][3]) > big then
+			p, q, big = 2, 3, math.abs(a[2][3])
+		end
+		if big < 1e-14 then
+			break
+		end
+		local theta = (a[q][q] - a[p][p]) / (2 * a[p][q])
+		local t = (if theta >= 0 then 1 else -1) / (math.abs(theta) + math.sqrt(theta * theta + 1))
+		local c = 1 / math.sqrt(t * t + 1)
+		local sn = t * c
+		for k = 1, 3 do
+			local akp, akq = a[k][p], a[k][q]
+			a[k][p], a[k][q] = c * akp - sn * akq, sn * akp + c * akq
+		end
+		for k = 1, 3 do
+			local apk, aqk = a[p][k], a[q][k]
+			a[p][k], a[q][k] = c * apk - sn * aqk, sn * apk + c * aqk
+		end
+		for k = 1, 3 do
+			local vkp, vkq = v[k][p], v[k][q]
+			v[k][p], v[k][q] = c * vkp - sn * vkq, sn * vkp + c * vkq
+		end
+	end
+	local best = 1
+	for i = 2, 3 do
+		if a[i][i] < a[best][best] then
+			best = i
+		end
+	end
+	return Vector3.new(v[1][best], v[2][best], v[3][best])
+end
+function R.despike(mesh: Mesh, options: DespikeOptions?): (Mesh, RepairReport)
+	local o: DespikeOptions = options or {}
+	local distance = o.distance or 0.3
+	local ratio = o.ratio or 4
+	local rings = o.rings or 2
+	local maxRings = o.maxRings or 4
+	local minNeighbours = o.minNeighbours or 8
+	local maxMove = o.maxMove or 2
+	local weld = o.weld or 1e-4
+	-- unique positions and their adjacency (through any face, so soups connect by position)
+	local keyOf: { [number]: number } = {}
+	local unique: { Vector3 } = {}
+	local index: { [string]: number } = {}
+	for id, v in mesh.vertices do
+		local k =
+			string.format("%d,%d,%d", math.round(v.X / weld), math.round(v.Y / weld), math.round(v.Z / weld))
+		local i = index[k]
+		if not i then
+			table.insert(unique, v)
+			i = #unique
+			index[k] = i
+		end
+		keyOf[id] = i
+	end
+	local adjacent: { [number]: { [number]: boolean } } = {}
+	for _, f in mesh.faces do
+		local vs = f.vertices
+		for i = 1, #vs do
+			local a, b = keyOf[vs[i]], keyOf[vs[i % #vs + 1]]
+			if a ~= b then
+				adjacent[a] = adjacent[a] or {}
+				adjacent[b] = adjacent[b] or {}
+				adjacent[a][b] = true
+				adjacent[b][a] = true
+			end
+		end
+	end
+	local function neighbourhood(i: number): { number }
+		local seen: { [number]: boolean } = { [i] = true }
+		local frontier: { number } = { i }
+		local out: { number } = {}
+		local depth = 0
+		while depth < maxRings and #frontier > 0 do
+			depth += 1
+			local nextFrontier: { number } = {}
+			for _, a in frontier do
+				local around: { [number]: boolean } = adjacent[a] or {}
+				for b in around do
+					if not seen[b] then
+						seen[b] = true
+						table.insert(out, b)
+						table.insert(nextFrontier, b)
+					end
+				end
+			end
+			frontier = nextFrontier
+			if depth >= rings and #out >= minNeighbours then
+				break
+			end
+		end
+		return out
+	end
+	local P = table.clone(unique)
+	local n = #P
+	local fixed: { [number]: boolean } = {}
+	local spikes = 0
+	local largest = 0
+	local hoods: { [number]: { number } } = {}
+	for _ = 1, o.iterations or 4 do
+		local moves: { [number]: Vector3 } = {}
+		for i = 1, n do
+			local nb = hoods[i]
+			if not nb then
+				nb = neighbourhood(i)
+				hoods[i] = nb
+			end
+			if #nb >= minNeighbours then
+				local p = P[i]
+				local c = Vector3.zero
+				for _, j in nb do
+					c += P[j]
+				end
+				c /= #nb
+				local m = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 } }
+				for _, j in nb do
+					local d = P[j] - c
+					m[1][1] += d.X * d.X
+					m[1][2] += d.X * d.Y
+					m[1][3] += d.X * d.Z
+					m[2][2] += d.Y * d.Y
+					m[2][3] += d.Y * d.Z
+					m[3][3] += d.Z * d.Z
+				end
+				m[2][1], m[3][1], m[3][2] = m[1][2], m[1][3], m[2][3]
+				local normal = smallestAxis(m)
+				local spread = 0
+				for _, j in nb do
+					spread += ((P[j] - c):Dot(normal)) ^ 2
+				end
+				spread = math.sqrt(spread / #nb)
+				local off = (p - c):Dot(normal)
+				if
+					math.abs(off) > distance
+					and math.abs(off) > ratio * spread
+					and math.abs(off) < maxMove
+				then
+					-- to the middle of its own ring (where a vertex of a regular mesh sits), on the plane
+					local ring, k = Vector3.zero, 0
+					local around: { [number]: boolean } = adjacent[i] or {}
+					for j in around do
+						ring += P[j]
+						k += 1
+					end
+					local base = if k > 0 then ring / k else p
+					moves[i] = base - normal * (base - c):Dot(normal)
+				end
+			end
+		end
+		if next(moves) == nil then
+			break
+		end
+		for i, q in moves do
+			largest = math.max(largest, (q - unique[i]).Magnitude)
+			P[i] = q
+			if not fixed[i] then
+				fixed[i] = true
+				spikes += 1
+			end
+		end
+	end
+	local out = mesh:clone()
+	local moved: { number } = {}
+	for id, i in keyOf do
+		if fixed[i] then
+			out:setPosition(id, P[i])
+			table.insert(moved, id)
+		end
+	end
+	return out, { spikes = spikes, moved = moved, maxMove = largest }
+end
 -- Untangles crumpled and flipped triangles: vertices on folded edges (adjacent faces turned more
 -- than acos(fold) against each other) and their neighbours `rings` deep are moved toward their
 -- neighbours' average, repeating until no fold remains or `iterations` is reached. Works on
