@@ -97,6 +97,11 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Judge a reshape against a matched-scale side-by-side with the reference photo, not by eye. One judgement about "a thin neck" from a blurry crop was off by 25%, and the first fix overshot.
 - A position-only reshape stretches the texture with it. Moves of more than about a stud on a textured, read-back part (cloth pushed out over a foot) smear the colour map into streaks. Keep such moves under about a stud, or re-bake the part afterwards.
 - Bend only the part of a form that should move. A rigid bend of a hair roll gave horn-like ends and opened a gap under the crown; weighting the bend by height, so the bottom flares and the top stays put, matched the photo.
+- A surface crumpled at the triangle level can't be fixed by moving its vertices. Relief from estimated normals on long sliver triangles leaves crossing slivers, jagged facets and fold-overs. Smooth fields, grey morphology on its height field, or projecting it onto a smooth target with tangential relaxation all left it crumpled in a geometry-only render, even where the height field looked clean. Build a new surface instead (a grid sheet over the region, rows following its natural edge), blend it into the old one at the open sides, and sink the old cloth just under it with a reshape.
+- Judge cloth geometry with the textures removed: stash each SurfaceAppearance, set a plain colour and SmoothPlastic, capture, then restore. Baked streaks and panel seams otherwise look like geometry, and geometry problems hide in them.
+- Raycasts against reshape bundles hit their collision box (`CollisionFidelity.Box`), not the surface. Read geometry back with `Roblox.fromPart` instead.
+- Before bilinear lookups near a masked region, extend the field past the mask with its nearest values. Interpolating across a fill value (−999) produced vertices flung tens of studs away, which showed as radiating spikes.
+- Per-vertex corrections computed offline (fold relaxations, spike repairs) can be applied in Studio as tables keyed by position: hash at 0.01, match within 0.003. Split copies of a vertex at UV seams all match.
 
 ## Re-texturing published parts
 
