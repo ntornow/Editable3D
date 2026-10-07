@@ -244,20 +244,26 @@ return function(E, options)
 			assert(report.failures[part.Name] == report.parts[1].error, "keyed failure kept")
 			assert(part.Parent ~= nil and part.Transparency == 1, "preview kept after a failed publish")
 			handle:revert()
-			-- keep trims faces by their original centroid: the top half of the box is cut away
+			-- keep trims faces by their original centroid: only the bottom face (centroid 2 below the
+			-- centre; side triangles have centroids within 2/3 of it) survives
 			local trimmed = E.Roblox.reshape({ part }, function(p)
 				return p
 			end, {
 				keep = function(c)
-					return c.Y < part.Position.Y + 0.5
+					return c.Y < part.Position.Y - 1.5
 				end,
 			})
 			local copy2 = trimmed.entries[1].bundle.handles[1].part
-			local top = -math.huge
-			for _, v in E.Roblox.fromPart(copy2).vertices do
+			local kept = E.Roblox.fromPart(copy2)
+			local top, faces = -math.huge, 0
+			for _, v in kept.vertices do
 				top = math.max(top, v.Y)
 			end
-			assert(top < part.Position.Y + 2 - 1e-3, "faces at the top removed: " .. top)
+			for _ in kept.faces do
+				faces += 1
+			end
+			assert(faces >= 1 and faces <= 2, "only the bottom face kept: " .. faces)
+			assert(math.abs(top - (part.Position.Y - 2)) < 1e-3, "kept faces lie on the bottom: " .. top)
 			trimmed:revert()
 			assert(part.Transparency == 0 and entry.bundle.model.Parent == nil, "reverted")
 		end)
