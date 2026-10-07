@@ -611,6 +611,45 @@ return function(E)
 			E.Deform.edgeField(view, line, {})
 		end, "edgeField needs options.envelope")
 	end)
+	test("edgeField profile roll raises a rounded roll above the line", function()
+		local m = E.Mesh.new()
+		local ids = {}
+		for i = 0, 30 do
+			ids[i] = {}
+			for j = 0, 40 do
+				ids[i][j] = m:addVertex(Vector3.new(-3 + i * 0.2, -2 + j * 0.2, 0))
+			end
+		end
+		for i = 0, 29 do
+			for j = 0, 39 do
+				m:addFace({ ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j] })
+			end
+		end
+		local env = E.Deform.envelope(m, view, 0.2, 3)
+		-- a horizontal line in the view (view Y is world y here); its left side, +y, is the upper layer
+		local line = { Vector2.new(-2.5, 0), Vector2.new(2.5, 0) }
+		local H, R = 0.6, 1.0
+		local field = E.Deform.edgeField(
+			view,
+			line,
+			{ envelope = env, height = H, radius = R, profile = "roll", drop = 0.2 }
+		)
+		local function lift(y: number): number
+			-- movement toward the viewer at (0, 0, -10): -z
+			return -field(Vector3.new(0, y, 0)).Z
+		end
+		near(lift(R), H, 1e-6) -- the top of the roll
+		near(lift(0.5 * R), H * math.sqrt(0.75), 1e-6) -- on the quarter circle
+		near(lift(3 * R), H * math.exp(-(2 / 1.2) ^ 2), 1e-6) -- easing back into the surface
+		assert(lift(1.6) < H and lift(1.6) > 0, "the roll eases back")
+		assert(lift(-0.4) < 0, "the lower side drops")
+		-- the lip profile is unchanged by default, and unknown profiles are rejected
+		local lip = E.Deform.edgeField(view, line, { envelope = env, height = H, width = 0.5 })
+		near(-lip(Vector3.new(0, 0.5, 0)).Z, H * math.exp(-1), 1e-6)
+		rejects(function()
+			E.Deform.edgeField(view, line, { envelope = env, profile = "wave" })
+		end, "edge profile must be")
+	end)
 	test("smoothDisplacement keeps linear fields, softens steps and agrees across meshes", function()
 		local function sheet(x0: number, x1: number)
 			local m = E.Mesh.new()

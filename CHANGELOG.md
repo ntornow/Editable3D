@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.99.0 — 2026-10-07
+
+- **`Deform.edge` / `Deform.edgeField` `options.profile = "roll"` and `options.radius`:** the upper side of the line becomes a rolled fold instead of a lip: a quarter circle rising to `height` at distance `radius`, easing back into the surface over about 1.2 × `radius`. Use it for a swag, or a rolled hem that stands well proud of the cloth beneath. `profile` defaults to `"lip"` (unchanged); any other value is rejected.
+- DEFORMATION.md recipe: trace layer edges and swags in a photograph's pixels and apply them through its solved `Camera`. Downward-facing estimated normals mark hem undersides.
+
 ## 0.98.0 — 2026-10-07
 
 - **`Topology.gridSheet(rows, {normal})`:** `options.normal(r, c, position)` sets every corner's normal (made unit). Corners otherwise carry no normal and `recalculateNormals` or `Roblox.toModel` fill them in.

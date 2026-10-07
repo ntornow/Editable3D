@@ -221,4 +221,8 @@ The view coordinates in `target(q, front)` are relative to the view frame: `q.Y`
 - **Symmetrize a scanned or photo-derived surface.** Sample the envelope at the mirrored point: `target = front + (env:sample(mirroredQ) - front) * w`. Pass `alpha = 1` so fold-unders keep their depth. Blend `w` in over a band of about 0.8 studs from the midline, and return nil where `|mirror - front|` jumps (the mirrored point fell off the other side's silhouette).
 - **Band-pass sharpen.** Enhance the features without amplifying noise: `target = front + k * (env:blurred(fine):sample(q) - env:blurred(coarse):sample(q))`, for example `k = 0.5`, `fine = 0.1`, `coarse = 0.45` studs on a face about 7 studs tall.
 - **Large-scale smoothing of a dense mesh.** `Sculpt.smooth` diffuses only about edge length × √iterations, so on fine meshes it barely moves features wider than a few edges. Replace the region with `blurred(r):sample(q) + keep * (front - blurred)` instead.
+- **Cloth layer edges and swags traced in a photograph.** Trace the line in the photo's own pixels and pass the photo's solved `Camera` as the view to `Deform.edge` or `Deform.edgeField`. The upper layer is on the left of the polyline's direction.
+  - The default `profile = "lip"` gives an overlapping hem: a rounded lip of `height` over `width` above the line, and a drop below.
+  - `profile = "roll"` with `radius` R gives a rolled fold whose lower edge is the line. The surface rises in a quarter circle to `height` at R and eases back over about 1.2 R. Use it for a swag or a rolled hem that stands well proud of the cloth beneath.
+  - Downward-facing estimated normals (n.y < -0.2 in the camera frame) mark hem undersides in a photo, which helps find the lines.
 

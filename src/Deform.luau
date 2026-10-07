@@ -574,6 +574,8 @@ export type EdgeOptions = {
 	layer: number?,
 	envelope: Envelope?,
 	step: number?,
+	profile: string?,
+	radius: number?,
 }
 -- Raises a crisp layer edge (a cloth hem, the border of an overlapping sheet) along a polyline
 -- given in view coordinates (Vector2, as Deform.relief's q). The side to the LEFT of the polyline
@@ -583,6 +585,9 @@ export type EdgeOptions = {
 -- offset depends on position alone, so coincident corners in soups move together. Beyond the
 -- polyline's ends nothing moves. Returns the mesh with normals recalculated (pass the result
 -- through Normals.unify for soups).
+-- profile = "roll" (with radius R, default 1) makes the upper side a rounded roll of cloth instead
+-- of a lip: a quarter circle rising from the line to `height` at distance R, then easing back to the
+-- surface over about 1.2 R (a swag or a rolled hem whose lower edge is the polyline).
 function D.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOptions?): Mesh
 	local o: EdgeOptions = table.clone(options or {})
 	o.envelope = o.envelope or D.envelope(mesh, view, o.step or defaultStep(view, { mesh }, 0.2), 3)
@@ -599,6 +604,10 @@ function D.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (
 	local height, width = o.height or 0.3, o.width or 0.7
 	local drop, dropWidth = o.drop or 0.2, o.dropWidth or 0.5
 	local layer = o.layer or 0.9
+	local roll = o.profile == "roll"
+	assert(o.profile == nil or o.profile == "lip" or roll, 'edge profile must be "lip" or "roll"')
+	local radius = o.radius or 1
+	assert(radius > 0, "edge radius must be positive")
 	local proj = projector(view)
 	local function smoothstep(e0: number, e1: number, x: number): number
 		local t = math.clamp((x - e0) / (e1 - e0), 0, 1)
@@ -636,9 +645,17 @@ function D.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (
 		if w <= 0 then
 			return p
 		end
-		local offset = if d >= 0
-			then -height * math.exp(-(d / width) ^ 2)
-			else drop * (1 - smoothstep(0, dropWidth, -d))
+		local up: number
+		if d < 0 then
+			up = 0
+		elseif roll then
+			up = if d <= radius
+				then height * math.sqrt(math.max(0, 1 - ((d - radius) / radius) ^ 2))
+				else height * math.exp(-((d - radius) / (1.2 * radius)) ^ 2)
+		else
+			up = height * math.exp(-(d / width) ^ 2)
+		end
+		local offset = if d >= 0 then -up else drop * (1 - smoothstep(0, dropWidth, -d))
 		return p + proj.toward(p) * (offset * w)
 	end
 end
