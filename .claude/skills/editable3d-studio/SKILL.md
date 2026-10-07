@@ -102,6 +102,7 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Raycasts against reshape bundles hit their collision box (`CollisionFidelity.Box`), not the surface. Read geometry back with `Roblox.fromPart` instead.
 - Before bilinear lookups near a masked region, extend the field past the mask with its nearest values. Interpolating across a fill value (−999) produced vertices flung tens of studs away, which showed as radiating spikes.
 - Per-vertex corrections computed offline (fold relaxations, spike repairs) can be applied in Studio as tables keyed by position: hash at 0.01, match within 0.003. Split copies of a vertex at UV seams all match.
+- Before applying a table-driven field in Studio, evaluate one point there and compare it with the offline tool's value. A table whose header disagreed with its data (step 1.0 written for rows 0.5 apart) passed the offline preview, which used the tool's own arrays, and published a wrong reshape.
 
 ## Re-texturing published parts
 
