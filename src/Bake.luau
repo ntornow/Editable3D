@@ -342,6 +342,96 @@ function B.occlusionSampler(
 	assert(#values > 0, "occlusionSampler found no vertices with normals")
 	return B.pointSampler(points, values, o.radius or 1.2, normals), total / #values
 end
+export type HeightOcclusionOptions = {
+	cellX: number?,
+	cellY: number?,
+	periodicX: boolean?,
+	curvatureRadius: number?,
+	directions: number?,
+	distances: { number }?,
+}
+-- Horizon-based ambient occlusion of a height field: heights[row][col] (rows along y, columns along x,
+-- spacing cellY and cellX studs, default 1), height measured toward the viewer or outward. For each cell,
+-- in `directions` (default 12) directions across the field, the steepest rise to the samples at
+-- `distances` (studs, default 0.12 .. 2.5) gives the horizon angle; the occlusion is the mean of its sine,
+-- 0 (open) to 1 (enclosed). periodicX wraps the columns (the azimuth of a cylindrical height field), and
+-- curvatureRadius R lowers a neighbour at distance d across the columns by d^2 / (2R), the drop of a
+-- convex cylinder, so its round surface is not counted as occluding. Much cheaper than ray casting and
+-- free of sampling noise; use it on the height-field sheets of re-surfaced panels and wraps, then darken
+-- the bake with a curve such as 1 - k * smoothstep(a, b, occlusion). NaN or missing cells are skipped.
+function B.heightOcclusion(heights: { { number } }, options: HeightOcclusionOptions?): { { number } }
+	local o: HeightOcclusionOptions = options or {}
+	local rows = #heights
+	assert(rows > 0, "heightOcclusion needs at least one row")
+	local cols = #heights[1]
+	for r = 2, rows do
+		assert(#heights[r] == cols, "heightOcclusion rows must have matching lengths")
+	end
+	local cx, cy = o.cellX or 1, o.cellY or 1
+	assert(cx > 0 and cy > 0, "heightOcclusion cell sizes must be positive")
+	local periodic = o.periodicX == true
+	local radius = o.curvatureRadius
+	assert(radius == nil or radius > 0, "heightOcclusion curvatureRadius must be positive")
+	local nDir = o.directions or 12
+	assert(nDir >= 1, "heightOcclusion needs a direction")
+	local dists: { number } = o.distances or { 0.12, 0.25, 0.4, 0.6, 0.9, 1.3, 1.8, 2.5 }
+	local function at(r: number, c: number): number?
+		if r < 1 or r > rows then
+			return nil
+		end
+		if periodic then
+			c = (c - 1) % cols + 1
+		elseif c < 1 or c > cols then
+			return nil
+		end
+		local v = heights[r][c]
+		if v ~= v then
+			return nil
+		end
+		return v
+	end
+	-- bilinear sample at fractional (row, col), nil if any corner is missing
+	local function sample(fr: number, fc: number): number?
+		local r0, c0 = math.floor(fr), math.floor(fc)
+		local tr, tc = fr - r0, fc - c0
+		local a, b = at(r0, c0), at(r0, c0 + 1)
+		local c, d = at(r0 + 1, c0), at(r0 + 1, c0 + 1)
+		if not (a and b and c and d) then
+			return nil
+		end
+		return (a * (1 - tc) + b * tc) * (1 - tr) + (c * (1 - tc) + d * tc) * tr
+	end
+	local out: { { number } } = table.create(rows)
+	for r = 1, rows do
+		local row = table.create(cols, 0)
+		for c = 1, cols do
+			local h = at(r, c)
+			if h then
+				local sum = 0
+				for k = 0, nDir - 1 do
+					local angle = 2 * math.pi * (k + 0.5) / nDir
+					local dx, dy = math.cos(angle), math.sin(angle)
+					local best = 0
+					for i = 1, #dists do
+						local d = dists[i]
+						local v = sample(r + dy * d / cy, c + dx * d / cx)
+						if v then
+							local drop = if radius then (dx * d) ^ 2 / (2 * radius) else 0
+							local slope = (v - h - drop) / d
+							if slope > best then
+								best = slope
+							end
+						end
+					end
+					sum += best / math.sqrt(1 + best * best) -- sin(atan(slope))
+				end
+				row[c] = sum / nDir
+			end
+		end
+		out[r] = row
+	end
+	return out
+end
 -- A smooth lookup of scattered point values (per-vertex occlusion, curvature, wetness) at any
 -- position, for use inside bake shaders. Points are hashed into cells of size `radius`; a query
 -- blends the points within `radius` with weights exp(-(d / (radius / 2))^2), times the agreement of

@@ -1,5 +1,14 @@
 # Editable3D changes
 
+## 0.100.0 — 2026-10-07
+
+- **`Bake.heightOcclusion(heights, {cellX, cellY, periodicX, curvatureRadius, directions, distances})` -> occlusion grid:** horizon-based ambient occlusion of a height field (0 open to 1 enclosed). For each cell it takes the steepest rise to samples at `distances` in `directions` and averages the sine of the horizon angle.
+  - `periodicX` wraps the columns, for a cylindrical height field's azimuth.
+  - `curvatureRadius` R lowers neighbours across the columns by d²/2R, so a cylinder's own roundness doesn't count as occlusion.
+  - NaN cells are skipped.
+  - It is much cheaper than ray casting and has no sampling noise. Use it to bake contact shading into re-surfaced panels and wraps, since Roblox's shadow maps draw no contact shadows.
+- DEFORMATION.md recipe: contact shading for a re-surfaced height field.
+
 ## 0.99.0 — 2026-10-07
 
 - **`Deform.edge` / `Deform.edgeField` `options.profile = "roll"` and `options.radius`:** the upper side of the line becomes a rolled fold instead of a lip: a quarter circle rising to `height` at distance `radius`, easing back into the surface over about 1.2 × `radius`. Use it for a swag, or a rolled hem that stands well proud of the cloth beneath. `profile` defaults to `"lip"` (unchanged); any other value is rejected.

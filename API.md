@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.99.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.100.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -81,6 +81,7 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: number }, Types.Progress)`
 - `Bake.occlusionSampler(meshes: { Mesh }, options: OcclusionSamplerOptions?): ((Vector3, Vector3?) -> number?, number)`
+- `Bake.heightOcclusion(heights: { { number } }, options: HeightOcclusionOptions?): { { number } }`
 - `Bake.pointSampler(points: { Vector3 }, values: { number }, radius: number, normals: { Vector3 }?): (Vector3, Vector3?) -> number?`
 - `Bake.project(mesh: Mesh, texture: Texture, camera: Types.Camera, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 

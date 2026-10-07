@@ -196,6 +196,67 @@ return function(E)
 			E.Bake.occlusionSampler({})
 		end, "occlusionSampler needs meshes")
 	end)
+	test(
+		"heightOcclusion: flat is open, pits are occluded, wraps, and discounts a cylinder's curvature",
+		function()
+			local function field(rows: number, cols: number, f: (number, number) -> number): { { number } }
+				local h = {}
+				for r = 1, rows do
+					h[r] = {}
+					for c = 1, cols do
+						h[r][c] = f(r, c)
+					end
+				end
+				return h
+			end
+			local flat = E.Bake.heightOcclusion(
+				field(9, 9, function()
+					return 2
+				end),
+				{ cellX = 0.25, cellY = 0.25 }
+			)
+			for r = 1, 9 do
+				for c = 1, 9 do
+					near(flat[r][c], 0, 1e-12)
+				end
+			end
+			-- a pit 1 stud deep and 1 stud wide: its centre is well occluded, a cell 2 studs away is open
+			local pit = field(21, 21, function(r, c)
+				return if math.abs(r - 11) <= 2 and math.abs(c - 11) <= 2 then 0 else 1
+			end)
+			local occ = E.Bake.heightOcclusion(pit, { cellX = 0.25, cellY = 0.25 })
+			assert(occ[11][11] > 0.5, "pit centre " .. occ[11][11])
+			near(occ[11][20], 0, 1e-12)
+			near(occ[2][2], 0, 1e-12)
+			-- periodic columns: a dip at column 1 occludes the cells across the wrap like its other neighbours
+			local ring = field(5, 16, function(_, c)
+				return if c == 1 then -1 else 0
+			end)
+			local wrapped = E.Bake.heightOcclusion(ring, { periodicX = true, distances = { 1 } })
+			near(wrapped[3][2], wrapped[3][16], 1e-12)
+			assert(wrapped[3][1] > 0.3, "the dip itself is occluded by both sides")
+			local open = E.Bake.heightOcclusion(ring, { distances = { 1 } })
+			assert(open[3][1] < wrapped[3][1], "without wrapping the dip sees past the edge")
+			-- a slightly raised column: occludes its neighbours on a flat field, much less on a tight cylinder
+			local ridge = field(5, 11, function(_, c)
+				return if c == 6 then 0.2 else 0
+			end)
+			local plain = E.Bake.heightOcclusion(ridge, { distances = { 1 } })
+			local curved = E.Bake.heightOcclusion(ridge, { distances = { 1 }, curvatureRadius = 2 })
+			assert(plain[3][5] > 0, "the ridge occludes its neighbour")
+			assert(curved[3][5] < plain[3][5], "curvature lowers the ridge as seen from the neighbour")
+			-- missing cells are skipped
+			local holes = field(5, 5, function(r, c)
+				return if r == 3 and c == 3 then 0 / 0 else 0
+			end)
+			local h = E.Bake.heightOcclusion(holes)
+			near(h[3][3], 0, 1e-12)
+			near(h[2][2], 0, 1e-12)
+			rejects(function()
+				E.Bake.heightOcclusion({ { 1, 2 }, { 1 } })
+			end, "heightOcclusion rows must have matching lengths")
+		end
+	)
 	test("capFan closes lofts whose end rings cannot be one polygon", function()
 		local function volume(m)
 			local v = 0

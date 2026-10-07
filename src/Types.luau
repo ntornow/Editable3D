@@ -159,6 +159,7 @@ export type BakeLibrary = {
 	ambientOcclusion: (Mesh, number, number, BakeOptions?) -> (Texture, BakeReport),
 	vertexOcclusion: (Mesh, BakeOptions?) -> ({ [number]: number }, Progress),
 	pointSampler: ({ Vector3 }, { number }, number, { Vector3 }?) -> (Vector3, Vector3?) -> number?,
+	heightOcclusion: ({ { number } }, any?) -> { { number } },
 	project: (Mesh, Texture, Camera, number, number, BakeOptions?) -> (Texture, BakeReport),
 }
 export type PublishOptions = Publishing.Options

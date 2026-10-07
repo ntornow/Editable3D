@@ -225,4 +225,8 @@ The view coordinates in `target(q, front)` are relative to the view frame: `q.Y`
   - The default `profile = "lip"` gives an overlapping hem: a rounded lip of `height` over `width` above the line, and a drop below.
   - `profile = "roll"` with `radius` R gives a rolled fold whose lower edge is the line. The surface rises in a quarter circle to `height` at R and eases back over about 1.2 R. Use it for a swag or a rolled hem that stands well proud of the cloth beneath.
   - Downward-facing estimated normals (n.y < -0.2 in the camera frame) mark hem undersides in a photo, which helps find the lines.
+- **Contact shading for a re-surfaced height field.** Roblox's shadow maps draw no contact shadows, so folds and hems built into geometry read faint. Bake the shadows in.
+  - Compute `Bake.heightOcclusion(heights, {cellX, cellY, periodicX, curvatureRadius})` on the height field the sheet came from. For a cylindrical wrap, columns are azimuth (`periodicX = true`, `cellX` the arc step at the mean radius, `curvatureRadius` that radius).
+  - Multiply the bake by `1 - k * smoothstep(0.04, 0.54, occlusion)` with k of about 0.35.
+  - Then compare the 10th, 50th and 90th luminance percentiles against a reference photo. Stronger darkening overshoots the darks.
 
