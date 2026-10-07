@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.95.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.96.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -230,6 +230,7 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.envelope(meshes: Mesh | { Mesh }, view: View, step: number, fill: number?): Envelope`
 - `Deform.relief(mesh: Mesh, view: View, target: (Vector2, number) -> number?, options: ReliefOptions?): Mesh`
 - `Deform.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOptions?): Mesh`
+- `Deform.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (Vector3) -> Vector3`
 - `Deform.taperComponents(mesh: Mesh, anchor: Vector3, baseScale: number, tipScale: number?, weld: number?): Mesh`
 - `Deform.sectionScale(mesh: Mesh, frame: CFrame, section: (number) -> (number?, number?, number?), options: SectionScaleOptions?): Mesh`
 - `Deform.smoothDisplacement(meshes: Mesh | { Mesh }, displace: (Vector3) -> Vector3, options: SmoothDisplacementOptions?): (Vector3) -> Vector3`

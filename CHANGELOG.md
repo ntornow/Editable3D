@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.96.0 — 2026-10-07
+
+- **`Deform.edgeField(view, polyline, options) -> field(position)`:** the position map behind `Deform.edge`, for deformers that work one position at a time, such as `Roblox.reshape`'s map or `Deform.map` over several parts. It needs `options.envelope`: the view envelope of all the surfaces being edited (`Deform.envelope({ ...meshes }, view, step, 3)`), so a layer edge across several published parts tests depth against all of them. `Deform.edge` now builds on it.
+
 ## 0.95.0 — 2026-10-07
 
 - **Photo cameras in `Deform.envelope`, `Deform.relief` and `Deform.edge`:** a view may now be a `Camera` (`Camera.new`, the pinhole camera that `Camera.fit` solves from landmarks) as well as an orthographic `CFrame`. View coordinates are then the camera's pixel coordinates, envelope depth is interpolated perspective-correctly (inverse depth is linear across the image), faces reaching behind the camera are skipped, and points move along their own rays, so relief measured in a photo (a depth or normal map integrated in its pixels) transfers without first re-projecting it orthographically. The default step is the pixel size of 0.25 studs at the mesh's mean depth.

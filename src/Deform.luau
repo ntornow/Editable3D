@@ -584,12 +584,21 @@ export type EdgeOptions = {
 -- polyline's ends nothing moves. Returns the mesh with normals recalculated (pass the result
 -- through Normals.unify for soups).
 function D.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOptions?): Mesh
+	local o: EdgeOptions = table.clone(options or {})
+	o.envelope = o.envelope or D.envelope(mesh, view, o.step or defaultStep(view, { mesh }, 0.2), 3)
+	return D.map(mesh, D.edgeField(view, polyline, o))
+end
+-- The position map behind Deform.edge, for deformers that work one position at a time
+-- (Roblox.reshape's map, Deform.map over several parts): field(position) -> moved position. It
+-- needs the view envelope of all the surfaces being edited (options.envelope, for example
+-- Deform.envelope({ ...meshes }, view, step, 3)), so the layer test sees every part at once.
+function D.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (Vector3) -> Vector3
 	assert(#polyline >= 2, "Edge needs a polyline")
-	local o: EdgeOptions = options or {}
+	local o: EdgeOptions = options
+	local env = assert(o.envelope, "edgeField needs options.envelope")
 	local height, width = o.height or 0.3, o.width or 0.7
 	local drop, dropWidth = o.drop or 0.2, o.dropWidth or 0.5
 	local layer = o.layer or 0.9
-	local env = o.envelope or D.envelope(mesh, view, o.step or defaultStep(view, { mesh }, 0.2), 3)
 	local proj = projector(view)
 	local function smoothstep(e0: number, e1: number, x: number): number
 		local t = math.clamp((x - e0) / (e1 - e0), 0, 1)
@@ -613,7 +622,7 @@ function D.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOpti
 		end
 		return signed
 	end
-	return D.map(mesh, function(p: Vector3): Vector3
+	return function(p: Vector3): Vector3
 		local q, depth = proj.project(p)
 		local d = q and signedDistance(q)
 		if not q or not d then
@@ -631,7 +640,7 @@ function D.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOpti
 			then -height * math.exp(-(d / width) ^ 2)
 			else drop * (1 - smoothstep(0, dropWidth, -d))
 		return p + proj.toward(p) * (offset * w)
-	end)
+	end
 end
 -- Thickens or thins elongated pieces (rays, spikes, petals, fingers) independently: every
 -- connected component (welded within weld, default 1e-4) gets its principal axis, its base is the

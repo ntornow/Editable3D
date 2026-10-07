@@ -545,6 +545,39 @@ return function(E)
 			end, { blend = -1 })
 		end, "Section blend must be nonnegative")
 	end)
+	test("edgeField is the position map behind Deform.edge", function()
+		local m = E.Mesh.new()
+		local ids = {}
+		for i = 0, 30 do
+			ids[i] = {}
+			for j = 0, 20 do
+				ids[i][j] = m:addVertex(Vector3.new(-3 + i * 0.2, -2 + j * 0.2, 0))
+			end
+		end
+		for i = 0, 29 do
+			for j = 0, 19 do
+				m:addFace({ ids[i][j], ids[i][j + 1], ids[i + 1][j + 1], ids[i + 1][j] })
+			end
+		end
+		m:recalculateNormals()
+		local line = { Vector2.new(-2, -1), Vector2.new(2, 1) }
+		local env = E.Deform.envelope(m, view, 0.2, 3)
+		local options = { envelope = env, height = 0.4, width = 0.6, drop = 0.25 }
+		local edged = E.Deform.edge(m, view, line, options)
+		local field = E.Deform.edgeField(view, line, options)
+		local moved = 0
+		for id, p in m.vertices do
+			local q = field(p)
+			near((q - edged.vertices[id]).Magnitude, 0, 1e-9)
+			if (q - p).Magnitude > 1e-6 then
+				moved += 1
+			end
+		end
+		assert(moved > 50, "edge moved " .. moved)
+		rejects(function()
+			E.Deform.edgeField(view, line, {})
+		end, "edgeField needs options.envelope")
+	end)
 	test("smoothDisplacement keeps linear fields, softens steps and agrees across meshes", function()
 		local function sheet(x0: number, x1: number)
 			local m = E.Mesh.new()
