@@ -288,6 +288,60 @@ function B.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: numb
 	end
 	return result, complete(budget, owned)
 end
+export type OcclusionSamplerOptions = BakeOptions & {
+	weld: number?,
+	radius: number?,
+	occluders: { Mesh }?,
+}
+-- Openness (1 = open, 0 = enclosed) anywhere on a model made of several meshes, such as published parts
+-- read back with Roblox.fromPart: the meshes are joined and welded (weld, default 2e-3, so soups and chunk
+-- seams share vertices), occlusion is cast once per vertex as in vertexOcclusion (samples, distance, bias)
+-- against the meshes plus any `occluders` (other parts that shade them), and the result is wrapped in a
+-- normal-aware pointSampler (radius, default 1.2). Returns sampler(position, normal?) -> openness? and the
+-- mean openness. Per-vertex openness is noisy (standard deviation about sqrt(p(1 - p) / samples)); the
+-- sampler radius averages it out. For shading textures, multiply the existing colour by a curve that only
+-- darkens (lo + (1 - lo) * smoothstep(a, b, openness)): normalising to the mean brightens open surfaces.
+function B.occlusionSampler(
+	meshes: { Mesh },
+	options: OcclusionSamplerOptions?
+): ((Vector3, Vector3?) -> number?, number)
+	local o: OcclusionSamplerOptions = options or {}
+	assert(#meshes > 0, "occlusionSampler needs meshes")
+	local Topology = require(script.Parent.Topology) :: any
+	local welded = Topology.weld(Topology.join(meshes), o.weld or 2e-3)
+	local occluder = welded
+	if o.occluders and #o.occluders > 0 then
+		local all = { welded }
+		for _, m in o.occluders do
+			table.insert(all, m)
+		end
+		occluder = Topology.join(all)
+	end
+	local bakeOptions: BakeOptions = table.clone(o) :: any
+	bakeOptions.occluder = occluder
+	local open = B.vertexOcclusion(welded, bakeOptions)
+	local sums: { [number]: Vector3 } = {}
+	for fid, f in welded.faces do
+		local n, area = welded:faceNormal(fid)
+		for _, v in f.vertices do
+			sums[v] = (sums[v] or Vector3.zero) + n * area
+		end
+	end
+	local points, values, normals = {}, {}, {}
+	local total = 0
+	for id, p in welded.vertices do
+		local value = open[id]
+		local n = sums[id]
+		if value and n and n.Magnitude > 1e-12 then
+			table.insert(points, p)
+			table.insert(values, value)
+			table.insert(normals, n.Unit)
+			total += value
+		end
+	end
+	assert(#values > 0, "occlusionSampler found no vertices with normals")
+	return B.pointSampler(points, values, o.radius or 1.2, normals), total / #values
+end
 -- A smooth lookup of scattered point values (per-vertex occlusion, curvature, wetness) at any
 -- position, for use inside bake shaders. Points are hashed into cells of size `radius`; a query
 -- blends the points within `radius` with weights exp(-(d / (radius / 2))^2), times the agreement of

@@ -3,6 +3,7 @@
 ## 0.96.0 — 2026-10-07
 
 - **`Deform.edgeField(view, polyline, options) -> field(position)`:** the position map behind `Deform.edge`, for deformers that work one position at a time, such as `Roblox.reshape`'s map or `Deform.map` over several parts. It needs `options.envelope`: the view envelope of all the surfaces being edited (`Deform.envelope({ ...meshes }, view, step, 3)`), so a layer edge across several published parts tests depth against all of them. `Deform.edge` now builds on it.
+- **`Bake.occlusionSampler(meshes, {occluders, samples, distance, radius, weld})` -> `sampler(position, normal?)`, mean:** the occlusion recipe for multi-part models in one call. It joins and welds the meshes (published parts read back with `Roblox.fromPart`), casts per-vertex occlusion against them plus the occluders, and wraps the result in a normal-aware `pointSampler`. Use it in `Roblox.rebake` shaders with `readPrevious`. The docs say to darken with a curve and not normalise to the mean: normalising brightens open surfaces, washing out a calibrated colour. Use 32 or more samples with a sampler radius of about 1.2 studs, or the creases speckle.
 
 ## 0.95.0 — 2026-10-07
 

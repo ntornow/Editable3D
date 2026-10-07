@@ -80,6 +80,7 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.normalMap(low: Mesh, high: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: number }, Types.Progress)`
+- `Bake.occlusionSampler(meshes: { Mesh }, options: OcclusionSamplerOptions?): ((Vector3, Vector3?) -> number?, number)`
 - `Bake.pointSampler(points: { Vector3 }, values: { number }, radius: number, normals: { Vector3 }?): (Vector3, Vector3?) -> number?`
 - `Bake.project(mesh: Mesh, texture: Texture, camera: Types.Camera, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 

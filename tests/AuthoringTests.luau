@@ -163,6 +163,39 @@ return function(E)
 		assert(below and math.abs(below - 5) < 1e-6, tostring(below))
 		assert(sample(Vector3.new(10, 0, 0)) == nil)
 	end)
+	test("occlusionSampler joins meshes, counts occluders and smooths per-vertex openness", function()
+		-- the floor split into two halves (as chunked parts), a wall standing on it as an occluder
+		local left = E.Deform.map(E.Primitives.grid(10, 10, Vector2.new(5, 10)), function(p)
+			return p + Vector3.new(-2.5, 0, 0)
+		end)
+		local right = E.Deform.map(E.Primitives.grid(10, 10, Vector2.new(5, 10)), function(p)
+			return p + Vector3.new(2.5, 0, 0)
+		end)
+		local wall = E.Deform.map(E.Primitives.grid(10, 4, Vector2.new(10, 4)), function(p)
+			return Vector3.new(0.05, p.Z + 2, p.X)
+		end)
+		local sampler, mean = E.Bake.occlusionSampler(
+			{ left, right },
+			{ occluders = { wall }, samples = 32, distance = 20, radius = 1.2 }
+		)
+		local nearWall = sampler(Vector3.new(1, 0, 0), Vector3.yAxis)
+		local farAway = sampler(Vector3.new(4.5, 0, 0), Vector3.yAxis)
+		assert(
+			nearWall and farAway and nearWall < farAway,
+			string.format("%s %s", tostring(nearWall), tostring(farAway))
+		)
+		assert(mean > 0 and mean < 1, "mean " .. mean)
+		-- without the occluder the floor is open everywhere
+		local openSampler, openMean = E.Bake.occlusionSampler(
+			{ left, right },
+			{ samples = 16, distance = 20 }
+		)
+		near(openMean, 1)
+		near(openSampler(Vector3.new(1, 0, 0), Vector3.yAxis) :: number, 1)
+		rejects(function()
+			E.Bake.occlusionSampler({})
+		end, "occlusionSampler needs meshes")
+	end)
 	test("capFan closes lofts whose end rings cannot be one polygon", function()
 		local function volume(m)
 			local v = 0
