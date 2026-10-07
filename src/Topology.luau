@@ -111,8 +111,15 @@ end
 -- (c - 1) / (columns - 1), (r - 1) / (rows - 1) unless options.uv(r, c, position) supplies them.
 -- Faces wind counter-clockwise seen from the side where rows advance up and columns advance right
 -- (the +Z side for rows along +Y and columns along +X); pass flip = true for the other side.
+-- options.normal(r, c, position) sets every corner's normal (made unit) instead of leaving normals to
+-- recalculateNormals or Roblox.toModel: compute them over the whole grid when one surface is cut into
+-- several sheets (one texture each), so the cuts don't show as shading seams.
 -- Vertices that no cell uses are not added.
-export type GridSheetOptions = { uv: ((number, number, Vector3) -> Vector2)?, flip: boolean? }
+export type GridSheetOptions = {
+	uv: ((number, number, Vector3) -> Vector2)?,
+	normal: ((number, number, Vector3) -> Vector3)?,
+	flip: boolean?,
+}
 function T.gridSheet(rows: { { Vector3 | false } }, options: GridSheetOptions?): Mesh
 	local o: GridSheetOptions = options or {}
 	local nr = #rows
@@ -139,6 +146,12 @@ function T.gridSheet(rows: { { Vector3 | false } }, options: GridSheetOptions?):
 		end
 		return Vector2.new((c - 1) / (nc - 1), (r - 1) / (nr - 1))
 	end
+	-- explicit vertex normals (unit), shared by every corner of the vertex: sheets cut from one larger grid
+	-- then join without the shading seam that per-sheet recalculated normals leave along the cut
+	local function normal(r: number, c: number): Vector3
+		local n = (o.normal :: (number, number, Vector3) -> Vector3)(r, c, rows[r][c] :: Vector3)
+		return if n.Magnitude > 1e-12 then n.Unit else n
+	end
 	local function tri(a: { number }, b: { number }, c: { number })
 		local pa = rows[a[1]][a[2]] :: Vector3
 		local pb = rows[b[1]][b[2]] :: Vector3
@@ -148,6 +161,9 @@ function T.gridSheet(rows: { { Vector3 | false } }, options: GridSheetOptions?):
 		end
 		local va, vb, vc = vid(a[1], a[2]), vid(b[1], b[2]), vid(c[1], c[2])
 		local ca, cb, cc = { uv = uv(a[1], a[2]) }, { uv = uv(b[1], b[2]) }, { uv = uv(c[1], c[2]) }
+		if o.normal then
+			ca.normal, cb.normal, cc.normal = normal(a[1], a[2]), normal(b[1], b[2]), normal(c[1], c[2])
+		end
 		if o.flip then
 			out:addFace({ va, vc, vb }, { ca, cc, cb })
 		else

@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.98.0 — 2026-10-07
+
+- **`Topology.gridSheet(rows, {normal})`:** `options.normal(r, c, position)` sets every corner's normal (made unit). Corners otherwise carry no normal and `recalculateNormals` or `Roblox.toModel` fill them in.
+  - Use it when one surface is too large for one texture and is cut into several sheets (one texture each), such as a figure re-surfaced all the way round as a cylindrical height field. Compute the normals over the whole grid and pass them to each sheet. The sheets share their boundary columns, so with recalculated normals each cut would show as a shading seam.
+
 ## 0.97.0 — 2026-10-07
 
 - **`MeshRepair.despike(mesh, {distance, ratio, rings, maxRings, minNeighbours, iterations, maxMove, weld})`:** finds vertices that sit off the plane of their mesh neighbourhood, by more than `distance` and more than `ratio` times the neighbours' own spread. These are the pits and spikes that render as dark holes in sculpted or relief-transferred surfaces. Each one moves to the middle of its edge ring on that plane.

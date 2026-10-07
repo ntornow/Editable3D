@@ -1150,6 +1150,36 @@ return function(E)
 			E.Topology.gridSheet({ { Vector3.zero, Vector3.xAxis } })
 		end, "gridSheet needs at least two rows")
 	end)
+	test("Topology.gridSheet writes explicit unit normals to every corner, unchanged by flip", function()
+		local rows = {}
+		for r = 1, 3 do
+			local row = {}
+			for c = 1, 4 do
+				row[c] = Vector3.new(c - 1, r - 1, 0.2 * (c - 1) * (c - 1))
+			end
+			rows[r] = row
+		end
+		-- the normal of the cylinder z = 0.2 x^2, unscaled: the sheet makes it unit
+		local function normal(_, c, p)
+			assert(p.X == c - 1, "normal gets the grid position")
+			return Vector3.new(-0.4 * p.X, 0, 1) * 3
+		end
+		for _, flip in { false, true } do
+			local m = E.Topology.gridSheet(rows, { normal = normal, flip = flip })
+			assert(count(m.faces) == 12, "faces " .. count(m.faces))
+			for _, f in m.faces do
+				for i, v in f.vertices do
+					local p = m.vertices[v]
+					local want = Vector3.new(-0.4 * p.X, 0, 1).Unit
+					near((f.corners[i].normal :: Vector3 - want).Magnitude, 0)
+				end
+			end
+		end
+		-- without the option corners carry no normal (recalculateNormals or toModel supply them)
+		for _, f in E.Topology.gridSheet(rows).faces do
+			assert(f.corners[1].normal == nil, "unexpected normal")
+		end
+	end)
 	test("Deform.moveTable moves every copy of a listed position and passes others through", function()
 		local field, stats = E.Deform.moveTable({
 			{ 1, 2, 3, 0.5, 0, 0 },
