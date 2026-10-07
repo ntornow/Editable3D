@@ -8,6 +8,7 @@
 - **`Deform.smoothDisplacement(meshes, displace, {sigma, reach})`:** turns a per-point displacement rule into a field smoothed over neighbouring positions across several meshes at once, so seams between parts stay closed. A rule such as "push cloth points out of the arm capsule" flattens every fold it touches; smoothing the displacement instead lets the folds ride over the bulge.
 - **`Roblox.reshape` options.`keep(centroid, part)`:** trims faces while reshaping. A face whose original centroid fails the test is removed, and the surviving faces keep their UVs and textures. Use it to cut away the part of a published mesh that a new piece replaces.
 - **`Roblox.reshape` report.`parts`:** a list of `{part, meshId?, error?}` in entry order. `published` and `failures` are keyed by part name, so parts sharing a name overwrote each other there.
+- **`Roblox.reshape` `:publish` records errors per part:** a part whose publish raises (cancellation through `options.cancelled`, an engine error) becomes a failure in the report, and the loop continues. Before, the error escaped mid-loop, leaving some originals replaced and no report.
 - Docs: a `Deform` mask leaves unlisted vertices in place (weight 0); the header comment said 1.
 
 ## 0.94.0 — 2026-10-06

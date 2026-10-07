@@ -930,7 +930,28 @@ function R.reshape(
 				meta = table.clone(metadata)
 				meta.Name = string.sub((metadata.Name or "Editable3D") .. " " .. part.Name, 1, 50)
 			end
-			local result = R.publish(e.bundle, meta, publishOptions)
+			-- a part whose publish raises (cancellation, an engine error) is recorded as a failure, so
+			-- the loop never stops half-way with some originals replaced and no report
+			local ok, published = pcall(R.publish, e.bundle, meta, publishOptions)
+			local result: Types.PublishReport = if ok
+				then published
+				else {
+					success = false,
+					committed = false,
+					rolledBack = true,
+					stage = "publish",
+					error = tostring(published),
+					rollbackErrors = {},
+					cleanupErrors = {},
+					assets = {},
+					resumeAvailable = false,
+					operation = {
+						operation = "Roblox.publish",
+						work = 0,
+						allocatedBytes = 0,
+						elapsedSeconds = 0,
+					},
+				}
 			if result.success then
 				local holder = part.Parent
 				if
