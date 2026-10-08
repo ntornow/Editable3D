@@ -439,6 +439,7 @@ export type SlopeFitOptions = {
 	weights: { { number } }?,
 	gain: number?,
 	keep: number?,
+	trend: ("mean" | "linear")?,
 	clip: number?,
 	minFacing: number?,
 	maxSlope: number?,
@@ -475,34 +476,15 @@ local function windowSum(line: { number }, len: number, k: number, periodic: boo
 		end
 	end
 end
--- separable masked blur of a flat row-major grid: three box passes per axis (close to a Gaussian of sigma `sx`
--- columns and `sy` rows), averaging only the cells where `mask` is set
-local function maskedBlur(
-	values: { number },
-	mask: { boolean },
-	rows: number,
-	cols: number,
-	sx: number,
-	sy: number,
-	periodic: boolean
-): { number }
-	local n = rows * cols
-	local v = table.create(n, 0)
-	local m = table.create(n, 0)
-	for i = 1, n do
-		if mask[i] then
-			v[i] = values[i]
-			m[i] = 1
-		end
-	end
-	-- three boxes of half-width k have variance (k^2 + k), so k^2 + k = sigma^2 / 3 each
-	local function half(sigma: number): number
-		return math.max(0, math.floor((math.sqrt(1 + 4 * sigma * sigma / 3) - 1) / 2 + 0.5))
-	end
-	local kx, ky = half(sx), half(sy)
+-- three box passes of half-width k have variance (k^2 + k), so k^2 + k = sigma^2 / 3 each
+local function boxHalf(sigma: number): number
+	return math.max(0, math.floor((math.sqrt(1 + 4 * sigma * sigma / 3) - 1) / 2 + 0.5))
+end
+-- three box passes per axis over a flat row-major grid, in place (zero outside unless periodic in x)
+local function boxBlur3(a: { number }, rows: number, cols: number, kx: number, ky: number, periodic: boolean)
 	local lineX, outX = table.create(cols, 0), table.create(cols, 0)
 	local lineY, outY = table.create(rows, 0), table.create(rows, 0)
-	local function pass(a: { number })
+	for _ = 1, 3 do
 		if kx > 0 then
 			for r = 0, rows - 1 do
 				local base = r * cols
@@ -527,10 +509,113 @@ local function maskedBlur(
 			end
 		end
 	end
-	for _ = 1, 3 do
-		pass(v)
-		pass(m)
+end
+-- local-linear trend of `values` over the cells where `mask` is set, with the masked blur's weights: at each
+-- cell, the weighted least-squares plane a + bx dx + by dy through its neighbourhood, evaluated there (a). Unlike
+-- the weighted mean it has no bias where the values ramp up to the mask's edge. Periodic columns are unrolled:
+-- the grid is padded by the window's reach with wrapped copies whose column coordinates continue.
+local function maskedTrend(
+	values: { number },
+	mask: { boolean },
+	rows: number,
+	cols: number,
+	sx: number,
+	sy: number,
+	periodic: boolean
+): { number }
+	local kx, ky = boxHalf(sx), boxHalf(sy)
+	local pad = if periodic then math.min(3 * kx, cols) else 0
+	local W = cols + 2 * pad
+	local N = rows * W
+	-- moments: m, m x, m y, m x^2, m y^2, m x y, m v, m v x, m v y (x, y relative to the grid's centre)
+	local fields = {}
+	for f = 1, 9 do
+		fields[f] = table.create(N, 0)
 	end
+	local x0, y0 = (cols + 1) / 2, (rows + 1) / 2
+	for r = 1, rows do
+		local y = r - y0
+		for C = 1, W do
+			local c = ((C - pad - 1) % cols) + 1
+			local i = (r - 1) * cols + c
+			if mask[i] then
+				local x = C - pad - x0
+				local v = values[i]
+				local k = (r - 1) * W + C
+				fields[1][k] = 1
+				fields[2][k] = x
+				fields[3][k] = y
+				fields[4][k] = x * x
+				fields[5][k] = y * y
+				fields[6][k] = x * y
+				fields[7][k] = v
+				fields[8][k] = v * x
+				fields[9][k] = v * y
+			end
+		end
+	end
+	for f = 1, 9 do
+		boxBlur3(fields[f], rows, W, kx, ky, false)
+	end
+	local out = table.create(rows * cols, 0)
+	for r = 1, rows do
+		local yi = r - y0
+		for c = 1, cols do
+			local k = (r - 1) * W + c + pad
+			local s0 = fields[1][k]
+			if s0 > 1e-9 then
+				local xi = c - x0
+				local sx_, sy_ = fields[2][k], fields[3][k]
+				-- moments about the cell itself
+				local Sx, Sy = sx_ - xi * s0, sy_ - yi * s0
+				local Sxx = fields[4][k] - 2 * xi * sx_ + xi * xi * s0
+				local Syy = fields[5][k] - 2 * yi * sy_ + yi * yi * s0
+				local Sxy = fields[6][k] - xi * sy_ - yi * sx_ + xi * yi * s0
+				local T0 = fields[7][k]
+				local Tx, Ty = fields[8][k] - xi * T0, fields[9][k] - yi * T0
+				-- solve [s0 Sx Sy; Sx Sxx Sxy; Sy Sxy Syy] (a, bx, by) = (T0, Tx, Ty) for a (Cramer's rule)
+				local det = s0 * (Sxx * Syy - Sxy * Sxy)
+					- Sx * (Sx * Syy - Sxy * Sy)
+					+ Sy * (Sx * Sxy - Sxx * Sy)
+				local a
+				if math.abs(det) > 1e-9 * s0 * (Sxx * Syy + 1) then
+					a = (
+						T0 * (Sxx * Syy - Sxy * Sxy)
+						- Sx * (Tx * Syy - Sxy * Ty)
+						+ Sy * (Tx * Sxy - Sxx * Ty)
+					) / det
+				else
+					a = T0 / s0 -- too few or collinear neighbours: the mean
+				end
+				out[(r - 1) * cols + c] = a
+			end
+		end
+	end
+	return out
+end
+-- separable masked blur of a flat row-major grid: three box passes per axis (close to a Gaussian of sigma `sx`
+-- columns and `sy` rows), averaging only the cells where `mask` is set
+local function maskedBlur(
+	values: { number },
+	mask: { boolean },
+	rows: number,
+	cols: number,
+	sx: number,
+	sy: number,
+	periodic: boolean
+): { number }
+	local n = rows * cols
+	local v = table.create(n, 0)
+	local m = table.create(n, 0)
+	for i = 1, n do
+		if mask[i] then
+			v[i] = values[i]
+			m[i] = 1
+		end
+	end
+	local kx, ky = boxHalf(sx), boxHalf(sy)
+	boxBlur3(v, rows, cols, kx, ky, periodic)
+	boxBlur3(m, rows, cols, kx, ky, periodic)
 	local out = table.create(n, 0)
 	for i = 1, n do
 		out[i] = if m[i] > 1e-12 then v[i] / m[i] else 0
@@ -545,7 +630,9 @@ end
 -- between `gain` x the targets' slopes (-nx/nz, -ny/nz, clamped to maxSlope; normals with nz < minFacing are
 -- skipped) and the field's own slopes is integrated by least squares (conjugate gradients over the grid) into
 -- a correction; its scales above `keep` studs (default 4, a Gaussian-like high-pass over the present cells)
--- are removed so the field's silhouette-fitted shape stays, it fades out where there are no targets, and it is
+-- are removed so the field's silhouette-fitted shape stays (trend "mean", the default, subtracts the local
+-- weighted mean; "linear" the local weighted plane, which leaves no offset where the correction ramps up to the
+-- domain's edge, about 0.8 x slope x keep with the mean), it fades out where there are no targets, and it is
 -- clipped to `clip`. periodicX wraps the columns (a cylinder's azimuth); with `radial` = R the heights are
 -- radii and cellX the column arc at radius R, so column slopes scale by h / R. Returns the corrected heights
 -- and a report (median slope error before and after over cells weighted above 0.5, CG iterations, residual).
@@ -569,6 +656,8 @@ function B.slopeFit(
 	local gain = o.gain or 1
 	local keep = o.keep or 4
 	assert(keep > 0, "slopeFit keep must be positive")
+	local trend = o.trend or "mean"
+	assert(trend == "mean" or trend == "linear", "slopeFit trend must be mean or linear")
 	local minFacing = o.minFacing or 0.25
 	local maxSlope = o.maxSlope or 3
 	local radial = o.radial
@@ -711,7 +800,9 @@ function B.slopeFit(
 		end
 	end
 	-- the field keeps its own large scales: remove the correction's, then fade it out where nothing was targeted
-	local low = maskedBlur(d, present, rows, cols, keep / cx, keep / cy, periodic)
+	local low = if trend == "linear"
+		then maskedTrend(d, present, rows, cols, keep / cx, keep / cy, periodic)
+		else maskedBlur(d, present, rows, cols, keep / cx, keep / cy, periodic)
 	local cover = maskedBlur(w, present, rows, cols, 1.5, 1.5, periodic)
 	local clip = o.clip
 	local outH: { { number } } = table.create(rows)

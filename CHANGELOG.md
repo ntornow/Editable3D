@@ -1,5 +1,15 @@
 # Editable3D changes
 
+## 0.102.0 — 2026-10-07
+
+- **The publish resume ledger no longer keeps everything it published alive.** Entries used to hold their source editable and its full snapshot (every pixel of an image, every face and normal of a mesh). A ledger passed as `resume` to every publish in a long session grew without bound: about 11 GB of Lua heap after 1,400 assets, with the released editables kept alive as well.
+  - Entries now keep a 64-bit digest of the content (`NativeContent.digest`, two Murmur3-style lanes plus the length). Resume compares digests.
+  - They refer to their source objects weakly. An entry whose source has been garbage collected can never match again and is dropped at the start of the next publish.
+  - **`Roblox.pruneLedger(ledger)`** drops such entries on demand and returns how many it removed.
+  - Resume semantics are unchanged: an unchanged live source reuses its asset, and a changed one is refused. Entries written by earlier versions still resume.
+- **`Bake.slopeFit` option `trend = "linear"`:** the large scales removed from the correction are its local weighted plane instead of its local weighted mean (`"mean"`, the default).
+  - The mean leaves an offset of about 0.8 × slope × `keep` wherever the correction ramps up to the domain's edge: a sheet's open top edge sank by about a stud.
+  - The plane leaves none and keeps the small-scale relief the same. Periodic columns are unrolled by padding.
 ## 0.101.0 — 2026-10-07
 
 - **`Bake.slopeFit(heights, normals, {cellX, cellY, periodicX, weights, gain, keep, clip, radial, minFacing, maxSlope, iterations, tolerance, checkpoint})` -> heights, report:** fits a height field's relief to target normals while it keeps its own large-scale shape.

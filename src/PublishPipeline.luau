@@ -2,7 +2,15 @@
 local Budget = require(script.Parent.OperationBudget)
 local Transaction = require(script.Parent.PublishTransaction)
 local Retry = require(script.Parent.PublishRetry)
-export type LedgerEntry = { object: unknown, kind: string, id: string, fingerprint: unknown }
+-- fingerprint: the content snapshot, or its digest when digested (backend.digest). object: entries made before
+-- 0.102 held their source directly; newer entries refer to it weakly (see sources below).
+export type LedgerEntry = {
+	kind: string,
+	id: string,
+	fingerprint: unknown,
+	digested: boolean?,
+	object: unknown?,
+}
 export type Map = { object: unknown, read: () -> unknown, write: (unknown) -> (), original: unknown }
 export type Backend = {
 	upload: (unknown, string, unknown) -> string,
@@ -10,6 +18,8 @@ export type Backend = {
 	snapshot: (unknown, string, Budget.Budget) -> unknown,
 	-- Optional content equivalence (for example tolerant normals); defaults to ==.
 	equivalent: ((string, unknown, unknown) -> boolean)?,
+	-- Optional compact digest of a snapshot: the resume ledger keeps it instead of the content.
+	digest: ((string, unknown) -> string)?,
 	destroy: (unknown) -> (),
 	backup: (unknown) -> unknown,
 	stage: (string, unknown) -> unknown,
@@ -28,11 +38,38 @@ export type Bundle = {
 	images: { unknown }?,
 }
 local P = {}
+-- The resume ledger refers to its source objects weakly (entry -> object), so a ledger kept for a whole session
+-- does not keep every published editable alive. An entry whose object has been collected can never match again;
+-- it is dropped at the start of the next publish (or by P.pruneLedger).
+local sources: { [any]: unknown } = setmetatable({}, { __mode = "kv" }) :: any
+local function sourceOf(entry: LedgerEntry): unknown
+	local object = sources[entry]
+	if object == nil then
+		object = entry.object
+	end
+	return object
+end
+-- Removes the entries whose source objects have been garbage collected; returns how many.
+function P.pruneLedger(ledger: { LedgerEntry }): number
+	local n, kept = #ledger, 0
+	for i = 1, n do
+		local entry = ledger[i]
+		if sourceOf(entry) ~= nil then
+			kept += 1
+			ledger[kept] = entry
+		end
+	end
+	for i = n, kept + 1, -1 do
+		ledger[i] = nil
+	end
+	return n - kept
+end
 function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Backend)
 	local o: Options = options or {}
 	Retry.validate(o)
 	local budget = Budget.new(o, "Roblox.publish")
 	local ledger: { LedgerEntry } = o.resume or {}
+	P.pruneLedger(ledger)
 	local assets: { { kind: string, id: string, resumed: boolean } } = {}
 	local imageIds: { string } = {}
 	local report = Transaction.run(function(context)
@@ -60,13 +97,15 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 			check()
 			context.phase("snapshot")
 			local fingerprint = backend.snapshot(object, kind, budget)
+			local digest = backend.digest
+			local stamp: unknown = if digest then digest(kind, fingerprint) else fingerprint
 			local id: string? = nil
 			for _, entry in ledger do
-				if entry.object == object then
-					assert(
-						entry.kind == kind and same(kind, entry.fingerprint, fingerprint),
-						"Resume source changed"
-					)
+				if sourceOf(entry) == object then
+					local unchanged = if entry.digested
+						then digest ~= nil and entry.fingerprint == stamp
+						else same(kind, entry.fingerprint, fingerprint)
+					assert(entry.kind == kind and unchanged, "Resume source changed")
 					id = entry.id
 					break
 				end
@@ -77,7 +116,10 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 				check()
 				id = backend.upload(object, kind, metadata) -- Never retry an ambiguous asset creation.
 				assert(type(id) == "string" and id ~= "", "Upload returned no asset ID")
-				table.insert(ledger, { object = object, kind = kind, id = id, fingerprint = fingerprint })
+				local entry: LedgerEntry =
+					{ kind = kind, id = id :: string, fingerprint = stamp, digested = digest ~= nil }
+				sources[entry] = object
+				table.insert(ledger, entry)
 			end
 			local assetId = id :: string
 			table.insert(assets, { kind = kind, id = assetId, resumed = resumed })

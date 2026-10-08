@@ -158,6 +158,54 @@ function C.equivalent(a, b, tolerance)
 	end
 	return true
 end
+-- Compact digests of snapshots for the publish resume ledger, which only has to notice that a source changed
+-- between attempts: 64 bits (two Murmur3-style lanes over the bytes, 32-bit words) plus the length. Mesh snapshots
+-- digest their exact part and their normals' float bits.
+local function mul32(a: number, b: number): number
+	local lo = bit32.band(a, 0xffff) * b
+	local hi = bit32.band(bit32.rshift(a, 16) * b, 0xffff)
+	return bit32.band(lo + hi * 65536, 0xffffffff)
+end
+local function fmix(h: number): number
+	h = mul32(bit32.bxor(h, bit32.rshift(h, 16)), 0x85ebca6b)
+	h = mul32(bit32.bxor(h, bit32.rshift(h, 13)), 0xc2b2ae35)
+	return bit32.bxor(h, bit32.rshift(h, 16))
+end
+local function lanes(b: buffer, h1: number, h2: number): (number, number)
+	local n = buffer.len(b)
+	local words = n // 4
+	for i = 0, words - 1 do
+		local k = buffer.readu32(b, i * 4)
+		local k1 = mul32(bit32.lrotate(mul32(k, 0xcc9e2d51), 15), 0x1b873593)
+		h1 = bit32.band(mul32(bit32.lrotate(bit32.bxor(h1, k1), 13), 5) + 0xe6546b64, 0xffffffff)
+		local k2 = mul32(bit32.lrotate(mul32(k, 0x239b961b), 17), 0xab0e9789)
+		h2 = bit32.band(mul32(bit32.lrotate(bit32.bxor(h2, k2), 15), 5) + 0x38b34ae5, 0xffffffff)
+	end
+	local tail = 0
+	for i = words * 4, n - 1 do
+		tail = tail * 256 + buffer.readu8(b, i)
+	end
+	h1 = fmix(bit32.bxor(h1, mul32(tail, 0xcc9e2d51), n))
+	h2 = fmix(bit32.bxor(h2, mul32(tail, 0x239b961b), n))
+	return h1, h2
+end
+function C.digest(snapshot: any): string
+	if type(snapshot) == "string" then
+		local h1, h2 = lanes(buffer.fromstring(snapshot), 0x9747b28c, 0x5bd1e995)
+		return string.format("%d:%08x%08x", #snapshot, h1, h2)
+	end
+	assert(type(snapshot) == "table" and type(snapshot.exact) == "string", "Unknown snapshot")
+	local normals = snapshot.normals
+	local packed = buffer.create(#normals * 12)
+	for i, v in normals do
+		buffer.writef32(packed, (i - 1) * 12, v.X)
+		buffer.writef32(packed, (i - 1) * 12 + 4, v.Y)
+		buffer.writef32(packed, (i - 1) * 12 + 8, v.Z)
+	end
+	local e1, e2 = lanes(buffer.fromstring(snapshot.exact), 0x9747b28c, 0x5bd1e995)
+	local n1, n2 = lanes(packed, e1, e2)
+	return string.format("m%d/%d:%08x%08x", #snapshot.exact, #normals, n1, n2)
+end
 function C.image(image, budget)
 	local size = image.Size
 	budget:image(size.X, size.Y, 4)

@@ -709,6 +709,12 @@ function R.publishInChunks(
 	end
 	return report
 end
+-- Drops resume-ledger entries whose source editables have been garbage collected (released or destroyed and no
+-- longer referenced); returns how many. Every publish does this first, and entries keep a digest of the content
+-- rather than the content, so one ledger can serve a whole session.
+function R.pruneLedger(ledger: Types.PublishLedger): number
+	return require(script.Parent.PublishPipeline).pruneLedger(ledger)
+end
 -- readPrevious: read the current colour map back and pass it to the shader (one extra image in memory).
 -- Budget fields (maxSeconds, maxWork, checkpoint, cancelled) apply to each part's bake.
 export type RebakeOptions =

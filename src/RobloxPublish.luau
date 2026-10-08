@@ -28,6 +28,11 @@ local function backendFor(assetService)
 		equivalent = function(_kind, a, b)
 			return Native.equivalent(a, b)
 		end,
+		-- The resume ledger keeps a 64-bit digest, not the pixels or the mesh (a session's ledger otherwise
+		-- holds a full copy of everything it published).
+		digest = function(_kind, snapshot)
+			return Native.digest(snapshot)
+		end,
 		destroy = function(object)
 			object:Destroy()
 		end,

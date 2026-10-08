@@ -487,6 +487,43 @@ return function()
 			P.runChunked(bundle, {}, nil, b, 0)
 		end, "parts per transaction")
 	end)
+	test("The resume ledger keeps digests and refers to its sources weakly", function()
+		local bundle, b, s, _p, mesh = fixture()
+		b.digest = function(kind, snapshot)
+			return kind .. "#" .. tostring(snapshot)
+		end
+		local ledger = {}
+		local r = P.run(bundle, {}, { resume = ledger }, b)
+		assert(r.success and #ledger == 2, tostring(r.error))
+		for _, entry in ledger do
+			assert(entry.object == nil and entry.digested and string.find(entry.fingerprint, "#", 1, true))
+		end
+		-- an unchanged source resumes by its digest; a changed one is refused
+		local again = P.run(bundle, {}, { resume = ledger }, b)
+		assert(again.success and again.assets[1].resumed and s.uploads == 2)
+		mesh.data = "edited"
+		local changed = P.run(bundle, {}, { resume = ledger, attempts = 1 }, b)
+		assert(not changed.success and string.find(tostring(changed.error), "Resume source changed", 1, true))
+		-- an entry whose source was collected is dropped
+		local function publishTemporary()
+			P.run({ handles = {}, images = { { data = "temporary" } } }, {}, { resume = ledger }, b)
+		end
+		publishTemporary()
+		assert(#ledger == 3)
+		-- (collectgarbage("collect") is unavailable here: allocate until a collection cycle completes)
+		local removed = 0
+		for _ = 1, 400 do
+			for _ = 1, 2000 do
+				local _garbage = table.create(64, 0)
+			end
+			removed += P.pruneLedger(ledger)
+			if removed > 0 then
+				break
+			end
+		end
+		assert(removed == 1 and #ledger == 2, "removed " .. removed)
+		cleaned(s)
+	end)
 	test("Validation failure precedes all live actions", function()
 		local applied = false
 		local r = Transaction.run(function()

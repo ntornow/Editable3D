@@ -229,6 +229,7 @@ The view coordinates in `target(q, front)` are relative to the view frame: `q.Y`
   - Project every cell through each photo's camera. Where the cell faces the camera and nothing hides it, take the photo's estimated normal into the sheet's frame (X across columns, Y along rows, Z out), with a weight for the facing. Blend the photos by weight.
   - Run `Bake.slopeFit(heights, normals, {cellX, cellY, periodicX, weights, keep = 6 to 8, gain = 1 to 1.3, clip = 2.5})`. For a cylindrical wrap, columns are azimuth: `periodicX = true`, `cellX` the arc step at radius R, `radial = R`.
   - `keep` decides what the photos may change: the sheet's own shape above that scale stays (the silhouettes), the folds below it come from the photos.
+  - Pass `trend = "linear"` when the sheet has open edges (a top edge at the neck, a hem): the default local mean leaves the correction offset by up to a stud along an edge where it ramps.
   - Check the report's slope error, and compare the sheet's shading against the photos' normals under one light in the grid's own (column, row) layout. That shows the large forms side by side, with no camera in between.
   - Don't integrate each photo's normals in its own pixels and lay the depth on along the view direction: away from the facing direction view depth is not surface depth, and the high-pass needed to drop the integration's drift also removes the large folds.
 - **Contact shading for a re-surfaced height field.** Roblox's shadow maps draw no contact shadows, so folds and hems built into geometry read faint. Bake the shadows in.

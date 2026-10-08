@@ -330,7 +330,63 @@ return function(E)
 		rejects(function()
 			E.Bake.slopeFit({ { 1, 2 }, { 1 } }, { {}, {} })
 		end, "slopeFit rows must have matching lengths")
+		rejects(function()
+			E.Bake.slopeFit(heights, tilt, { trend = "median" :: any })
+		end, "slopeFit trend must be mean or linear")
 	end)
+	test(
+		"slopeFit trend linear: no offset where a large-scale correction ramps to the domain's edge",
+		function()
+			-- targets tilted along y (a pure large scale) over a strip whose top rows are missing: the integrated
+			-- correction is a ramp; the local mean leaves about 0.8 x slope x keep at the edges, the local plane ~0
+			local rows, cols, cell = 28, 36, 0.25
+			local heights, tilt = {}, {}
+			for r = 1, rows do
+				heights[r], tilt[r] = {}, {}
+				for c = 1, cols do
+					heights[r][c] = if r > 22 then 0 / 0 else 2
+					tilt[r][c] = Vector3.new(0, -0.4, 1).Unit
+				end
+			end
+			local function worst(out): number
+				local m = 0
+				for r = 1, 22 do
+					for c = 1, cols do
+						m = math.max(m, math.abs(out[r][c] - 2))
+					end
+				end
+				return m
+			end
+			local opts = { cellX = cell, cellY = cell, periodicX = true, keep = 1.5 }
+			local meanOut = E.Bake.slopeFit(heights, tilt, opts)
+			opts.trend = "linear"
+			local linOut = E.Bake.slopeFit(heights, tilt, opts)
+			local wm, wl = worst(meanOut), worst(linOut)
+			assert(wm > 0.2, "the mean leaves an edge offset " .. wm)
+			assert(wl < 0.25 * wm and wl < 0.06, "the plane leaves " .. wl .. " (mean " .. wm .. ")")
+			-- small-scale relief survives the linear trend as it does the mean
+			local rip = {}
+			for r = 1, rows do
+				rip[r] = {}
+				for c = 1, cols do
+					rip[r][c] = Vector3.new(-0.2 * math.pi * math.cos(math.pi * (c - 1) * cell), 0, 1).Unit
+				end
+			end
+			local a =
+				E.Bake.slopeFit(heights, rip, { cellX = cell, cellY = cell, periodicX = true, keep = 3 })
+			local b = E.Bake.slopeFit(
+				heights,
+				rip,
+				{ cellX = cell, cellY = cell, periodicX = true, keep = 3, trend = "linear" }
+			)
+			local amp = 0
+			for c = 1, cols do
+				amp = math.max(amp, math.abs(b[10][c] - 2))
+				near(a[10][c], b[10][c], 0.03)
+			end
+			assert(amp > 0.12, "ripple kept " .. amp)
+		end
+	)
 	test("capFan closes lofts whose end rings cannot be one polygon", function()
 		local function volume(m)
 			local v = 0
