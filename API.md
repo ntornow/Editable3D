@@ -79,6 +79,7 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.modulateBytes(pixels: buffer, width: number, height: number, factor: Texture, tolerance: number?): (buffer, number)`
 - `Bake.dilate(image: Texture, coverage: buffer, iterations: number, options: Types.Limits?): Texture`
 - `Bake.normalMap(low: Mesh, high: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
+- `Bake.worldNormalMap(mesh: Mesh, width: number, height: number, normal: (Types.BakeContext) -> Vector3?, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: number }, Types.Progress)`
 - `Bake.occlusionSampler(meshes: { Mesh }, options: OcclusionSamplerOptions?): ((Vector3, Vector3?) -> number?, number)`
@@ -673,6 +674,8 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.toTexturedModel(mesh: Mesh, maps: MaterialMaps, options: TexturedModelOptions?): Bundle`
 - `Roblox.release(bundle: Disposable)`
 - `Roblox.destroy(bundle: Disposable, options: DestroyOptions?)`
+- `Roblox.liveEditables(roots: { Instance }?): { [any]: boolean }`
+- `Roblox.sweep(value: any, options: SweepOptions?): SweepReport`
 - `Roblox.fromPart(part: MeshPart, options: FromPartOptions?): Mesh`
 - `Roblox.publishMaterials(parts: { MeshPart }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publishImages(images: { EditableImage }, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`

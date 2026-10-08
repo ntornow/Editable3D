@@ -266,6 +266,43 @@ return function(E, options)
 			assert(math.abs(top - (part.Position.Y - 2)) < 1e-3, "kept faces lie on the bottom: " .. top)
 			trimmed:revert()
 			assert(part.Transparency == 0 and entry.bundle.model.Parent == nil, "reverted")
+			-- a part that keeps no face is hidden without a preview; it goes only when every other part
+			-- publishes, so a failed publish leaves it for revert
+			local other =
+				E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(2, 2, 2))), { name = "ReshapeGone" })
+			other.model.Parent = holder
+			local gonePart = other.handles[1].part
+			local both = E.Roblox.reshape({ part, gonePart }, function(p)
+				return p
+			end, {
+				keep = function(_, owner)
+					return owner ~= gonePart
+				end,
+			})
+			local gone = both.entries[2]
+			assert(gone.removed and gone.bundle == nil and gonePart.Transparency == 1, "removed part hidden")
+			assert(both.entries[1].bundle ~= nil and not both.entries[1].removed, "other part previewed")
+			local failed = both:publish({ Name = "ReshapeFixture" }, {
+				cancelled = function()
+					return true
+				end,
+			})
+			assert(not failed.success and #failed.removed == 0, "nothing removed after a failed publish")
+			assert(failed.parts[2].part == "ReshapeGone" and failed.parts[2].removed, "removed row reported")
+			assert(gonePart.Parent ~= nil and gonePart.Transparency == 1, "removed part kept for revert")
+			both:revert()
+			assert(gonePart.Transparency == 0 and part.Transparency == 0, "revert shows both again")
+			local only = E.Roblox.reshape({ gonePart }, function(p)
+				return p
+			end, {
+				keep = function()
+					return false
+				end,
+			})
+			local done = only:publish({ Name = "ReshapeFixture" })
+			assert(done.success and done.removed[1] == "ReshapeGone", "removed on a successful publish")
+			assert(gonePart.Parent == nil, "removed part destroyed")
+			E.Roblox.destroy(other, { force = true })
 		end)
 		holder:Destroy()
 		E.Roblox.destroy(source)
@@ -309,6 +346,34 @@ return function(E, options)
 			assert(ok, err)
 		end
 	)
+	test("Roblox.sweep destroys editables no part displays and keeps displayed ones", function()
+		local service = game:GetService("AssetService")
+		local shown = assert(service:CreateEditableImage({ Size = Vector2.new(2, 2) }))
+		local stale = assert(service:CreateEditableImage({ Size = Vector2.new(2, 2) }))
+		local mesh = assert(service:CreateEditableMesh({}))
+		mesh:AddVertex(Vector3.zero)
+		local folder = Instance.new("Folder")
+		local part = Instance.new("MeshPart")
+		local surface = Instance.new("SurfaceAppearance")
+		surface.ColorMapContent = Content.fromObject(shown)
+		surface.Parent = part
+		part.Parent = folder
+		local ok, err = pcall(function()
+			local live = E.Roblox.liveEditables({ folder })
+			assert(live[shown] and not live[stale], "displayed image found")
+			local report = E.Roblox.sweep(
+				{ a = { shown }, b = { { stale, mesh } }, c = part },
+				{ roots = { folder } }
+			)
+			assert(report.destroyed == 2 and report.kept == 1, report.destroyed .. " / " .. report.kept)
+			-- a destroyed editable reads as a 1x1 image or an empty mesh rather than raising
+			assert(shown.Size == Vector2.new(2, 2), "displayed image kept")
+			assert(stale.Size == Vector2.new(1, 1) and #mesh:GetVertices() == 0, "stale editables destroyed")
+		end)
+		folder:Destroy()
+		shown:Destroy()
+		assert(ok, err)
+	end)
 	test("Roblox.modulateColor multiplies only the covered texels and revert restores the surface", function()
 		local service = game:GetService("AssetService")
 		local source =

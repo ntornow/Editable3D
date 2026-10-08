@@ -2,6 +2,12 @@
 
 ## 0.106.0 — 2026-10-08
 
+- **Normal maps now encode green as Roblox reads it (fix).** Green is toward decreasing v, the texture's up given the upper-left UV origin (OpenGL-style). `Bake.normalMap` had green along +v, so Roblox shaded a surface tilted up as if tilted down.
+  - Measured in Studio, sun above: a quad whose map tilts its normal 35° up rendered 181 with the old encoding and 230 with the new. A geometrically tilted quad rendered 236, and a flat one 212.
+  - Red stays along +u.
+- **`Bake.worldNormalMap(mesh, width, height, normal, options)`:** bakes a tangent-space normal map from a world-space shading normal per texel. `normal(ctx)` returns the wanted normal, or nil for a flat, uncovered texel.
+  - Use it for detail the mesh cannot carry, such as fine folds measured from photographs: tilt `ctx.normal` by the measured slopes and return it.
+  - `Bake.normalMap` uses the same encoding.
 - **`Bake.foldDirections(slopes, {cellX, cellY, periodicX, rho, columns})` -> `(directions, coherence)`:** the direction along a relief's folds at every cell, from its slopes (e.g. a photograph's normals as -nx/nz, -ny/nz).
   - Uses the structure tensor smoothed over `rho` studs.
   - Coherence is in [0, 1]: 1 for long parallel folds, about 0 for a round bump or where nothing is known.
@@ -14,6 +20,15 @@
   - `"softroll"` is a roll that rises as a half cosine, with zero slope at its line. The quarter-circle `"roll"` stands vertical at its edge, so a tall roll seen edge-on makes the silhouette ragged.
   - `"groove"` is a symmetric valley of depth `height` and half-width `width` along a drawn fold line, with no layer step.
 - **`Deform.sectionScaleMap(frame, section, blend?)` -> point map:** `Deform.sectionScale`'s rule as a position function, for `Roblox.reshape` on published parts. An example is widening or slimming a height band of a figure, such as a neck, about an axis. `Deform.sectionScale` now uses it.
+- **`Roblox.sweep(value, {roots, live, depth, dryRun, checkpoint})` -> `{destroyed, kept, tables}`:** destroys the EditableMeshes and EditableImages reachable from a table (nested keys and values, up to `depth` levels, default 8) that nothing displays.
+  - Long sessions keep build results (bundles, preview images) in tables. Dropping a table leaves its editables allocated until they are collected, and past the editable memory budget new textures render white.
+  - Displayed editables (unpublished previews) are kept: `Roblox.liveEditables(roots)` collects the editables shown by MeshParts, SurfaceAppearances, Decals, Textures and image GUI objects under `roots` (default Workspace, ServerStorage, ReplicatedStorage, Lighting and StarterGui).
+  - `dryRun` only counts. `checkpoint` runs every 50,000 keys and values.
+  - Engine note: `typeof` reports an editable as `"Object"`, not `"Instance"`, and a destroyed editable reads as a 1x1 image or an empty mesh rather than raising.
+- **`Roblox.reshape` with `keep` may remove a part entirely.** A part whose every face fails `keep` no longer raises "Reshape keep removed every face".
+  - It gets no preview: it is hidden, and its entry has `removed = true` and no bundle.
+  - Publishing destroys it only when every other part publishes, so a failed publish can still be reverted. Its report row has `removed = true`, and `report.removed` lists the names destroyed.
+  - Use case: a new surface covers old cloth that the reshape sinks; the chunks lying wholly under the new surface go.
 
 ## 0.105.0 — 2026-10-08
 

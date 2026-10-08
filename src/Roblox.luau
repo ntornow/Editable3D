@@ -619,6 +619,124 @@ function R.destroy(bundle: Disposable, options: DestroyOptions?)
 	end
 	R.release(bundle)
 end
+-- Content properties that can display an editable, by class (IsA, so Texture is covered by Decal).
+local CONTENT_PROPERTIES: { [string]: { string } } = {
+	MeshPart = { "MeshContent", "TextureContent" },
+	SurfaceAppearance = {
+		"ColorMapContent",
+		"NormalMapContent",
+		"RoughnessMapContent",
+		"MetalnessMapContent",
+		"EmissiveMaskContent",
+	},
+	Decal = { "ColorMapContent", "TextureContent" },
+	ImageLabel = { "ImageContent" },
+	ImageButton = { "ImageContent" },
+}
+-- An EditableMesh or EditableImage. typeof reports these as "Object", not "Instance".
+local function isEditableObject(value: any): boolean
+	local kind = typeof(value)
+	if kind ~= "Object" and kind ~= "Instance" then
+		return false
+	end
+	local ok, yes = pcall(function()
+		return value:IsA("EditableMesh") or value:IsA("EditableImage")
+	end)
+	return ok and yes == true
+end
+-- The editable meshes and images that instances under roots display (MeshPart mesh and texture,
+-- SurfaceAppearance maps, Decal/Texture and image GUI content), as a set keyed by the object. roots
+-- default to Workspace, ServerStorage, ReplicatedStorage, Lighting and StarterGui.
+function R.liveEditables(roots: { Instance }?): { [any]: boolean }
+	local live = {}
+	local list = roots
+		or {
+			workspace,
+			game:GetService("ServerStorage"),
+			game:GetService("ReplicatedStorage"),
+			game:GetService("Lighting"),
+			game:GetService("StarterGui"),
+		}
+	for _, root in list :: { Instance } do
+		for _, object in root:GetDescendants() do
+			for class, properties in CONTENT_PROPERTIES do
+				if object:IsA(class) then
+					for _, property in properties do
+						local ok, content = pcall(function()
+							return (object :: any)[property]
+						end)
+						if
+							ok
+							and typeof(content) == "Content"
+							and content.SourceType == Enum.ContentSourceType.Object
+							and content.Object
+						then
+							live[content.Object] = true
+						end
+					end
+				end
+			end
+		end
+	end
+	return live
+end
+export type SweepOptions = {
+	roots: { Instance }?,
+	live: { [any]: boolean }?,
+	depth: number?,
+	dryRun: boolean?,
+	checkpoint: (() -> ())?,
+	isEditable: ((any) -> boolean)?,
+}
+export type SweepReport = { destroyed: number, kept: number, tables: number }
+-- Destroys the editable meshes and images reachable from value (keys and values of nested tables, up
+-- to depth levels, default 8) that nothing under roots displays (Roblox.liveEditables, or the live
+-- set given). Long sessions keep build results (bundles, preview images) in tables; dropping a table
+-- leaves its editables allocated until they are collected, and they count against the engine's
+-- editable memory budget, past which new textures render white. Displayed editables (unpublished
+-- previews) are kept. dryRun only counts. checkpoint (e.g. task.wait) runs every 50,000 keys and values.
+-- isEditable replaces the engine check, for wrapped objects.
+function R.sweep(value: any, options: SweepOptions?): SweepReport
+	local o: SweepOptions = options or {}
+	local live = o.live or R.liveEditables(o.roots)
+	local detect = o.isEditable or isEditableObject
+	local limit = o.depth or 8
+	local report: SweepReport = { destroyed = 0, kept = 0, tables = 0 }
+	local seen = {}
+	local visits = 0
+	local function visit(v: any, depth: number)
+		visits += 1
+		if o.checkpoint and visits % 50000 == 0 then
+			o.checkpoint()
+		end
+		local kind = type(v)
+		if (kind ~= "table" and kind ~= "userdata") or seen[v] then
+			return
+		end
+		if detect(v) then
+			seen[v] = true
+			if live[v] then
+				report.kept += 1
+			else
+				if not o.dryRun then
+					pcall(function()
+						v:Destroy()
+					end)
+				end
+				report.destroyed += 1
+			end
+		elseif kind == "table" and depth <= limit then
+			seen[v] = true
+			report.tables += 1
+			for key, item in next, v do
+				visit(key, depth + 1)
+				visit(item, depth + 1)
+			end
+		end
+	end
+	visit(value, 1)
+	return report
+end
 -- Reads a MeshPart's mesh back into an authoring Mesh. space "world" (default) applies the part's
 -- size scale and CFrame and maps corner normals through the transform; "mesh" keeps the stored
 -- coordinates. Published meshes come back one vertex per triangle corner; weld (Topology.weld) or
@@ -964,7 +1082,9 @@ end
 -- whole); :revert() restores the originals. metadata is a table (its Name gets " <part name>"
 -- appended, trimmed to 50 characters) or a function of the part. keep(centroid, part) -> boolean
 -- trims faces while reshaping: a face whose ORIGINAL centroid fails it is removed (cut away a part of
--- a published mesh that a new piece replaces); faces that survive keep their UVs and textures.
+-- a published mesh that a new piece replaces); faces that survive keep their UVs and textures. A part
+-- that loses every face has no preview: it is hidden (entry.removed) and destroyed when a publish
+-- succeeds for every other part (its report row has removed = true; report.removed lists its name).
 export type ReshapeOptions = {
 	unify: boolean?,
 	angle: number?,
@@ -973,15 +1093,16 @@ export type ReshapeOptions = {
 	collisionFidelity: Enum.CollisionFidelity?,
 	keep: ((Vector3, MeshPart) -> boolean)?,
 }
-export type ReshapeEntry = { part: MeshPart, bundle: Bundle, transparency: number }
+export type ReshapeEntry = { part: MeshPart, bundle: Bundle?, transparency: number, removed: boolean? }
 -- published and failures are keyed by part name (parts sharing a name overwrite each other there);
 -- parts lists every entry in order, so same-named parts each keep their result.
-export type ReshapeResult = { part: string, meshId: string?, error: string? }
+export type ReshapeResult = { part: string, meshId: string?, error: string?, removed: boolean? }
 export type ReshapeReport = {
 	success: boolean,
 	published: { [string]: string },
 	failures: { [string]: string },
 	parts: { ReshapeResult },
+	removed: { string },
 }
 export type Reshape = {
 	entries: { ReshapeEntry },
@@ -1011,17 +1132,37 @@ function R.reshape(
 				end
 			end
 			source:removeUnused()
-			assert(next(source.faces) ~= nil, "Reshape keep removed every face of " .. part.Name)
 		end
-		meshes[i] = Deform.map(source, function(position: Vector3): Vector3
-			return map(position, part)
-		end)
+		-- a part that keeps no face is removed rather than previewed
+		if next(source.faces) ~= nil then
+			meshes[i] = Deform.map(source, function(position: Vector3): Vector3
+				return map(position, part)
+			end)
+		end
 	end
 	if o.unify ~= false then
-		meshes = Normals.unify(meshes, { tolerance = o.tolerance or 1e-3, angle = o.angle or math.rad(75) })
+		local list, index = {}, {}
+		for i in parts do
+			if meshes[i] then
+				table.insert(list, meshes[i])
+				table.insert(index, i)
+			end
+		end
+		if #list > 0 then
+			local unified =
+				Normals.unify(list, { tolerance = o.tolerance or 1e-3, angle = o.angle or math.rad(75) })
+			for k, i in index do
+				meshes[i] = unified[k]
+			end
+		end
 	end
 	local entries: { ReshapeEntry } = {}
 	for i, part in parts do
+		if not meshes[i] then
+			table.insert(entries, { part = part, transparency = part.Transparency, removed = true })
+			part.Transparency = 1
+			continue
+		end
 		local bundle = R.toModel(meshes[i], {
 			name = part.Name,
 			maxTriangles = o.maxTriangles or 18000,
@@ -1050,9 +1191,16 @@ function R.reshape(
 		metadata: any,
 		publishOptions: Types.PublishOptions?
 	): ReshapeReport
-		local report: ReshapeReport = { success = true, published = {}, failures = {}, parts = {} }
+		local report: ReshapeReport =
+			{ success = true, published = {}, failures = {}, parts = {}, removed = {} }
+		local removed = {}
 		for _, e in self.entries do
 			local part = e.part
+			if e.removed then
+				table.insert(removed, e)
+				continue
+			end
+			local bundle = e.bundle :: Bundle
 			local meta = metadata
 			if type(metadata) == "function" then
 				meta = metadata(part)
@@ -1062,7 +1210,7 @@ function R.reshape(
 			end
 			-- a part whose publish raises (cancellation, an engine error) is recorded as a failure, so
 			-- the loop never stops half-way with some originals replaced and no report
-			local ok, published = pcall(R.publish, e.bundle, meta, publishOptions)
+			local ok, published = pcall(R.publish, bundle, meta, publishOptions)
 			local result: Types.PublishReport = if ok
 				then published
 				else {
@@ -1091,12 +1239,12 @@ function R.reshape(
 					and #holder:GetChildren() == 2 -- the original and its preview bundle
 					and holder.Parent
 				then
-					e.bundle.model.Parent = holder.Parent
+					bundle.model.Parent = holder.Parent
 					holder:Destroy()
 				else
 					part:Destroy()
 				end
-				local first = e.bundle.handles[1]
+				local first = bundle.handles[1]
 				local firstPart = first and first.part
 				local meshId = if firstPart then tostring(firstPart.MeshId) else ""
 				report.published[part.Name] = meshId
@@ -1108,11 +1256,33 @@ function R.reshape(
 				table.insert(report.parts, { part = part.Name, error = message })
 			end
 		end
+		-- removed parts go only once every other part has published, so a revert can still restore them
+		for _, e in removed do
+			local part = e.part
+			if report.success then
+				local holder = part.Parent
+				if
+					holder
+					and holder:IsA("Model")
+					and holder.Name == part.Name
+					and #holder:GetChildren() == 1
+					and holder.Parent
+				then
+					holder:Destroy()
+				else
+					part:Destroy()
+				end
+				table.insert(report.removed, part.Name)
+			end
+			table.insert(report.parts, { part = part.Name, removed = true })
+		end
 		return report
 	end
 	function handle.revert(self: Reshape)
 		for _, e in self.entries do
-			R.destroy(e.bundle)
+			if e.bundle then
+				R.destroy(e.bundle)
+			end
 			e.part.Transparency = e.transparency
 		end
 	end

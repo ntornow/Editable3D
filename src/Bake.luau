@@ -223,6 +223,17 @@ function B.dilate(image: Texture, coverage: buffer, iterations: number, options:
 	complete(budget, owned)
 	return out
 end
+-- A world-space normal in a texel's tangent frame, encoded as Roblox reads normal maps: red along
+-- +u (ctx.tangent), green toward DECREASING v (the texture's up: UV origin is upper-left, so this is
+-- -ctx.bitangent; OpenGL-style), blue along the surface normal. Measured in Studio: a map with green
+-- along +bitangent shades a surface tilted up as if tilted down.
+local function encodeNormal(n: Vector3, ctx: Types.BakeContext): Color3
+	return Color3.new(
+		n:Dot(ctx.tangent) * 0.5 + 0.5,
+		-n:Dot(ctx.bitangent) * 0.5 + 0.5,
+		n:Dot(ctx.normal) * 0.5 + 0.5
+	)
+end
 function B.normalMap(
 	low: Mesh,
 	high: Mesh,
@@ -248,16 +259,30 @@ function B.normalMap(
 		for i, w in { bary.X, bary.Y, bary.Z } do
 			n += (f.corners[t.corners[i]].normal or hit.normal) * w
 		end
-		n = U.unit(n, hit.normal)
-		return Color3.new(
-			n:Dot(ctx.tangent) * 0.5 + 0.5,
-			n:Dot(ctx.bitangent) * 0.5 + 0.5,
-			n:Dot(ctx.normal) * 0.5 + 0.5
-		),
-			1
+		return encodeNormal(U.unit(n, hit.normal), ctx), 1
 	end, shared)
 	report.operation = complete(budget, owned)
 	return image, report
+end
+-- Bakes a tangent-space normal map from a world-space shading normal per texel: normal(ctx) returns
+-- the normal wanted at ctx.position (ctx.normal is the mesh's own), or nil to leave the texel flat
+-- and uncovered (alpha 0). Encoded as Roblox reads normal maps (see encodeNormal). For detail the
+-- mesh cannot carry, such as fine folds measured from photographs: tilt ctx.normal by the measured
+-- slopes, scaled to taste, and return it.
+function B.worldNormalMap(
+	mesh: Mesh,
+	width: number,
+	height: number,
+	normal: (Types.BakeContext) -> Vector3?,
+	options: BakeOptions?
+): (Texture, BakeReport)
+	return B.rasterize(mesh, width, height, function(ctx)
+		local n = normal(ctx)
+		if not n then
+			return Color3.new(0.5, 0.5, 1), 0
+		end
+		return encodeNormal(U.unit(n, ctx.normal), ctx), 1
+	end, options)
 end
 function B.ambientOcclusion(
 	mesh: Mesh,

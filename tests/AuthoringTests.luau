@@ -300,9 +300,12 @@ return function(E)
 		)
 		assert(cohBump[11][11] < 0.2, "a bump is not a fold " .. cohBump[11][11])
 		-- no slopes (nil holes need the column count; false marks a missing cell too): coherence 0
-		local _, cohNone = E.Bake.foldDirections(grid(4, 4, function()
-			return nil
-		end), { columns = 4 })
+		local _, cohNone = E.Bake.foldDirections(
+			grid(4, 4, function()
+				return nil
+			end),
+			{ columns = 4 }
+		)
 		near(cohNone[2][2], 0, 1e-12)
 		local _, cohFalse = E.Bake.foldDirections({ { false, false, false }, { false, false, false } })
 		near(cohFalse[2][3], 0, 1e-12)
@@ -310,48 +313,51 @@ return function(E)
 			E.Bake.foldDirections({ {}, {} })
 		end, "foldDirections needs at least one column")
 	end)
-	test("flowSmooth: averages along the directions, keeps detail across them, wraps and respects gaps", function()
-		local rows, cols = 24, 32
-		local field, along = {}, {}
-		for r = 1, rows do
-			field[r], along[r] = {}, {}
-			for c = 1, cols do
-				-- folds across x (period 8 columns) plus a fine ripple along y
-				field[r][c] = math.sin(2 * math.pi * c / 8) + 0.5 * (if r % 2 == 0 then 1 else -1)
-				along[r][c] = Vector2.new(0, 1)
+	test(
+		"flowSmooth: averages along the directions, keeps detail across them, wraps and respects gaps",
+		function()
+			local rows, cols = 24, 32
+			local field, along = {}, {}
+			for r = 1, rows do
+				field[r], along[r] = {}, {}
+				for c = 1, cols do
+					-- folds across x (period 8 columns) plus a fine ripple along y
+					field[r][c] = math.sin(2 * math.pi * c / 8) + 0.5 * (if r % 2 == 0 then 1 else -1)
+					along[r][c] = Vector2.new(0, 1)
+				end
 			end
-		end
-		local out = E.Bake.flowSmooth(field, along, { length = 4, step = 0.5 })
-		for r = 6, rows - 5 do
-			for c = 1, cols do
-				near(out[r][c], math.sin(2 * math.pi * c / 8), 0.08)
+			local out = E.Bake.flowSmooth(field, along, { length = 4, step = 0.5 })
+			for r = 6, rows - 5 do
+				for c = 1, cols do
+					near(out[r][c], math.sin(2 * math.pi * c / 8), 0.08)
+				end
 			end
-		end
-		-- smoothing across the folds instead flattens them
-		local across = {}
-		for r = 1, rows do
-			across[r] = {}
-			for c = 1, cols do
-				across[r][c] = Vector2.new(1, 0)
+			-- smoothing across the folds instead flattens them
+			local across = {}
+			for r = 1, rows do
+				across[r] = {}
+				for c = 1, cols do
+					across[r][c] = Vector2.new(1, 0)
+				end
 			end
+			local flat = E.Bake.flowSmooth(field, across, { length = 8, step = 0.5, periodicX = true })
+			assert(math.abs(flat[12][3] - field[12][3]) > 0.5, "folds are averaged away along x")
+			-- coherence 0 keeps the field; NaN cells stay NaN and stop the walk
+			local zero = {}
+			for r = 1, rows do
+				zero[r] = table.create(cols, 0)
+			end
+			local kept = E.Bake.flowSmooth(field, along, { length = 4, coherence = zero })
+			near(kept[7][5], field[7][5], 1e-12)
+			field[12][5] = 0 / 0
+			local gap = E.Bake.flowSmooth(field, along, { length = 4, step = 0.5 })
+			assert(gap[12][5] ~= gap[12][5], "missing cells stay missing")
+			near(gap[14][9], out[14][9], 1e-9)
+			rejects(function()
+				E.Bake.flowSmooth({ { 1 } }, { { Vector2.zero } }, { length = 0 })
+			end, "flowSmooth length must be positive")
 		end
-		local flat = E.Bake.flowSmooth(field, across, { length = 8, step = 0.5, periodicX = true })
-		assert(math.abs(flat[12][3] - field[12][3]) > 0.5, "folds are averaged away along x")
-		-- coherence 0 keeps the field; NaN cells stay NaN and stop the walk
-		local zero = {}
-		for r = 1, rows do
-			zero[r] = table.create(cols, 0)
-		end
-		local kept = E.Bake.flowSmooth(field, along, { length = 4, coherence = zero })
-		near(kept[7][5], field[7][5], 1e-12)
-		field[12][5] = 0 / 0
-		local gap = E.Bake.flowSmooth(field, along, { length = 4, step = 0.5 })
-		assert(gap[12][5] ~= gap[12][5], "missing cells stay missing")
-		near(gap[14][9], out[14][9], 1e-9)
-		rejects(function()
-			E.Bake.flowSmooth({ { 1 } }, { { Vector2.zero } }, { length = 0 })
-		end, "flowSmooth length must be positive")
-	end)
+	)
 	test("slopeFit: relief follows target normals, large scales and untargeted cells stay", function()
 		local rows, cols = 24, 32
 		local cell = 0.25
@@ -1019,7 +1025,8 @@ return function(E)
 		assert(softLift(0.05) < 0.01 * H, "a soft roll starts flat at its edge")
 		assert(lift(0.05) > 0.25 * H, "the quarter-circle roll starts steep")
 		-- groove: a symmetric valley on both sides of the line
-		local groove = E.Deform.edgeField(view, line, { envelope = env, height = 0.3, width = 0.4, profile = "groove" })
+		local groove =
+			E.Deform.edgeField(view, line, { envelope = env, height = 0.3, width = 0.4, profile = "groove" })
 		near(groove(Vector3.new(0, 0, 0)).Z, 0.3, 1e-6)
 		near(groove(Vector3.new(0, 0.4, 0)).Z, 0.3 * math.exp(-1), 1e-6)
 		near(groove(Vector3.new(0, -0.4, 0)).Z, 0.3 * math.exp(-1), 1e-6)
@@ -1133,6 +1140,51 @@ return function(E)
 		local preview: any = { model = stub("m2"), handles = { { editable = stub("e2") } }, images = {} }
 		R.destroy(preview)
 		assert(table.concat(log, ",") == "editable,image,model,m2,e2")
+	end)
+	test("Roblox.sweep destroys unreferenced editables in nested tables and keeps live ones", function()
+		local R = E.Roblox
+		local log = {}
+		local function editable(name)
+			return {
+				editable = true,
+				Destroy = function()
+					table.insert(log, name)
+				end,
+			}
+		end
+		local function isEditable(v)
+			return type(v) == "table" and v.editable == true
+		end
+		local shown, stale, keyed, deep =
+			editable("shown"), editable("stale"), editable("keyed"), editable("deep")
+		local session: any = {
+			build = { bundle = { handles = { { editable = shown } }, images = { stale } } },
+			byImage = { [keyed] = "a key" },
+			again = { stale },
+			far = { { { { deep } } } },
+			other = { 1, Vector3.one, "text" },
+		}
+		session.cycle = session
+		local live = { [shown] = true }
+		local dry = R.sweep(session, { live = live, isEditable = isEditable, dryRun = true })
+		assert(dry.destroyed == 3 and dry.kept == 1 and #log == 0, "a dry run only counts")
+		local shallow = R.sweep(session, { live = live, isEditable = isEditable, depth = 3 })
+		assert(shallow.destroyed == 2 and shallow.kept == 0, "depth limits the tables searched")
+		table.sort(log)
+		assert(table.concat(log, ",") == "keyed,stale", table.concat(log, ","))
+		local full = R.sweep(session, { live = live, isEditable = isEditable })
+		assert(full.destroyed == 3 and full.kept == 1, "each object counted once")
+		assert(#log == 5 and table.find(log, "deep") and not table.find(log, "shown"), "live editable kept")
+		local calls = 0
+		local big = table.create(120000, 0)
+		R.sweep(big, {
+			live = {},
+			isEditable = isEditable,
+			checkpoint = function()
+				calls += 1
+			end,
+		})
+		assert(calls == 4, "checkpoint every 50,000 keys and values: " .. calls)
 	end)
 	test("Spatial.coincident measures co-facing and back-to-back overlap by area", function()
 		local function sheet(z, flip, shift)

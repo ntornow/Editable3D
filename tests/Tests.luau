@@ -352,6 +352,66 @@ return function(API, options)
 		local tiles = image:tiles(12)
 		assert(#tiles == 9 and tiles[9].width == 8)
 	end)
+	test("Normal maps encode red along +u and green toward decreasing v, as Roblox reads them", function()
+		-- a unit quad facing +z with the UV origin at its top-left: dP/du = +x, dP/dv = -y
+		local m = API.Mesh.new()
+		local tl = m:addVertex(Vector3.new(0, 1, 0))
+		local tr = m:addVertex(Vector3.new(1, 1, 0))
+		local bl = m:addVertex(Vector3.new(0, 0, 0))
+		local br = m:addVertex(Vector3.new(1, 0, 0))
+		local uv = {
+			[tl] = Vector2.new(0, 0),
+			[tr] = Vector2.new(1, 0),
+			[bl] = Vector2.new(0, 1),
+			[br] = Vector2.new(1, 1),
+		}
+		for _, vs in { { tl, bl, tr }, { tr, bl, br } } do
+			local face = m.faces[m:addFace(vs)]
+			for i, v in face.vertices do
+				face.corners[i].uv = uv[v]
+				face.corners[i].normal = Vector3.zAxis
+			end
+		end
+		local function center(normal)
+			local image = API.Bake.worldNormalMap(m, 8, 8, function(ctx)
+				return normal(ctx)
+			end)
+			return image:get(4, 4)
+		end
+		-- tilted toward +y, the texture's up: green above 0.5 (Studio shades it like a surface tilted up)
+		local c, a = center(function()
+			return Vector3.new(0, 0.6, 0.8)
+		end)
+		near(c.R, 0.5)
+		near(c.G, 0.8)
+		near(c.B, 0.9)
+		assert(a == 1)
+		c = center(function()
+			return Vector3.new(0.6, 0, 0.8)
+		end)
+		near(c.R, 0.8)
+		near(c.G, 0.5)
+		-- the normal is normalized; nil leaves the texel flat and uncovered
+		c = center(function(ctx)
+			return ctx.normal * 3
+		end)
+		near(c.B, 1)
+		c, a = center(function()
+			return nil
+		end)
+		assert(a == 0 and math.abs(c.B - 1) < 1e-5)
+		-- Bake.normalMap uses the same encoding: a high mesh whose normals tilt toward +y
+		local high = API.Mesh.new()
+		local h1 = high:addVertex(Vector3.new(-1, 2, 0))
+		local h2 = high:addVertex(Vector3.new(-1, -1, 0))
+		local h3 = high:addVertex(Vector3.new(2, -1, 0))
+		local hf = high.faces[high:addFace({ h1, h2, h3 })]
+		for i in hf.vertices do
+			hf.corners[i].normal = Vector3.new(0, 0.6, 0.8)
+		end
+		local baked = API.Bake.normalMap(m, high, 8, 8)
+		near(baked:get(4, 4).G, 0.8)
+	end)
 	test("CPU silhouette renderer and image comparison", function()
 		local camera = API.Camera.new(CFrame.lookAt(Vector3.new(0, 0, 5), Vector3.zero), 50, 32, 32)
 		local image = API.Render.silhouette(API.Primitives.box(), camera)
