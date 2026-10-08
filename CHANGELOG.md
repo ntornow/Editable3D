@@ -1,5 +1,15 @@
 # Editable3D changes
 
+## 0.103.0 — 2026-10-07
+
+- **`Roblox.modulateColor(parts, factor, {padding, tolerance, ...limits})` -> `{images, changed, revert}`:** multiplies the colour maps of MeshParts by a factor field over their surfaces and leaves every other texel byte-identical.
+  - `factor(position, normal)` returns a number or a Color3: a linear multiple per channel, so values above 1 brighten.
+  - Parts sharing a colour map are read back and joined, and the factor is rasterized at the map's size in its UV space (padded). The map's pixels are multiplied only where the raster covers them.
+  - Each part gets a new SurfaceAppearance with the result and its other maps kept. `revert()` restores the originals. Publish with `Roblox.publishMaterials`.
+  - Use it rather than `Roblox.rebake` with `readPrevious` on published parts: re-rasterizing the whole colour over a read-back mesh (one vertex per triangle corner) leaves faint seams along its triangle edges.
+- **`Bake.modulateBytes(pixels, width, height, factorTexture, tolerance?)` -> `(pixels, changed)`:** the pure core. RGBA8 pixels times a factor Texture where it has coverage; everything else is copied.
+- Tests: the resume-ledger test no longer depends on a garbage-collection cycle completing (it didn't in Studio's large heap); an entry with no live source is pruned deterministically.
+
 ## 0.102.0 — 2026-10-07
 
 - **The publish resume ledger no longer keeps everything it published alive.** Entries used to hold their source editable and its full snapshot (every pixel of an image, every face and normal of a mesh). A ledger passed as `resume` to every publish in a long session grew without bound: about 11 GB of Lua heap after 1,400 assets, with the released editables kept alive as well.

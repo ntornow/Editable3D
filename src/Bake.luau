@@ -137,6 +137,52 @@ function B.rasterize(
 			operation = complete(budget, owned),
 		}
 end
+-- Multiplies RGBA8 pixels (width x height, row-major, as EditableImage:ReadPixelsBuffer returns them) by a factor
+-- texture of the same size: where the factor texture has coverage (alpha > 0) and its RGB differs from 1 by more than
+-- `tolerance` (default 0.004), each channel becomes round(byte x factor), clamped; every other byte is copied
+-- unchanged. Returns the new buffer and the number of pixels changed. With a factor rasterized over a mesh read back
+-- from its published asset (Bake.rasterize with padding), this re-shades part of an existing texture without
+-- re-rasterizing its colour, which leaves seams along the read-back triangles' edges.
+function B.modulateBytes(
+	pixels: buffer,
+	width: number,
+	height: number,
+	factor: Texture,
+	tolerance: number?
+): (buffer, number)
+	U.integer(width, 1)
+	U.integer(height, 1)
+	assert(buffer.len(pixels) == width * height * 4, "modulateBytes needs width x height RGBA8 pixels")
+	assert(factor.width == width and factor.height == height, "modulateBytes factor size mismatch")
+	local tol = tolerance or 0.004
+	assert(tol >= 0, "modulateBytes tolerance must be non-negative")
+	local out = buffer.create(width * height * 4)
+	buffer.copy(out, 0, pixels)
+	local fp = factor.pixels
+	local changed = 0
+	for i = 0, width * height - 1 do
+		local f = i * 16
+		if buffer.readf32(fp, f + 12) > 0 then
+			local fr, fg, fb = buffer.readf32(fp, f), buffer.readf32(fp, f + 4), buffer.readf32(fp, f + 8)
+			if math.max(math.abs(fr - 1), math.abs(fg - 1), math.abs(fb - 1)) > tol then
+				local k = i * 4
+				buffer.writeu8(out, k, math.clamp(math.floor(buffer.readu8(pixels, k) * fr + 0.5), 0, 255))
+				buffer.writeu8(
+					out,
+					k + 1,
+					math.clamp(math.floor(buffer.readu8(pixels, k + 1) * fg + 0.5), 0, 255)
+				)
+				buffer.writeu8(
+					out,
+					k + 2,
+					math.clamp(math.floor(buffer.readu8(pixels, k + 2) * fb + 0.5), 0, 255)
+				)
+				changed += 1
+			end
+		end
+	end
+	return out, changed
+end
 function B.dilate(image: Texture, coverage: buffer, iterations: number, options: Types.Limits?): Texture
 	local budget, owned = Budget.acquire(options, "Bake.dilate")
 	assert(buffer.len(coverage) == image.width * image.height, "Coverage size mismatch")

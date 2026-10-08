@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.102.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.103.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -76,6 +76,7 @@ Source: [src/BSDF.luau](src/BSDF.luau)
 Source: [src/Bake.luau](src/Bake.luau)
 
 - `Bake.rasterize(mesh: Mesh, width: number, height: number, shader: (Types.BakeContext) -> (Color3, number?), options: BakeOptions?): (Texture, BakeReport)`
+- `Bake.modulateBytes(pixels: buffer, width: number, height: number, factor: Texture, tolerance: number?): (buffer, number)`
 - `Bake.dilate(image: Texture, coverage: buffer, iterations: number, options: Types.Limits?): Texture`
 - `Bake.normalMap(low: Mesh, high: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
@@ -675,6 +676,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publishInChunks(bundle: Bundle, metadata: unknown, options: (Types.PublishOptions & { partsPerTransaction: number? })?): Types.PublishReport`
 - `Roblox.pruneLedger(ledger: Types.PublishLedger): number`
+- `Roblox.modulateColor(parts: { MeshPart }, factor: (Vector3, Vector3) -> number | Color3, options: ModulateOptions?): Modulation`
 - `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart, any, Texture?) -> (Color3, number?), options: RebakeOptions?): Rebake`
 - `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart) -> Vector3, options: ReshapeOptions?): Reshape`
 - `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`

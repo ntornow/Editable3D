@@ -271,6 +271,59 @@ return function(E, options)
 		E.Roblox.destroy(source)
 		assert(ok, err)
 	end)
+	test("Roblox.modulateColor multiplies only the covered texels and revert restores the surface", function()
+		local service = game:GetService("AssetService")
+		local source =
+			E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(4, 4, 4))), { name = "ModulateFixture" })
+		local part = source.handles[1].part
+		local image = assert(service:CreateEditableImage({ Size = Vector2.new(32, 32) }))
+		local gray = buffer.create(32 * 32 * 4)
+		for i = 0, 32 * 32 - 1 do
+			buffer.writeu8(gray, i * 4, 100)
+			buffer.writeu8(gray, i * 4 + 1, 100)
+			buffer.writeu8(gray, i * 4 + 2, 100)
+			buffer.writeu8(gray, i * 4 + 3, 255)
+		end
+		image:WritePixelsBuffer(Vector2.zero, image.Size, gray)
+		local surface = Instance.new("SurfaceAppearance")
+		surface.ColorMapContent = Content.fromObject(image)
+		surface.Parent = part
+		local holder = Instance.new("Folder")
+		source.model.Parent = holder
+		local result
+		local ok, err = pcall(function()
+			-- the top face doubles, everything else keeps its bytes
+			result = E.Roblox.modulateColor({ part }, function(p, n)
+				return if n.Y > 0.9 then 2 else 1
+			end, { padding = 1 })
+			assert(#result.images == 1 and result.changed > 0, "texels changed: " .. tostring(result.changed))
+			local fresh = part:FindFirstChildOfClass("SurfaceAppearance")
+			assert(
+				fresh ~= surface and fresh.ColorMapContent.Object == result.images[1],
+				"new surface carries the image"
+			)
+			local px = result.images[1]:ReadPixelsBuffer(Vector2.zero, Vector2.new(32, 32))
+			local doubled, same = 0, 0
+			for i = 0, 32 * 32 - 1 do
+				local v = buffer.readu8(px, i * 4)
+				if v == 200 then
+					doubled += 1
+				elseif v == 100 then
+					same += 1
+				end
+			end
+			assert(
+				doubled == result.changed and doubled + same == 32 * 32,
+				"only exact doubles: " .. doubled .. "/" .. same
+			)
+			result.revert()
+			assert(part:FindFirstChildOfClass("SurfaceAppearance") == surface, "original surface restored")
+		end)
+		holder:Destroy()
+		E.Roblox.destroy(source)
+		image:Destroy()
+		assert(ok, err)
+	end)
 	test("Roblox.fillTerrain writes land, edge band and sea inside the outline's box", function()
 		local terrain = workspace.Terrain
 		local origin = Vector2.new(4000, 4000)

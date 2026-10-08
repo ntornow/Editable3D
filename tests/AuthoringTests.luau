@@ -387,6 +387,44 @@ return function(E)
 			assert(amp > 0.12, "ripple kept " .. amp)
 		end
 	)
+	test("Bake.modulateBytes multiplies covered texels and copies the rest exactly", function()
+		local px = buffer.create(3 * 1 * 4)
+		for i = 0, 2 do
+			buffer.writeu8(px, i * 4, 100)
+			buffer.writeu8(px, i * 4 + 1, 150)
+			buffer.writeu8(px, i * 4 + 2, 200)
+			buffer.writeu8(px, i * 4 + 3, 77)
+		end
+		local f = E.Texture.new(3, 1)
+		f:set(0, 0, Color3.new(1.5, 1.5, 1.5), 1) -- covered: multiplied, the blue clamps at 255
+		f:set(1, 0, Color3.new(1.002, 1, 1), 1) -- covered but within tolerance: unchanged
+		-- pixel 2 is uncovered (alpha 0): unchanged
+		local out, changed = E.Bake.modulateBytes(px, 3, 1, f)
+		assert(changed == 1, "changed " .. changed)
+		assert(buffer.readu8(out, 0) == 150 and buffer.readu8(out, 1) == 225 and buffer.readu8(out, 2) == 255)
+		assert(buffer.readu8(out, 3) == 77, "alpha kept")
+		for k = 4, 11 do
+			assert(buffer.readu8(out, k) == buffer.readu8(px, k), "untouched byte " .. k)
+		end
+		local tinted = E.Bake.modulateBytes(
+			px,
+			3,
+			1,
+			(function()
+				local g = E.Texture.new(3, 1)
+				g:set(2, 0, Color3.new(0.5, 1, 2), 1)
+				return g
+			end)()
+		)
+		assert(
+			buffer.readu8(tinted, 8) == 50
+				and buffer.readu8(tinted, 9) == 150
+				and buffer.readu8(tinted, 10) == 255
+		)
+		rejects(function()
+			E.Bake.modulateBytes(px, 2, 1, f)
+		end, "RGBA8 pixels")
+	end)
 	test("capFan closes lofts whose end rings cannot be one polygon", function()
 		local function volume(m)
 			local v = 0

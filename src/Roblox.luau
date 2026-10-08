@@ -715,7 +715,114 @@ end
 function R.pruneLedger(ledger: Types.PublishLedger): number
 	return require(script.Parent.PublishPipeline).pruneLedger(ledger)
 end
--- readPrevious: read the current colour map back and pass it to the shader (one extra image in memory).
+-- Multiplies the colour maps of MeshParts by a factor field over their surfaces and leaves every other texel
+-- byte-identical. Parts sharing a colour map are read back (world space) and joined; factor(position, normal) ->
+-- number or Color3 (a linear multiple per channel) is rasterized at the map's size in its UV space (padded by
+-- `padding` texels, default 6) and the map's pixels are multiplied where it covers them (Bake.modulateBytes). Each
+-- part gets a new SurfaceAppearance carrying the result (one is not reliably refreshed in place), with its other
+-- maps kept. Re-rasterizing the whole colour over a read-back mesh instead leaves seams along its triangle edges.
+-- Returns { images, changed, revert }; publish the new maps with Roblox.publishMaterials.
+export type ModulateOptions = Types.Limits & { padding: number?, tolerance: number? }
+export type Modulation = { images: { EditableImage }, changed: number, revert: () -> () }
+function R.modulateColor(
+	parts: { MeshPart },
+	factor: (Vector3, Vector3) -> number | Color3,
+	options: ModulateOptions?
+): Modulation
+	local o: any = options or {}
+	local Bake = require(script.Parent.Bake) :: any
+	local Topology = require(script.Parent.Topology) :: any
+	local AS = game:GetService("AssetService")
+	local groups, order = {}, {}
+	for _, part in parts do
+		local sa = part:FindFirstChildOfClass("SurfaceAppearance")
+		assert(sa, "modulateColor needs a SurfaceAppearance on every part")
+		local content = sa.ColorMapContent
+		local key: any = if content.SourceType == Enum.ContentSourceType.Object
+			then content.Object
+			else content.Uri
+		assert(key ~= nil and key ~= "", "modulateColor needs a colour map on every part")
+		if not groups[key] then
+			groups[key] = { content = content, parts = {} }
+			table.insert(order, key)
+		end
+		table.insert(groups[key].parts, part)
+	end
+	local images, previous, changed = {}, {}, 0
+	local ok, err = pcall(function()
+		for _, key in order do
+			local g = groups[key]
+			local meshes = {}
+			for i, part in g.parts do
+				meshes[i] = R.fromPart(part)
+				task.wait()
+			end
+			local mesh = Topology.join(meshes)
+			local old = if g.content.SourceType == Enum.ContentSourceType.Object
+				then g.content.Object
+				else AS:CreateEditableImageAsync(g.content)
+			local size = old.Size
+			local ftex = Bake.rasterize(mesh, size.X, size.Y, function(ctx)
+				local f = factor(ctx.position, ctx.normal)
+				if typeof(f) == "number" then
+					return Color3.new(f, f, f), 1
+				end
+				return f :: Color3, 1
+			end, {
+				padding = o.padding or 6,
+				maxSeconds = o.maxSeconds,
+				maxWork = o.maxWork,
+				maxBytes = o.maxBytes,
+				maxTriangles = o.maxTriangles,
+				checkpoint = o.checkpoint,
+				cancelled = o.cancelled,
+			})
+			local pixels, n = Bake.modulateBytes(
+				old:ReadPixelsBuffer(Vector2.zero, size),
+				size.X,
+				size.Y,
+				ftex,
+				o.tolerance
+			)
+			if g.content.SourceType ~= Enum.ContentSourceType.Object then
+				old:Destroy()
+			end
+			local img = AS:CreateEditableImage({ Size = size })
+			img:WritePixelsBuffer(Vector2.zero, size, pixels)
+			table.insert(images, img)
+			changed += n
+			for _, part in g.parts do
+				local sa = part:FindFirstChildOfClass("SurfaceAppearance") :: SurfaceAppearance
+				local fresh = sa:Clone()
+				fresh.ColorMapContent = Content.fromObject(img)
+				table.insert(previous, { part = part, surface = sa })
+				sa.Parent = nil
+				fresh.Parent = part
+			end
+		end
+	end)
+	local function revert()
+		for _, entry in previous do
+			local current = entry.part:FindFirstChildOfClass("SurfaceAppearance")
+			if current then
+				current:Destroy()
+			end
+			entry.surface.Parent = entry.part
+		end
+		for _, img in images do
+			img:Destroy()
+		end
+		table.clear(previous)
+		table.clear(images)
+	end
+	if not ok then
+		revert()
+		error(err, 0)
+	end
+	return { images = images, changed = changed, revert = revert }
+end
+-- readPrevious: read the current colour map back and pass it to the shader (one extra image in memory). To adjust an
+-- existing texture on published parts, Roblox.modulateColor avoids the seams a full re-raster over a read-back mesh leaves.
 -- Budget fields (maxSeconds, maxWork, checkpoint, cancelled) apply to each part's bake.
 export type RebakeOptions =
 	Types.Limits
