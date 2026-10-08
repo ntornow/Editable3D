@@ -385,6 +385,59 @@ return function(E, options)
 		shown:Destroy()
 		assert(ok, err)
 	end)
+	test(
+		"Roblox.bakedModel bakes colour and normal maps over the UVs and owns only its own images",
+		function()
+			local service = game:GetService("AssetService")
+			local shared = assert(service:CreateEditableImage({ Size = Vector2.new(2, 2) }))
+			local holder = Instance.new("Folder")
+			local bundle
+			local ok, err = pcall(function()
+				local mesh = E.UV.box(E.Primitives.box(Vector3.new(2, 2, 2)))
+				bundle = E.Roblox.bakedModel(mesh, {
+					size = 16,
+					color = function()
+						return Color3.new(1, 0, 0), 1
+					end,
+					normal = function(ctx)
+						return ctx.normal + Vector3.yAxis * 0.5
+					end,
+					roughness = shared,
+					metalness = Content.fromUri("rbxassetid://1"),
+					name = "BakedFixture",
+					parent = holder,
+				})
+				assert(
+					bundle.model.Parent == holder and #bundle.images == 2,
+					"model parented, two images owned"
+				)
+				local part = bundle.handles[1].part
+				local sa = part:FindFirstChildOfClass("SurfaceAppearance")
+				assert(sa.ColorMapContent.Object == bundle.images[1], "colour map")
+				assert(sa.NormalMapContent.Object == bundle.images[2], "normal map")
+				assert(sa.RoughnessMapContent.Object == shared, "shared roughness kept")
+				assert(sa.MetalnessMapContent.Uri == "rbxassetid://1", "metalness content kept")
+				assert(part.Material == Enum.Material.SmoothPlastic and part.DoubleSided, "part defaults")
+				local px = bundle.images[1]:ReadPixelsBuffer(Vector2.zero, Vector2.new(16, 16))
+				local red = 0
+				for i = 0, 255 do
+					if buffer.readu8(px, i * 4) == 255 and buffer.readu8(px, i * 4 + 1) == 0 then
+						red += 1
+					end
+				end
+				assert(red > 100, "colour baked: " .. red)
+				E.Roblox.destroy(bundle)
+				assert(shared.Size == Vector2.new(2, 2), "shared image not destroyed")
+				bundle = nil
+			end)
+			if bundle then
+				E.Roblox.destroy(bundle)
+			end
+			holder:Destroy()
+			shared:Destroy()
+			assert(ok, err)
+		end
+	)
 	test("Roblox.modulateColor multiplies only the covered texels and revert restores the surface", function()
 		local service = game:GetService("AssetService")
 		local source =

@@ -588,6 +588,113 @@ function R.toTexturedModel(mesh: Mesh, maps: MaterialMaps, options: TexturedMode
 	bundle.tiles = { columns = columns, rows = rows }
 	return bundle
 end
+export type BakedModelOptions = Types.Limits & {
+	color: (Types.BakeContext) -> (Color3, number?),
+	normal: ((Types.BakeContext) -> Vector3?)?,
+	size: number?,
+	padding: number?,
+	roughness: (EditableImage | Content)?,
+	metalness: (EditableImage | Content)?,
+	material: Enum.Material?,
+	doubleSided: boolean?,
+	castShadow: boolean?,
+	name: string?,
+	maxTriangles: number?,
+	anchored: boolean?,
+	collisionFidelity: Enum.CollisionFidelity?,
+	parent: Instance?,
+}
+local function mapContent(value: (EditableImage | Content)?): Content?
+	if value == nil then
+		return nil
+	end
+	if typeof(value) == "Content" then
+		return value :: Content
+	end
+	return Content.fromObject(value :: any)
+end
+-- Builds a model whose maps are baked over the mesh's UVs from shader functions, the common shape of a scene
+-- piece built from measurements: color(ctx) -> Color3 (and alpha) gives the colour map (Bake.rasterize), the
+-- optional normal(ctx) -> world-space Vector3 a normal map (Bake.worldNormalMap), both size x size (default 1024)
+-- with padding texels (default 8). Shared roughness and metalness maps (EditableImages or Content, e.g. a material's
+-- images used by many parts) go on every part's SurfaceAppearance but are not owned by the bundle. Parts get
+-- material (default SmoothPlastic), white Color, doubleSided and castShadow (both default true); the model splits
+-- into chunks of maxTriangles (default 18000) with Box collision unless collisionFidelity is given. The baked images
+-- are in bundle.images, so Roblox.release / Roblox.destroy / Roblox.stage free them. Budget fields (maxSeconds,
+-- maxWork, maxBytes, checkpoint, cancelled) apply to each bake.
+function R.bakedModel(mesh: Mesh, options: BakedModelOptions): Bundle
+	local Bake = require(script.Parent.Bake) :: any
+	local o = options
+	assert(type(o) == "table" and type(o.color) == "function", "bakedModel needs a color shader")
+	local size = o.size or 1024
+	U.integer(size, 1)
+	assert(size <= 1024, "bakedModel maps are at most 1024 (EditableImage limit)")
+	-- the bakes' triangle limit is the mesh's own count (maxTriangles is the model's chunk size)
+	local triangles = 0
+	for _, face in mesh.faces do
+		triangles += math.max(0, #face.vertices - 2)
+	end
+	local limits = {
+		padding = o.padding or 8,
+		maxSeconds = o.maxSeconds,
+		maxWork = o.maxWork,
+		maxBytes = o.maxBytes,
+		maxTriangles = math.max(250000, triangles),
+		checkpoint = o.checkpoint,
+		cancelled = o.cancelled,
+	}
+	local images: { EditableImage } = {}
+	local bundle: Bundle? = nil
+	local ok, err = pcall(function()
+		local colorImage = R.toEditableImage(Bake.rasterize(mesh, size, size, o.color, limits), false)
+		table.insert(images, colorImage)
+		local normalImage: EditableImage? = nil
+		if o.normal then
+			normalImage = R.toEditableImage(Bake.worldNormalMap(mesh, size, size, o.normal, limits), false)
+			table.insert(images, normalImage :: EditableImage)
+		end
+		local built = R.toModel(mesh, {
+			name = o.name,
+			maxTriangles = o.maxTriangles or 18000,
+			anchored = o.anchored,
+			collisionFidelity = o.collisionFidelity or Enum.CollisionFidelity.Box,
+		})
+		bundle = built
+		local rough, metal = mapContent(o.roughness), mapContent(o.metalness)
+		for _, handle in built.handles do
+			local part = assert(handle.part, "bakedModel part missing")
+			part.Material = o.material or Enum.Material.SmoothPlastic
+			part.Color = Color3.new(1, 1, 1)
+			part.DoubleSided = o.doubleSided ~= false
+			part.CastShadow = o.castShadow ~= false
+			local appearance = Instance.new("SurfaceAppearance")
+			appearance.ColorMapContent = Content.fromObject(colorImage)
+			if normalImage then
+				appearance.NormalMapContent = Content.fromObject(normalImage)
+			end
+			if rough then
+				appearance.RoughnessMapContent = rough
+			end
+			if metal then
+				appearance.MetalnessMapContent = metal
+			end
+			appearance.Parent = part
+		end
+		built.images = images
+		built.model.Parent = o.parent
+	end)
+	if not ok then
+		if bundle then
+			R.destroy(bundle :: any)
+		else
+			for _, image in images do
+				image:Destroy()
+			end
+		end
+		error(err, 0)
+	end
+	return bundle :: Bundle
+end
 -- Accepts partial bundles (any field may be missing) so cleanup is safe after failures.
 export type DestroyOptions = { force: boolean? }
 type Disposable = { model: Model?, handles: { Handle }?, images: { EditableImage }?, published: boolean? }

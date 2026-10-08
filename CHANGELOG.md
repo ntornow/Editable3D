@@ -1,5 +1,12 @@
 # Editable3D changes
 
+## 0.109.0 — 2026-10-08
+
+- **`Roblox.bakedModel(mesh, {color, normal, size, padding, roughness, metalness, material, doubleSided, castShadow, name, maxTriangles, ...limits})` -> bundle:** builds a model whose maps are baked over the mesh's UVs from shader functions, the common shape of a scene piece built from measurements.
+  - `color(ctx)` gives the colour map (`Bake.rasterize`); the optional `normal(ctx)` gives a world-space normal for a normal map (`Bake.worldNormalMap`).
+  - Shared roughness and metalness maps (EditableImages or Content) go on every part but are not owned by the bundle.
+  - The baked images are in `bundle.images`, so `Roblox.release`, `destroy` and `stage` free them.
+
 ## 0.108.0 — 2026-10-08
 
 - **Scene publishes default their time budget to the work.** `Roblox.publish`, `publishInChunks`, `publishMaterials` and `publishImages` (the scene adapter) raise the operation budget's 60-second default, meant for headless work, when the caller sets no `maxSeconds`: 10 minutes, or 2 minutes per part or image if more. A caller's `maxSeconds` is kept.
