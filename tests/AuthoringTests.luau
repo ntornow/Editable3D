@@ -1005,6 +1005,24 @@ return function(E)
 		rejects(function()
 			E.Deform.edgeField(view, line, { envelope = env, profile = "wave" })
 		end, "edge profile must be")
+		-- softroll: zero slope at the line, the same top at R
+		local soft = E.Deform.edgeField(
+			view,
+			line,
+			{ envelope = env, height = H, radius = R, profile = "softroll", drop = 0 }
+		)
+		local function softLift(y: number): number
+			return -soft(Vector3.new(0, y, 0)).Z
+		end
+		near(softLift(R), H, 1e-6)
+		near(softLift(0.5 * R), H * 0.5, 1e-6)
+		assert(softLift(0.05) < 0.01 * H, "a soft roll starts flat at its edge")
+		assert(lift(0.05) > 0.25 * H, "the quarter-circle roll starts steep")
+		-- groove: a symmetric valley on both sides of the line
+		local groove = E.Deform.edgeField(view, line, { envelope = env, height = 0.3, width = 0.4, profile = "groove" })
+		near(groove(Vector3.new(0, 0, 0)).Z, 0.3, 1e-6)
+		near(groove(Vector3.new(0, 0.4, 0)).Z, 0.3 * math.exp(-1), 1e-6)
+		near(groove(Vector3.new(0, -0.4, 0)).Z, 0.3 * math.exp(-1), 1e-6)
 	end)
 	test("smoothDisplacement keeps linear fields, softens steps and agrees across meshes", function()
 		local function sheet(x0: number, x1: number)

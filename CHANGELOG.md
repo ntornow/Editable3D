@@ -10,6 +10,9 @@
   - Each cell is averaged along its streamline both ways over `length` studs (Gaussian weights), following the directions with a consistent orientation and stopping at missing cells.
   - Detail along the folds is averaged away while detail across them stays. Relief integrated from photo normals often comes out as round lumps where the photo shows long folds; this lengthens them.
   - With `coherence`, it blends from the original to the smoothed field between `minCoherence` and `fullCoherence`.
+- **`Deform.edge` / `Deform.edgeField` profiles `"softroll"` and `"groove"`:**
+  - `"softroll"` is a roll that rises as a half cosine, with zero slope at its line. The quarter-circle `"roll"` stands vertical at its edge, so a tall roll seen edge-on makes the silhouette ragged.
+  - `"groove"` is a symmetric valley of depth `height` and half-width `width` along a drawn fold line, with no layer step.
 - **`Deform.sectionScaleMap(frame, section, blend?)` -> point map:** `Deform.sectionScale`'s rule as a position function, for `Roblox.reshape` on published parts. An example is widening or slimming a height band of a figure, such as a neck, about an axis. `Deform.sectionScale` now uses it.
 
 ## 0.105.0 — 2026-10-08

@@ -588,6 +588,10 @@ export type EdgeOptions = {
 -- profile = "roll" (with radius R, default 1) makes the upper side a rounded roll of cloth instead
 -- of a lip: a quarter circle rising from the line to `height` at distance R, then easing back to the
 -- surface over about 1.2 R (a swag or a rolled hem whose lower edge is the polyline).
+-- profile = "softroll" rises as a half cosine instead (zero slope at the line): a quarter circle stands
+-- vertical at its edge, so a tall roll seen edge-on from the side makes the silhouette ragged.
+-- profile = "groove" cuts a symmetric valley of depth `height` and half-width `width` along the line
+-- (a fold line drawn in an elevation; no layer step, both sides move).
 function D.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOptions?): Mesh
 	local o: EdgeOptions = table.clone(options or {})
 	o.envelope = o.envelope or D.envelope(mesh, view, o.step or defaultStep(view, { mesh }, 0.2), 3)
@@ -605,7 +609,12 @@ function D.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (
 	local drop, dropWidth = o.drop or 0.2, o.dropWidth or 0.5
 	local layer = o.layer or 0.9
 	local roll = o.profile == "roll"
-	assert(o.profile == nil or o.profile == "lip" or roll, 'edge profile must be "lip" or "roll"')
+	local softroll = o.profile == "softroll"
+	local groove = o.profile == "groove"
+	assert(
+		o.profile == nil or o.profile == "lip" or roll or softroll or groove,
+		'edge profile must be "lip", "roll", "softroll" or "groove"'
+	)
 	local radius = o.radius or 1
 	assert(radius > 0, "edge radius must be positive")
 	local proj = projector(view)
@@ -645,12 +654,19 @@ function D.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (
 		if w <= 0 then
 			return p
 		end
+		if groove then
+			return p + proj.toward(p) * (height * math.exp(-(d / width) ^ 2) * w)
+		end
 		local up: number
 		if d < 0 then
 			up = 0
 		elseif roll then
 			up = if d <= radius
 				then height * math.sqrt(math.max(0, 1 - ((d - radius) / radius) ^ 2))
+				else height * math.exp(-((d - radius) / (1.2 * radius)) ^ 2)
+		elseif softroll then
+			up = if d <= radius
+				then height * (0.5 - 0.5 * math.cos(math.pi * d / radius))
 				else height * math.exp(-((d - radius) / (1.2 * radius)) ^ 2)
 		else
 			up = height * math.exp(-(d / width) ^ 2)

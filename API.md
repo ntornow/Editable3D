@@ -84,6 +84,8 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.occlusionSampler(meshes: { Mesh }, options: OcclusionSamplerOptions?): ((Vector3, Vector3?) -> number?, number)`
 - `Bake.heightOcclusion(heights: { { number } }, options: HeightOcclusionOptions?): { { number } }`
 - `Bake.slopeFit(heights: { { number } }, normals: { { Vector3? } }, options: SlopeFitOptions?): ({ { number } }, SlopeFitReport)`
+- `Bake.foldDirections(slopes: { { Vector2 | false | nil } }, options: FoldDirectionOptions?): ({ { Vector2 } }, { { number } })`
+- `Bake.flowSmooth(field: { { number } }, directions: { { Vector2 } }, options: FlowSmoothOptions?): { { number } }`
 - `Bake.pointSampler(points: { Vector3 }, values: { number }, radius: number, normals: { Vector3 }?): (Vector3, Vector3?) -> number?`
 - `Bake.project(mesh: Mesh, texture: Texture, camera: Types.Camera, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 
@@ -238,6 +240,7 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.moveTable(moves: { { number } }, options: MoveTableOptions?): ((Vector3) -> Vector3, { size: number, hits: number })`
 - `Deform.taperComponents(mesh: Mesh, anchor: Vector3, baseScale: number, tipScale: number?, weld: number?): Mesh`
 - `Deform.sectionScale(mesh: Mesh, frame: CFrame, section: (number) -> (number?, number?, number?), options: SectionScaleOptions?): Mesh`
+- `Deform.sectionScaleMap(frame: CFrame, section: (number) -> (number?, number?, number?), blend: number?): (Vector3) -> Vector3`
 - `Deform.smoothDisplacement(meshes: Mesh | { Mesh }, displace: (Vector3) -> Vector3, options: SmoothDisplacementOptions?): (Vector3) -> Vector3`
 
 ## Dynamics
