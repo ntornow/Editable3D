@@ -225,6 +225,12 @@ The view coordinates in `target(q, front)` are relative to the view frame: `q.Y`
   - The default `profile = "lip"` gives an overlapping hem: a rounded lip of `height` over `width` above the line, and a drop below.
   - `profile = "roll"` with `radius` R gives a rolled fold whose lower edge is the line. The surface rises in a quarter circle to `height` at R and eases back over about 1.2 R. Use it for a swag or a rolled hem that stands well proud of the cloth beneath.
   - Downward-facing estimated normals (n.y < -0.2 in the camera frame) mark hem undersides in a photo, which helps find the lines.
+- **Photo folds on a height-field sheet from estimated normals.** Use this when a sheet (a re-surfaced panel, or a cylindrical wrap round a figure) has the right outline but the wrong folds, and photographs with solved cameras show the folds.
+  - Project every cell through each photo's camera. Where the cell faces the camera and nothing hides it, take the photo's estimated normal into the sheet's frame (X across columns, Y along rows, Z out), with a weight for the facing. Blend the photos by weight.
+  - Run `Bake.slopeFit(heights, normals, {cellX, cellY, periodicX, weights, keep = 6 to 8, gain = 1 to 1.3, clip = 2.5})`. For a cylindrical wrap, columns are azimuth: `periodicX = true`, `cellX` the arc step at radius R, `radial = R`.
+  - `keep` decides what the photos may change: the sheet's own shape above that scale stays (the silhouettes), the folds below it come from the photos.
+  - Check the report's slope error, and compare the sheet's shading against the photos' normals under one light in the grid's own (column, row) layout. That shows the large forms side by side, with no camera in between.
+  - Don't integrate each photo's normals in its own pixels and lay the depth on along the view direction: away from the facing direction view depth is not surface depth, and the high-pass needed to drop the integration's drift also removes the large folds.
 - **Contact shading for a re-surfaced height field.** Roblox's shadow maps draw no contact shadows, so folds and hems built into geometry read faint. Bake the shadows in.
   - Compute `Bake.heightOcclusion(heights, {cellX, cellY, periodicX, curvatureRadius})` on the height field the sheet came from. For a cylindrical wrap, columns are azimuth (`periodicX = true`, `cellX` the arc step at the mean radius, `curvatureRadius` that radius).
   - Multiply the bake by `1 - k * smoothstep(0.04, 0.54, occlusion)` with k of about 0.35.

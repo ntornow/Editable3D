@@ -1,5 +1,15 @@
 # Editable3D changes
 
+## 0.101.0 — 2026-10-07
+
+- **`Bake.slopeFit(heights, normals, {cellX, cellY, periodicX, weights, gain, keep, clip, radial, minFacing, maxSlope, iterations, tolerance, checkpoint})` -> heights, report:** fits a height field's relief to target normals while it keeps its own large-scale shape.
+  - The targets are normals estimated from a photograph or baked from a sculpt, in the field's frame. Where they are weighted, the mismatch between `gain` × their slopes and the field's own slopes is integrated by least squares (conjugate gradients on the grid) into a correction.
+  - Scales above `keep` studs are removed from the correction, so a silhouette-fitted shape stays. The correction fades out where there are no targets and is clipped to `clip`.
+  - `periodicX` wraps the columns of a cylindrical field. With `radial` = R the heights are radii and `cellX` is the column arc at radius R.
+  - The report gives the median slope error before and after.
+  - Use it instead of integrating a photo's normals in the photo's own pixels and laying the result on along the view: that maps view depth onto the surface wrongly away from the facing direction, and a high-pass small enough to drop the integration's drift also removes the large folds.
+- DEFORMATION.md recipe: photo folds on a height-field sheet from estimated normals.
+
 ## 0.100.0 — 2026-10-07
 
 - **`Bake.heightOcclusion(heights, {cellX, cellY, periodicX, curvatureRadius, directions, distances})` -> occlusion grid:** horizon-based ambient occlusion of a height field (0 open to 1 enclosed). For each cell it takes the steepest rise to samples at `distances` in `directions` and averages the sine of the horizon angle.

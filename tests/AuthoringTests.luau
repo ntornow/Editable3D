@@ -257,6 +257,80 @@ return function(E)
 			end, "heightOcclusion rows must have matching lengths")
 		end
 	)
+	test("slopeFit: relief follows target normals, large scales and untargeted cells stay", function()
+		local rows, cols = 24, 32
+		local cell = 0.25
+		-- a flat field; targets are the normals of ripples along x (period 2 studs, amplitude 0.2)
+		local function rip(c: number): number
+			return 0.2 * math.sin(2 * math.pi * (c - 1) * cell / 2)
+		end
+		local function ripSlope(c: number): number
+			return 0.2 * (2 * math.pi / 2) * math.cos(2 * math.pi * (c - 1) * cell / 2)
+		end
+		local heights, normals = {}, {}
+		for r = 1, rows do
+			heights[r], normals[r] = {}, {}
+			for c = 1, cols do
+				heights[r][c] = 5
+				normals[r][c] = Vector3.new(-ripSlope(c), 0, 1).Unit
+			end
+		end
+		local out, report =
+			E.Bake.slopeFit(heights, normals, { cellX = cell, cellY = cell, periodicX = true, keep = 3 })
+		assert(report.cells == rows * cols, "every cell targeted")
+		assert(report.slopeErrorAfter < 0.25 * report.slopeErrorBefore, "slopes follow the targets")
+		-- the ripple's shape (up to its mean) appears, the mean height stays
+		local mean, err = 0, 0
+		for c = 1, cols do
+			mean += out[12][c]
+		end
+		mean /= cols
+		near(mean, 5, 0.02)
+		for c = 1, cols do
+			err = math.max(err, math.abs((out[12][c] - mean) - rip(c)))
+		end
+		assert(err < 0.06, "ripple recovered within " .. err)
+		-- gain scales the relief
+		local out2 = E.Bake.slopeFit(
+			heights,
+			normals,
+			{ cellX = cell, cellY = cell, periodicX = true, keep = 3, gain = 2 }
+		)
+		local a1, a2 = 0, 0
+		for c = 1, cols do
+			a1 = math.max(a1, math.abs(out[12][c] - mean))
+			a2 = math.max(a2, math.abs(out2[12][c] - 5))
+		end
+		assert(a2 > 1.7 * a1, "gain 2 doubles the relief")
+		-- no targets: unchanged; a missing cell stays missing; clip bounds the change
+		local none = {}
+		for r = 1, rows do
+			none[r] = {}
+		end
+		local same = E.Bake.slopeFit(heights, none, { cellX = cell, cellY = cell })
+		near(same[5][5], 5, 1e-9)
+		heights[3][3] = 0 / 0
+		local holes = E.Bake.slopeFit(heights, normals, { cellX = cell, cellY = cell, clip = 0.05 })
+		assert(holes[3][3] ~= holes[3][3], "missing stays missing")
+		for c = 1, cols do
+			assert(math.abs(holes[12][c] - 5) <= 0.05 + 1e-9, "clipped")
+		end
+		-- a large tilt in the targets is a large scale: removed, the field's own slope kept
+		local tilt = {}
+		for r = 1, rows do
+			tilt[r] = {}
+			for c = 1, cols do
+				tilt[r][c] = Vector3.new(-0.5, 0, 1).Unit
+			end
+		end
+		heights[3][3] = 5
+		local kept = E.Bake.slopeFit(heights, tilt, { cellX = cell, cellY = cell, keep = 1 })
+		local mid = kept[12][16] - kept[12][15]
+		assert(math.abs(mid) < 0.5 * 0.5 * cell, "interior keeps the flat field's slope")
+		rejects(function()
+			E.Bake.slopeFit({ { 1, 2 }, { 1 } }, { {}, {} })
+		end, "slopeFit rows must have matching lengths")
+	end)
 	test("capFan closes lofts whose end rings cannot be one polygon", function()
 		local function volume(m)
 			local v = 0

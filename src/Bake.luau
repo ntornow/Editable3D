@@ -432,6 +432,336 @@ function B.heightOcclusion(heights: { { number } }, options: HeightOcclusionOpti
 	end
 	return out
 end
+export type SlopeFitOptions = {
+	cellX: number?,
+	cellY: number?,
+	periodicX: boolean?,
+	weights: { { number } }?,
+	gain: number?,
+	keep: number?,
+	clip: number?,
+	minFacing: number?,
+	maxSlope: number?,
+	radial: number?,
+	iterations: number?,
+	tolerance: number?,
+	checkpoint: (() -> ())?,
+}
+export type SlopeFitReport = {
+	cells: number,
+	iterations: number,
+	residual: number,
+	slopeErrorBefore: number,
+	slopeErrorAfter: number,
+}
+-- out[c] = sum of line[c - k .. c + k] (wrapped when periodic, zero outside otherwise), by prefix sums
+local function windowSum(line: { number }, len: number, k: number, periodic: boolean, out: { number })
+	if periodic then
+		local kk = math.min(k, math.floor((len - 1) / 2))
+		local pre = table.create(len + 2 * kk + 1, 0)
+		for t = 1, len + 2 * kk do
+			pre[t + 1] = pre[t] + line[(t - kk - 1) % len + 1]
+		end
+		for c = 1, len do
+			out[c] = pre[c + 2 * kk + 1] - pre[c]
+		end
+	else
+		local pre = table.create(len + 1, 0)
+		for t = 1, len do
+			pre[t + 1] = pre[t] + line[t]
+		end
+		for c = 1, len do
+			out[c] = pre[math.min(len, c + k) + 1] - pre[math.max(1, c - k)]
+		end
+	end
+end
+-- separable masked blur of a flat row-major grid: three box passes per axis (close to a Gaussian of sigma `sx`
+-- columns and `sy` rows), averaging only the cells where `mask` is set
+local function maskedBlur(
+	values: { number },
+	mask: { boolean },
+	rows: number,
+	cols: number,
+	sx: number,
+	sy: number,
+	periodic: boolean
+): { number }
+	local n = rows * cols
+	local v = table.create(n, 0)
+	local m = table.create(n, 0)
+	for i = 1, n do
+		if mask[i] then
+			v[i] = values[i]
+			m[i] = 1
+		end
+	end
+	-- three boxes of half-width k have variance (k^2 + k), so k^2 + k = sigma^2 / 3 each
+	local function half(sigma: number): number
+		return math.max(0, math.floor((math.sqrt(1 + 4 * sigma * sigma / 3) - 1) / 2 + 0.5))
+	end
+	local kx, ky = half(sx), half(sy)
+	local lineX, outX = table.create(cols, 0), table.create(cols, 0)
+	local lineY, outY = table.create(rows, 0), table.create(rows, 0)
+	local function pass(a: { number })
+		if kx > 0 then
+			for r = 0, rows - 1 do
+				local base = r * cols
+				for c = 1, cols do
+					lineX[c] = a[base + c]
+				end
+				windowSum(lineX, cols, kx, periodic, outX)
+				for c = 1, cols do
+					a[base + c] = outX[c]
+				end
+			end
+		end
+		if ky > 0 then
+			for c = 1, cols do
+				for r = 1, rows do
+					lineY[r] = a[(r - 1) * cols + c]
+				end
+				windowSum(lineY, rows, ky, false, outY)
+				for r = 1, rows do
+					a[(r - 1) * cols + c] = outY[r]
+				end
+			end
+		end
+	end
+	for _ = 1, 3 do
+		pass(v)
+		pass(m)
+	end
+	local out = table.create(n, 0)
+	for i = 1, n do
+		out[i] = if m[i] > 1e-12 then v[i] / m[i] else 0
+	end
+	return out
+end
+-- Fit a height field's relief to target normals (estimated from a photograph, baked from a sculpt) while it
+-- keeps its own large-scale shape. heights[row][col] (rows along y, columns along x, spacing cellY and cellX
+-- studs) are heights toward the viewer or outward, NaN where missing; normals[row][col] is a target normal in
+-- the field's frame (X across increasing columns, Y along increasing rows, Z the height direction) or nil;
+-- `weights` (default 1 wherever a normal is given) say how far each is trusted. Where weighted, the mismatch
+-- between `gain` x the targets' slopes (-nx/nz, -ny/nz, clamped to maxSlope; normals with nz < minFacing are
+-- skipped) and the field's own slopes is integrated by least squares (conjugate gradients over the grid) into
+-- a correction; its scales above `keep` studs (default 4, a Gaussian-like high-pass over the present cells)
+-- are removed so the field's silhouette-fitted shape stays, it fades out where there are no targets, and it is
+-- clipped to `clip`. periodicX wraps the columns (a cylinder's azimuth); with `radial` = R the heights are
+-- radii and cellX the column arc at radius R, so column slopes scale by h / R. Returns the corrected heights
+-- and a report (median slope error before and after over cells weighted above 0.5, CG iterations, residual).
+function B.slopeFit(
+	heights: { { number } },
+	normals: { { Vector3? } },
+	options: SlopeFitOptions?
+): ({ { number } }, SlopeFitReport)
+	local o: SlopeFitOptions = options or {}
+	local rows = #heights
+	assert(rows > 1, "slopeFit needs at least two rows")
+	local cols = #heights[1]
+	assert(cols > 1, "slopeFit needs at least two columns")
+	for r = 1, rows do
+		assert(#heights[r] == cols, "slopeFit rows must have matching lengths")
+	end
+	assert(#normals == rows, "slopeFit needs a normals row for every heights row")
+	local cx, cy = o.cellX or 1, o.cellY or 1
+	assert(cx > 0 and cy > 0, "slopeFit cell sizes must be positive")
+	local periodic = o.periodicX == true
+	local gain = o.gain or 1
+	local keep = o.keep or 4
+	assert(keep > 0, "slopeFit keep must be positive")
+	local minFacing = o.minFacing or 0.25
+	local maxSlope = o.maxSlope or 3
+	local radial = o.radial
+	assert(radial == nil or radial > 0, "slopeFit radial must be positive")
+	local n = rows * cols
+	local h = table.create(n, 0)
+	local present: { boolean } = table.create(n, false)
+	local tx = table.create(n, 0)
+	local ty = table.create(n, 0)
+	local w = table.create(n, 0)
+	local cells = 0
+	for r = 1, rows do
+		local hr, nr = heights[r], normals[r]
+		local wr = o.weights and o.weights[r]
+		for c = 1, cols do
+			local i = (r - 1) * cols + c
+			local v = hr[c]
+			if v == v then
+				h[i] = v
+				present[i] = true
+				local nv = nr and nr[c]
+				local wt = if wr then wr[c] else 1
+				if nv and wt > 0 and nv.Magnitude > 1e-9 then
+					local u = nv.Unit
+					if u.Z >= minFacing then
+						local sx = math.clamp(-u.X / u.Z, -maxSlope, maxSlope)
+						if radial then
+							sx *= v / radial
+						end
+						tx[i] = gain * sx
+						ty[i] = gain * math.clamp(-u.Y / u.Z, -maxSlope, maxSlope)
+						w[i] = math.min(wt, 1)
+						cells += 1
+					end
+				end
+			end
+		end
+	end
+	local function right(i: number): number?
+		local c = (i - 1) % cols + 1
+		if c < cols then
+			return i + 1
+		end
+		return if periodic then i - cols + 1 else nil
+	end
+	-- edges between present neighbours carry the weighted mismatch of the targets' slope and the field's own
+	local ea: { number }, eb: { number }, elen: { number }, em: { number } = {}, {}, {}, {}
+	for i = 1, n do
+		if present[i] then
+			local j = right(i)
+			if j and present[j] then
+				table.insert(ea, i)
+				table.insert(eb, j)
+				table.insert(elen, cx)
+				table.insert(em, math.min(w[i], w[j]) * ((tx[i] + tx[j]) / 2 - (h[j] - h[i]) / cx))
+			end
+			local k = i + cols
+			if k <= n and present[k] then
+				table.insert(ea, i)
+				table.insert(eb, k)
+				table.insert(elen, cy)
+				table.insert(em, math.min(w[i], w[k]) * ((ty[i] + ty[k]) / 2 - (h[k] - h[i]) / cy))
+			end
+		end
+	end
+	-- normal equations L d = b of min sum ((d_j - d_i) / len - m)^2, plus a tiny pull to 0 fixing the constant;
+	-- Jacobi-preconditioned conjugate gradients
+	local eps = 1e-6 / (cx * cy)
+	local diag = table.create(n, eps)
+	local b = table.create(n, 0)
+	for e = 1, #ea do
+		local i, j, len = ea[e], eb[e], elen[e]
+		local k = 1 / (len * len)
+		diag[i] += k
+		diag[j] += k
+		b[i] -= em[e] / len
+		b[j] += em[e] / len
+	end
+	local function apply(x: { number }, out: { number })
+		for i = 1, n do
+			out[i] = eps * x[i]
+		end
+		for e = 1, #ea do
+			local i, j, len = ea[e], eb[e], elen[e]
+			local f = (x[j] - x[i]) / (len * len)
+			out[i] -= f
+			out[j] += f
+		end
+	end
+	local d = table.create(n, 0)
+	local res = table.clone(b)
+	local z = table.create(n, 0)
+	local rz, bnorm = 0, 0
+	for i = 1, n do
+		z[i] = if present[i] then res[i] / diag[i] else 0
+		rz += res[i] * z[i]
+		bnorm += b[i] * b[i]
+	end
+	bnorm = math.sqrt(bnorm)
+	local p = table.clone(z)
+	local q = table.create(n, 0)
+	local maxIter = o.iterations or 600
+	local tol = o.tolerance or 1e-4
+	local iter, rel = 0, 0
+	if bnorm > 0 then
+		for it = 1, maxIter do
+			iter = it
+			apply(p, q)
+			local pq = 0
+			for i = 1, n do
+				pq += p[i] * q[i]
+			end
+			if pq <= 0 then
+				break
+			end
+			local alpha = rz / pq
+			local rr = 0
+			for i = 1, n do
+				d[i] += alpha * p[i]
+				res[i] -= alpha * q[i]
+				rr += res[i] * res[i]
+			end
+			rel = math.sqrt(rr) / bnorm
+			if rel < tol then
+				break
+			end
+			local rz2 = 0
+			for i = 1, n do
+				z[i] = if present[i] then res[i] / diag[i] else 0
+				rz2 += res[i] * z[i]
+			end
+			local beta = rz2 / rz
+			rz = rz2
+			for i = 1, n do
+				p[i] = z[i] + beta * p[i]
+			end
+			if o.checkpoint and it % 20 == 0 then
+				o.checkpoint()
+			end
+		end
+	end
+	-- the field keeps its own large scales: remove the correction's, then fade it out where nothing was targeted
+	local low = maskedBlur(d, present, rows, cols, keep / cx, keep / cy, periodic)
+	local cover = maskedBlur(w, present, rows, cols, 1.5, 1.5, periodic)
+	local clip = o.clip
+	local outH: { { number } } = table.create(rows)
+	local fitted = table.create(n, 0)
+	for r = 1, rows do
+		local row = table.create(cols, 0)
+		for c = 1, cols do
+			local i = (r - 1) * cols + c
+			if present[i] then
+				local dv = (d[i] - low[i]) * math.clamp(cover[i] / 0.5, 0, 1)
+				if clip then
+					dv = math.clamp(dv, -clip, clip)
+				end
+				row[c] = h[i] + dv
+				fitted[i] = h[i] + dv
+			else
+				row[c] = 0 / 0
+			end
+		end
+		outH[r] = row
+	end
+	-- median slope error over the well-targeted cells, before and after
+	local function slopeError(field: { number }): number
+		local errs = {}
+		for i = 1, n do
+			if w[i] > 0.5 then
+				local j = right(i)
+				local k = i + cols
+				if j and k <= n and present[j] and present[k] then
+					local gx = (field[j] - field[i]) / cx
+					local gy = (field[k] - field[i]) / cy
+					table.insert(errs, math.sqrt((gx - tx[i]) ^ 2 + (gy - ty[i]) ^ 2))
+				end
+			end
+		end
+		if #errs == 0 then
+			return 0
+		end
+		table.sort(errs)
+		return errs[math.floor((#errs + 1) / 2)]
+	end
+	return outH,
+		{
+			cells = cells,
+			iterations = iter,
+			residual = rel,
+			slopeErrorBefore = slopeError(h),
+			slopeErrorAfter = slopeError(fitted),
+		}
+end
 -- A smooth lookup of scattered point values (per-vertex occlusion, curvature, wetness) at any
 -- position, for use inside bake shaders. Points are hashed into cells of size `radius`; a query
 -- blends the points within `radius` with weights exp(-(d / (radius / 2))^2), times the agreement of
