@@ -1,5 +1,16 @@
 # Editable3D changes
 
+## 0.106.0 — 2026-10-08
+
+- **`Bake.foldDirections(slopes, {cellX, cellY, periodicX, rho, columns})` -> `(directions, coherence)`:** the direction along a relief's folds at every cell, from its slopes (e.g. a photograph's normals as -nx/nz, -ny/nz).
+  - Uses the structure tensor smoothed over `rho` studs.
+  - Coherence is in [0, 1]: 1 for long parallel folds, about 0 for a round bump or where nothing is known.
+  - `nil` or `false` marks a missing slope. The column count is the largest index present, or `columns`.
+- **`Bake.flowSmooth(field, directions, {cellX, cellY, periodicX, length, step, coherence, minCoherence, fullCoherence})`:** line-integral-convolution smoothing of a height field along a direction field.
+  - Each cell is averaged along its streamline both ways over `length` studs (Gaussian weights), following the directions with a consistent orientation and stopping at missing cells.
+  - Detail along the folds is averaged away while detail across them stays. Relief integrated from photo normals often comes out as round lumps where the photo shows long folds; this lengthens them.
+  - With `coherence`, it blends from the original to the smoothed field between `minCoherence` and `fullCoherence`.
+
 ## 0.105.0 — 2026-10-08
 
 - **`Roblox.modulateColor` and `Roblox.rebake` default their bake limits for scene parts.**

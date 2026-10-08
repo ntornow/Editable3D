@@ -257,6 +257,101 @@ return function(E)
 			end, "heightOcclusion rows must have matching lengths")
 		end
 	)
+	test("foldDirections: along parallel folds, coherent; isotropic or missing slopes are not", function()
+		local function grid(rows: number, cols: number, f: (number, number) -> Vector2?): { { Vector2? } }
+			local g = {}
+			for r = 1, rows do
+				g[r] = {}
+				for c = 1, cols do
+					g[r][c] = f(r, c)
+				end
+			end
+			return g
+		end
+		-- ridges running along y (z = sin(2 pi x / 2)): slopes point along x, so folds run along y
+		local cell = 0.1
+		local dirs, coh = E.Bake.foldDirections(
+			grid(20, 40, function(_, c)
+				local x = c * cell
+				return Vector2.new(math.pi * math.cos(math.pi * x), 0)
+			end),
+			{ cellX = cell, cellY = cell, rho = 0.4 }
+		)
+		near(math.abs(dirs[10][20].Y), 1, 1e-5)
+		assert(coh[10][20] > 0.99, "parallel folds are coherent " .. coh[10][20])
+		-- ridges at 45 degrees: slopes along (1, 1), folds along (1, -1)
+		local dirs45 = E.Bake.foldDirections(
+			grid(20, 20, function(r, c)
+				local s = math.cos((r + c) * cell)
+				return Vector2.new(s, s)
+			end),
+			{ cellX = cell, cellY = cell, rho = 0.3 }
+		)
+		local d = dirs45[10][10]
+		near(math.abs(d.X + d.Y), 0, 1e-5)
+		near(d.Magnitude, 1, 1e-5)
+		-- a round bump has slopes pointing every way: low coherence at its centre
+		local _, cohBump = E.Bake.foldDirections(
+			grid(21, 21, function(r, c)
+				local x, y = (c - 11) * cell, (r - 11) * cell
+				return Vector2.new(-2 * x, -2 * y)
+			end),
+			{ cellX = cell, cellY = cell, rho = 0.5 }
+		)
+		assert(cohBump[11][11] < 0.2, "a bump is not a fold " .. cohBump[11][11])
+		-- no slopes (nil holes need the column count; false marks a missing cell too): coherence 0
+		local _, cohNone = E.Bake.foldDirections(grid(4, 4, function()
+			return nil
+		end), { columns = 4 })
+		near(cohNone[2][2], 0, 1e-12)
+		local _, cohFalse = E.Bake.foldDirections({ { false, false, false }, { false, false, false } })
+		near(cohFalse[2][3], 0, 1e-12)
+		rejects(function()
+			E.Bake.foldDirections({ {}, {} })
+		end, "foldDirections needs at least one column")
+	end)
+	test("flowSmooth: averages along the directions, keeps detail across them, wraps and respects gaps", function()
+		local rows, cols = 24, 32
+		local field, along = {}, {}
+		for r = 1, rows do
+			field[r], along[r] = {}, {}
+			for c = 1, cols do
+				-- folds across x (period 8 columns) plus a fine ripple along y
+				field[r][c] = math.sin(2 * math.pi * c / 8) + 0.5 * (if r % 2 == 0 then 1 else -1)
+				along[r][c] = Vector2.new(0, 1)
+			end
+		end
+		local out = E.Bake.flowSmooth(field, along, { length = 4, step = 0.5 })
+		for r = 6, rows - 5 do
+			for c = 1, cols do
+				near(out[r][c], math.sin(2 * math.pi * c / 8), 0.08)
+			end
+		end
+		-- smoothing across the folds instead flattens them
+		local across = {}
+		for r = 1, rows do
+			across[r] = {}
+			for c = 1, cols do
+				across[r][c] = Vector2.new(1, 0)
+			end
+		end
+		local flat = E.Bake.flowSmooth(field, across, { length = 8, step = 0.5, periodicX = true })
+		assert(math.abs(flat[12][3] - field[12][3]) > 0.5, "folds are averaged away along x")
+		-- coherence 0 keeps the field; NaN cells stay NaN and stop the walk
+		local zero = {}
+		for r = 1, rows do
+			zero[r] = table.create(cols, 0)
+		end
+		local kept = E.Bake.flowSmooth(field, along, { length = 4, coherence = zero })
+		near(kept[7][5], field[7][5], 1e-12)
+		field[12][5] = 0 / 0
+		local gap = E.Bake.flowSmooth(field, along, { length = 4, step = 0.5 })
+		assert(gap[12][5] ~= gap[12][5], "missing cells stay missing")
+		near(gap[14][9], out[14][9], 1e-9)
+		rejects(function()
+			E.Bake.flowSmooth({ { 1 } }, { { Vector2.zero } }, { length = 0 })
+		end, "flowSmooth length must be positive")
+	end)
 	test("slopeFit: relief follows target normals, large scales and untargeted cells stay", function()
 		local rows, cols = 24, 32
 		local cell = 0.25

@@ -899,6 +899,224 @@ function B.slopeFit(
 			slopeErrorAfter = slopeError(fitted),
 		}
 end
+export type FoldDirectionOptions = {
+	cellX: number?,
+	cellY: number?,
+	periodicX: boolean?,
+	rho: number?,
+	columns: number?,
+	checkpoint: (() -> ())?,
+}
+-- Fold directions of a relief from its slopes: slopes[row][col] = Vector2(dz/dx, dz/dy) (studs per stud; rows along
+-- y, columns along x, spacing cellY and cellX studs, default 1), nil where unknown, as from a photograph's normals
+-- (-nx/nz, -ny/nz); `false` also marks a missing cell. The grid is #slopes rows by `columns` (default: the largest
+-- column index present in any row, since a row's length is undefined with holes). The structure tensor of the slopes,
+-- smoothed over `rho` studs (default 0.5), gives at each cell
+-- the dominant direction ACROSS the folds; the returned direction is the one ALONG them (a unit Vector2 in world
+-- x, y; its sign is arbitrary) with a coherence in [0, 1]: 1 where every slope points across one direction (long
+-- parallel folds), 0 where they point every way or there are none. periodicX wraps the columns. Feed the result to
+-- Bake.flowSmooth to lengthen folds that came out as lumps.
+function B.foldDirections(
+	slopes: { { Vector2 | false | nil } },
+	options: FoldDirectionOptions?
+): ({ { Vector2 } }, { { number } })
+	local o: FoldDirectionOptions = options or {}
+	local rows = #slopes
+	assert(rows > 0, "foldDirections needs at least one row")
+	local cols = o.columns or 0
+	if not o.columns then
+		for r = 1, rows do
+			for c in pairs(slopes[r]) do
+				cols = math.max(cols, c)
+			end
+		end
+	end
+	assert(cols > 0, "foldDirections needs at least one column")
+	local cx, cy = o.cellX or 1, o.cellY or 1
+	assert(cx > 0 and cy > 0, "foldDirections cell sizes must be positive")
+	local rho = o.rho or 0.5
+	assert(rho >= 0, "foldDirections rho must not be negative")
+	local periodic = o.periodicX == true
+	local n = rows * cols
+	local jxx, jxy, jyy, m = table.create(n, 0), table.create(n, 0), table.create(n, 0), table.create(n, 0)
+	for r = 1, rows do
+		local row = slopes[r]
+		for c = 1, cols do
+			local g = row[c]
+			if typeof(g) == "Vector2" then
+				local i = (r - 1) * cols + c
+				jxx[i], jxy[i], jyy[i], m[i] = g.X * g.X, g.X * g.Y, g.Y * g.Y, 1
+			end
+		end
+	end
+	local kx, ky = boxHalf(rho / cx), boxHalf(rho / cy)
+	for _, a in { jxx, jxy, jyy, m } do
+		boxBlur3(a, rows, cols, kx, ky, periodic)
+		if o.checkpoint then
+			o.checkpoint()
+		end
+	end
+	local directions: { { Vector2 } } = table.create(rows)
+	local coherence: { { number } } = table.create(rows)
+	for r = 1, rows do
+		local drow, crow = table.create(cols), table.create(cols, 0)
+		for c = 1, cols do
+			local i = (r - 1) * cols + c
+			local w = m[i]
+			local dir = Vector2.new(0, 1)
+			local coh = 0
+			if w > 1e-9 then
+				local a, b, d = jxx[i] / w, jxy[i] / w, jyy[i] / w
+				local tr = a + d
+				if tr > 1e-12 then
+					local across = 0.5 * math.atan2(2 * b, a - d)
+					dir = Vector2.new(-math.sin(across), math.cos(across))
+					coh = math.clamp(math.sqrt((a - d) ^ 2 + 4 * b * b) / tr, 0, 1)
+				end
+			end
+			drow[c], crow[c] = dir, coh
+		end
+		directions[r], coherence[r] = drow, crow
+	end
+	return directions, coherence
+end
+export type FlowSmoothOptions = {
+	cellX: number?,
+	cellY: number?,
+	periodicX: boolean?,
+	length: number?,
+	step: number?,
+	coherence: { { number } }?,
+	minCoherence: number?,
+	fullCoherence: number?,
+	checkpoint: (() -> ())?,
+}
+-- Smooths a field along a direction field (line integral convolution): field[row][col] (NaN where missing; rows
+-- along y, columns along x, spacing cellY and cellX studs) is averaged at each present cell along the streamline
+-- through it, both ways over `length` studs (default 1; Gaussian weights, sigma length / 2; steps of `step`
+-- studs, default half the smaller cell), following directions[row][col] (unit Vector2 in world x, y, either sign;
+-- the walk keeps a consistent orientation) and stopping at missing cells. Detail along the folds is averaged away
+-- while detail across them stays, so photo-derived relief that came out as lumps becomes long folds. With
+-- `coherence` (from Bake.foldDirections) the result blends from the original below minCoherence (default 0.2) to
+-- the smoothed value above fullCoherence (default 0.6). periodicX wraps the columns.
+function B.flowSmooth(
+	field: { { number } },
+	directions: { { Vector2 } },
+	options: FlowSmoothOptions?
+): { { number } }
+	local o: FlowSmoothOptions = options or {}
+	local rows = #field
+	assert(rows > 0, "flowSmooth needs at least one row")
+	local cols = #field[1]
+	assert(#directions == rows, "flowSmooth needs a directions row for every field row")
+	for r = 1, rows do
+		assert(#field[r] == cols and #directions[r] == cols, "flowSmooth rows must have matching lengths")
+	end
+	local cx, cy = o.cellX or 1, o.cellY or 1
+	assert(cx > 0 and cy > 0, "flowSmooth cell sizes must be positive")
+	local length = o.length or 1
+	assert(length > 0, "flowSmooth length must be positive")
+	local step = o.step or 0.5 * math.min(cx, cy)
+	assert(step > 0, "flowSmooth step must be positive")
+	local periodic = o.periodicX == true
+	local lo, hi = o.minCoherence or 0.2, o.fullCoherence or 0.6
+	assert(hi > lo, "flowSmooth fullCoherence must exceed minCoherence")
+	local steps = math.max(1, math.floor(length / step + 0.5))
+	local sigma = length / 2
+	local weights = table.create(steps, 0)
+	for k = 1, steps do
+		weights[k] = math.exp(-0.5 * (k * step / sigma) ^ 2)
+	end
+	local function value(r: number, c: number): number?
+		if r < 1 or r > rows then
+			return nil
+		end
+		if periodic then
+			c = (c - 1) % cols + 1
+		elseif c < 1 or c > cols then
+			return nil
+		end
+		local v = field[r][c]
+		if v ~= v then
+			return nil
+		end
+		return v
+	end
+	-- bilinear sample at fractional (row, col); nil if a corner it needs is missing (a sample on a row or column
+	-- line reads only that line, so the last row and column are reachable)
+	local function sample(fr: number, fc: number): number?
+		local r0, c0 = math.floor(fr), math.floor(fc)
+		local tr, tc = fr - r0, fc - c0
+		if tr < 1e-9 then
+			tr = 0
+		end
+		if tc < 1e-9 then
+			tc = 0
+		end
+		local a = value(r0, c0)
+		if not a then
+			return nil
+		end
+		local b = if tc > 0 then value(r0, c0 + 1) else a
+		local c = if tr > 0 then value(r0 + 1, c0) else a
+		local d = if tc > 0 and tr > 0 then value(r0 + 1, c0 + 1) elseif tc > 0 then b else c
+		if not (b and c and d) then
+			return nil
+		end
+		return (a * (1 - tc) + b * tc) * (1 - tr) + (c * (1 - tc) + d * tc) * tr
+	end
+	local function direction(fr: number, fc: number): Vector2
+		local r = math.clamp(math.floor(fr + 0.5), 1, rows)
+		local c = math.floor(fc + 0.5)
+		c = if periodic then (c - 1) % cols + 1 else math.clamp(c, 1, cols)
+		return directions[r][c]
+	end
+	local out: { { number } } = table.create(rows)
+	for r = 1, rows do
+		local src, row = field[r], table.create(cols, 0)
+		for c = 1, cols do
+			local v0 = src[c]
+			if v0 ~= v0 then
+				row[c] = v0
+				continue
+			end
+			local acc, wsum = v0, 1
+			for _, sgn in { 1, -1 } do
+				local fr, fc = r, c
+				local d0 = directions[r][c]
+				local px, py = sgn * d0.X, sgn * d0.Y
+				for k = 1, steps do
+					fc += step * px / cx
+					fr += step * py / cy
+					local v = sample(fr, fc)
+					if not v then
+						break
+					end
+					acc += weights[k] * v
+					wsum += weights[k]
+					local d = direction(fr, fc)
+					if d.X * px + d.Y * py < 0 then
+						px, py = -d.X, -d.Y
+					else
+						px, py = d.X, d.Y
+					end
+				end
+			end
+			local smoothed = acc / wsum
+			local w = 1
+			if o.coherence then
+				local t = math.clamp((o.coherence[r][c] - lo) / (hi - lo), 0, 1)
+				w = t * t * (3 - 2 * t)
+			end
+			row[c] = v0 + w * (smoothed - v0)
+		end
+		out[r] = row
+		if o.checkpoint and r % 16 == 0 then
+			o.checkpoint()
+		end
+	end
+	return out
+end
 -- A smooth lookup of scattered point values (per-vertex occlusion, curvature, wetness) at any
 -- position, for use inside bake shaders. Points are hashed into cells of size `radius`; a query
 -- blends the points within `radius` with weights exp(-(d / (radius / 2))^2), times the agreement of
