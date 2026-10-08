@@ -103,6 +103,7 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 
 - A `Deform` mask moves only the listed vertices: unlisted ids weigh 0 (without a mask every vertex weighs 1).
 
+- Use `Roblox.stage(bundles, replacedParts)` (0.104+) when newly built bundles replace published parts (a rebuilt lock, sleeve or panel). It hides the old parts while the new ones preview. `publish` deletes the old parts only once every bundle has committed, and releases the editables; `revert` restores the old parts. Put each bundle's EditableImages in `bundle.images` so they are released with it. Hand-rolled versions of this pattern leaked hidden parts and editables across rounds.
 - Use `Roblox.reshape(parts, function(p, part) ... end)` for any field deformation of published parts (a band of heights scaled, an edge rolled under, ends bent). Build the field from `Pattern.band` and `smoothstep` windows so it fades to identity at its edges and neighbouring parts stay attached. Apply the same field to every part that shares a surface (face, skull and neck together) and they stay aligned.
 - Judge a reshape against a matched-scale side-by-side with the reference photo, not by eye. One judgement about "a thin neck" from a blurry crop was off by 25%, and the first fix overshot.
 - A position-only reshape stretches the texture with it. Moves of more than about a stud on a textured, read-back part (cloth pushed out over a foot) smear the colour map into streaks. Keep such moves under about a stud, or re-bake the part afterwards.

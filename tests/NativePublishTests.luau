@@ -271,6 +271,44 @@ return function(E, options)
 		E.Roblox.destroy(source)
 		assert(ok, err)
 	end)
+	test(
+		"Roblox.stage hides the replaced parts, keeps them on a failed publish and revert restores them",
+		function()
+			local old =
+				E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(2, 2, 2))), { name = "StageOld" })
+			local fresh =
+				E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(3, 3, 3))), { name = "StageNew" })
+			local folder = Instance.new("Folder")
+			old.model.Parent = folder
+			fresh.model.Parent = folder
+			local part = old.handles[1].part
+			local ok, err = pcall(function()
+				local stage = E.Roblox.stage({ New = fresh }, { part })
+				assert(part.Transparency == 1, "replaced part hidden")
+				assert(
+					stage.bundles.New == fresh and #stage.hidden == 1,
+					"handle lists bundles and hidden parts"
+				)
+				-- a cancelled publish fails before any upload: nothing is removed, the preview stays
+				local report = stage:publish({ Name = "StageFixture" }, {
+					cancelled = function()
+						return true
+					end,
+				})
+				assert(not report.success and report.failures.New ~= nil, "failure keyed by bundle name")
+				assert(report.removed == 0 and report.assets.New == nil, "nothing removed or recorded")
+				assert(part.Parent ~= nil and part.Transparency == 1, "replaced part kept hidden")
+				assert(fresh.model.Parent == folder and not fresh.published, "preview kept")
+				stage:revert()
+				assert(part.Transparency == 0, "replaced part shown again")
+				assert(fresh.model.Parent == nil, "preview destroyed")
+				assert(#stage.hidden == 0, "hidden list cleared")
+			end)
+			folder:Destroy()
+			E.Roblox.destroy(old)
+			assert(ok, err)
+		end
+	)
 	test("Roblox.modulateColor multiplies only the covered texels and revert restores the surface", function()
 		local service = game:GetService("AssetService")
 		local source =

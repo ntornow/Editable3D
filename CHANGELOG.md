@@ -1,5 +1,14 @@
 # Editable3D changes
 
+## 0.104.0 — 2026-10-08
+
+- **`Roblox.stage(bundles, replaced)` -> `{bundles, hidden, publish, revert}`:** stages new bundles, keyed by name, in place of existing parts, a pattern every replacement of a published piece repeats.
+  - The replaced parts are hidden while the bundles preview.
+  - `publish(metadata, options)` publishes every bundle with `Roblox.publishInChunks` and returns `{success, assets = {[key] = {meshes, color}}, failures, removed}`. Only when every bundle commits are the replaced parts destroyed, with any Model they leave empty. Each committed bundle's editables and `bundle.images` are released.
+  - A failure leaves the previews and the hidden parts as they are, so a rerun with the same resume ledger finishes the rest.
+  - `revert()` destroys the uncommitted bundles and shows the replaced parts again.
+  - `metadata` is a table (its Name suffixed with the key, cut to 50 characters) or `function(key, bundle)`.
+
 ## 0.103.0 — 2026-10-07
 
 - **`Roblox.modulateColor(parts, factor, {padding, tolerance, ...limits})` -> `{images, changed, revert}`:** multiplies the colour maps of MeshParts by a factor field over their surfaces and leaves every other texel byte-identical.

@@ -1101,6 +1101,125 @@ function R.reshape(
 	end
 	return handle :: Reshape
 end
+-- Stages new bundles (keyed by name) in place of existing parts: the replaced parts are hidden while the bundles
+-- preview. publish() publishes every bundle with Roblox.publishInChunks; only when all of them commit are the
+-- replaced parts destroyed (with any Model they leave empty that holds no staged bundle), and each committed
+-- bundle's editables and images (bundle.images) are released. A failure leaves the previews and the hidden parts
+-- as they are, so a rerun with the same resume ledger finishes the rest. revert() destroys the uncommitted bundles
+-- and shows the replaced parts again. metadata: a table (its Name suffixed with the key, cut to 50 characters) or
+-- function(key, bundle) -> metadata. Put each bundle's EditableImages in bundle.images so they are released.
+export type StageAsset = { meshes: { string }, color: string? }
+export type StageReport = {
+	success: boolean,
+	assets: { [string]: StageAsset },
+	failures: { [string]: string },
+	removed: number,
+}
+export type Stage = {
+	bundles: { [string]: Bundle },
+	hidden: { { part: BasePart, transparency: number } },
+	publish: (
+		Stage,
+		metadata: any,
+		options: (Types.PublishOptions & { partsPerTransaction: number? })?
+	) -> StageReport,
+	revert: (Stage) -> (),
+}
+local function assetNumber(content: any): string?
+	local text = tostring(content or "")
+	return string.match(text, "%d+")
+end
+function R.stage(bundles: { [string]: Bundle }, replaced: { BasePart }): Stage
+	local hidden = {}
+	for _, part in replaced do
+		table.insert(hidden, { part = part, transparency = part.Transparency })
+		part.Transparency = 1
+	end
+	local handle = { bundles = bundles, hidden = hidden } :: any
+	local function keys(): { string }
+		local list = {}
+		for key in bundles do
+			table.insert(list, key)
+		end
+		table.sort(list)
+		return list
+	end
+	function handle.publish(self: Stage, metadata: any, options: any): StageReport
+		local report: StageReport = { success = true, assets = {}, failures = {}, removed = 0 }
+		for _, key in keys() do
+			local bundle = self.bundles[key]
+			if not bundle.published then
+				local meta = metadata
+				if type(metadata) == "function" then
+					meta = metadata(key, bundle)
+				elseif type(metadata) == "table" then
+					meta = table.clone(metadata)
+					meta.Name = string.sub((metadata.Name or "Editable3D") .. " " .. key, 1, 50)
+				end
+				local ok, result = pcall(R.publishInChunks, bundle, meta, options)
+				if not ok or not result.committed then
+					report.success = false
+					report.failures[key] = if ok
+						then tostring(result.stage) .. ": " .. tostring(result.error)
+						else tostring(result)
+				end
+			end
+			if bundle.published then
+				local meshes = {}
+				local color: string? = nil
+				for _, h in bundle.handles do
+					local part = h.part
+					if part then
+						table.insert(meshes, assetNumber(part.MeshId) or "?")
+						local surface = part:FindFirstChildOfClass("SurfaceAppearance")
+						if surface and not color then
+							color = assetNumber((surface :: any).ColorMap)
+						end
+					end
+				end
+				report.assets[key] = { meshes = meshes, color = color }
+				R.release(bundle)
+			end
+		end
+		if report.success then
+			local models = {}
+			for _, bundle in self.bundles do
+				models[bundle.model] = true
+			end
+			for _, entry in self.hidden do
+				local part = entry.part
+				local parent = part.Parent
+				part:Destroy()
+				report.removed += 1
+				if parent and parent:IsA("Model") and #parent:GetChildren() == 0 then
+					local holdsStaged = false
+					for model in models do
+						if model:IsDescendantOf(parent) then
+							holdsStaged = true
+						end
+					end
+					if not holdsStaged then
+						parent:Destroy()
+					end
+				end
+			end
+			self.hidden = {}
+		end
+		return report
+	end
+	function handle.revert(self: Stage)
+		for _, bundle in self.bundles do
+			if not bundle.published then
+				R.destroy(bundle)
+			end
+		end
+		for _, entry in self.hidden do
+			entry.part.Transparency = entry.transparency
+		end
+		self.hidden = {}
+	end
+	return handle :: Stage
+end
 export type TerrainFillOptions = {
 	ground: number,
 	seaLevel: number?,
