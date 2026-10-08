@@ -1,5 +1,13 @@
 # Editable3D changes
 
+## 0.107.0 — 2026-10-08
+
+- **`Roblox.bakeNormalMap(parts, normal, {size, padding, ...limits})` -> `{images, revert}`:** bakes a normal map onto existing (usually published) MeshParts from a world-space shading normal per texel.
+  - `normal(position, meshNormal)` returns the normal wanted there, or nil to leave the texel flat.
+  - Parts sharing a colour map share its UV space, so they are read back, joined and baked together into one map, at the colour map's size or `size`.
+  - Each part gets a new SurfaceAppearance with the map and its other maps kept. `revert()` restores the originals. Publish with `Roblox.publishMaterials`.
+  - The counterpart of `Roblox.modulateColor` for detail the mesh can't carry, such as fine folds or strands measured from photographs, without rebuilding the parts.
+
 ## 0.106.0 — 2026-10-08
 
 - **Normal maps now encode green as Roblox reads it (fix).** Green is toward decreasing v, the texture's up given the upper-left UV origin (OpenGL-style). `Bake.normalMap` had green along +v, so Roblox shaded a surface tilted up as if tilted down.

@@ -954,6 +954,103 @@ function R.modulateColor(
 	end
 	return { images = images, changed = changed, revert = revert }
 end
+export type NormalMapOptions = Types.Limits & { padding: number?, size: Vector2? }
+export type NormalMapBake = { images: { EditableImage }, revert: () -> () }
+-- Bakes a normal map onto MeshParts from a world-space shading normal per texel (Bake.worldNormalMap):
+-- normal(position, meshNormal) returns the normal wanted there, or nil to leave it flat. Parts sharing a
+-- colour map share its UV space, so they are read back, joined and baked together into one map at the
+-- colour map's size (or options.size). Each part gets a new SurfaceAppearance with the map and its other
+-- maps kept; revert() restores the originals. Publish with Roblox.publishMaterials. Tangent frames follow
+-- each triangle's UVs (read-back meshes have split corners); on a smooth UV layout that is the engine's
+-- per-vertex frame to within the triangle's variation.
+function R.bakeNormalMap(
+	parts: { MeshPart },
+	normal: (Vector3, Vector3) -> Vector3?,
+	options: NormalMapOptions?
+): NormalMapBake
+	local o: any = options or {}
+	local Bake = require(script.Parent.Bake) :: any
+	local Topology = require(script.Parent.Topology) :: any
+	local AS = game:GetService("AssetService")
+	local groups, order = {}, {}
+	for _, part in parts do
+		local sa = part:FindFirstChildOfClass("SurfaceAppearance")
+		assert(sa, "bakeNormalMap needs a SurfaceAppearance on every part")
+		local content = sa.ColorMapContent
+		local key: any = if content.SourceType == Enum.ContentSourceType.Object
+			then content.Object
+			else content.Uri
+		assert(key ~= nil and key ~= "", "bakeNormalMap needs a colour map on every part (its UV space)")
+		if not groups[key] then
+			groups[key] = { content = content, parts = {} }
+			table.insert(order, key)
+		end
+		table.insert(groups[key].parts, part)
+	end
+	local images, previous = {}, {}
+	local ok, err = pcall(function()
+		for _, key in order do
+			local g = groups[key]
+			local meshes = {}
+			for i, part in g.parts do
+				meshes[i] = R.fromPart(part)
+				task.wait()
+			end
+			local mesh = Topology.join(meshes)
+			local limit, checkpoint = sceneBakeLimits(mesh, o)
+			local size = o.size
+			if not size then
+				local probe = if g.content.SourceType == Enum.ContentSourceType.Object
+					then g.content.Object
+					else AS:CreateEditableImageAsync(g.content)
+				size = probe.Size
+				if g.content.SourceType ~= Enum.ContentSourceType.Object then
+					probe:Destroy()
+				end
+			end
+			local tex = Bake.worldNormalMap(mesh, size.X, size.Y, function(ctx)
+				return normal(ctx.position, ctx.normal)
+			end, {
+				padding = o.padding or 6,
+				maxSeconds = o.maxSeconds,
+				maxWork = o.maxWork,
+				maxBytes = o.maxBytes,
+				maxTriangles = limit,
+				checkpoint = checkpoint,
+				cancelled = o.cancelled,
+			})
+			local img = R.toEditableImage(tex, false)
+			table.insert(images, img)
+			for _, part in g.parts do
+				local sa = part:FindFirstChildOfClass("SurfaceAppearance") :: SurfaceAppearance
+				local fresh = sa:Clone()
+				fresh.NormalMapContent = Content.fromObject(img)
+				table.insert(previous, { part = part, surface = sa })
+				sa.Parent = nil
+				fresh.Parent = part
+			end
+		end
+	end)
+	local function revert()
+		for _, entry in previous do
+			local current = entry.part:FindFirstChildOfClass("SurfaceAppearance")
+			if current then
+				current:Destroy()
+			end
+			entry.surface.Parent = entry.part
+		end
+		for _, img in images do
+			img:Destroy()
+		end
+		table.clear(previous)
+		table.clear(images)
+	end
+	if not ok then
+		revert()
+		error(err, 0)
+	end
+	return { images = images, revert = revert }
+end
 -- readPrevious: read the current colour map back and pass it to the shader (one extra image in memory). To adjust an
 -- existing texture on published parts, Roblox.modulateColor avoids the seams a full re-raster over a read-back mesh leaves.
 -- Budget fields (maxSeconds, maxWork, checkpoint, cancelled) apply to each part's bake.

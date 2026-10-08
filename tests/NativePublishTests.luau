@@ -427,6 +427,53 @@ return function(E, options)
 		image:Destroy()
 		assert(ok, err)
 	end)
+	test(
+		"Roblox.bakeNormalMap bakes a world-space normal in the parts' UV space; revert restores the surface",
+		function()
+			local service = game:GetService("AssetService")
+			local source = E.Roblox.toModel(
+				E.UV.box(E.Primitives.box(Vector3.new(4, 4, 4))),
+				{ name = "NormalMapFixture" }
+			)
+			local part = source.handles[1].part
+			local image = assert(service:CreateEditableImage({ Size = Vector2.new(32, 32) }))
+			local surface = Instance.new("SurfaceAppearance")
+			surface.ColorMapContent = Content.fromObject(image)
+			surface.Parent = part
+			local holder = Instance.new("Folder")
+			source.model.Parent = holder
+			local ok, err = pcall(function()
+				-- tilt every normal toward +y: the sides tilt 26.6 degrees, the top and bottom stay flat
+				local bake = E.Roblox.bakeNormalMap({ part }, function(_, n)
+					return n + Vector3.yAxis * 0.5
+				end)
+				local sa = part:FindFirstChildOfClass("SurfaceAppearance") :: SurfaceAppearance
+				assert(sa ~= surface and sa.NormalMapContent.Object == bake.images[1], "map on a new surface")
+				assert(sa.ColorMapContent.Object == image, "colour map kept")
+				local px = bake.images[1]:ReadPixelsBuffer(Vector2.zero, Vector2.new(32, 32))
+				local tilted, flat = 0, 0
+				for i = 0, 32 * 32 - 1 do
+					local b = buffer.readu8(px, i * 4 + 2)
+					if b >= 236 and b <= 246 then
+						tilted += 1
+					elseif b >= 253 then
+						flat += 1
+					end
+				end
+				assert(tilted > 100 and flat > 20, "tilted " .. tilted .. ", flat " .. flat)
+				bake.revert()
+				assert(
+					part:FindFirstChildOfClass("SurfaceAppearance") == surface,
+					"original surface restored"
+				)
+				assert(#bake.images == 0, "images released")
+			end)
+			holder:Destroy()
+			E.Roblox.destroy(source)
+			image:Destroy()
+			assert(ok, err)
+		end
+	)
 	test("Roblox.fillTerrain writes land, edge band and sea inside the outline's box", function()
 		local terrain = workspace.Terrain
 		local origin = Vector2.new(4000, 4000)
