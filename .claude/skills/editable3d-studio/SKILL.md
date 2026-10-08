@@ -61,7 +61,7 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 1. `python3 tools/validate.py` (all gates) → commit.
 2. Serve `dist/` on `127.0.0.1:8772`; run `tools/studio_verify.luau` in Edit. It builds a fresh tree and runs **all** suites and examples, including native ones. Poll `TestState`/`CurrentSuite` attributes on the tree.
 3. Read the report, require 0 failures and source parity.
-4. Write `dist/docs.json` (root guides except CHANGELOG), fill the three placeholders in `tools/studio_install.luau`, run it. It archives the previous install (keeps two) and installs the runtime profile.
+4. `tools/validate.py` writes `dist/docs.json` (keys are file stems; the installer asserts `docs.README`, and a bundle keyed `README.md` stops it before anything is replaced, leaving an `Editable3D_Runtime_Candidate` to delete). Fill the three placeholders in `tools/studio_install.luau`, run it. It archives the previous install (keeps two) and installs the runtime profile.
 5. Remove the verification tree; stop the server.
 
 ## Reshaping photo-derived or published sculpts

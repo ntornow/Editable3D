@@ -55,6 +55,10 @@ def main():
         project, output = ('default.project.json','dist') if profile=='development' else ('production.project.json','dist/production')
         command(paths['rojo'], 'build', project, '-o', output+'/Editable3D-rojo.rbxm')
     command(paths['lune'], 'run', 'tools/verify_portable.luau')
+    # the root guides (except CHANGELOG) keyed by file stem, as tools/studio_install.luau reads them (docs.README)
+    docs = {p.stem: p.read_text() for p in sorted(ROOT.glob('*.md')) if p.name != 'CHANGELOG.md'}
+    assert 'README' in docs, 'README.md missing'
+    (ROOT/'dist/docs.json').write_text(json.dumps(docs))
     report = {'success': True, 'seconds': time.monotonic()-started, 'nativeStudioExecuted': False, 'toolchain': json.loads((ROOT/'toolchain.lock.json').read_text())}
     (ROOT/'.validation/local.json').write_text(json.dumps(report, indent=2)+'\n')
     print('Local CI gates passed; run the native Studio release gate before installation.')
