@@ -1,5 +1,12 @@
 # Editable3D changes
 
+## 0.105.0 — 2026-10-08
+
+- **`Roblox.modulateColor` and `Roblox.rebake` default their bake limits for scene parts.**
+  - The triangle limit defaults to the read-back mesh's own count, since the caller chose the parts. Bake's 250k default stopped a 27-part head (~480k triangles) with "Bake triangle limit exceeded".
+  - The checkpoint defaults to `task.wait`. Without one, a long bake held Studio's main thread until it ended.
+  - Passing `maxTriangles` or `checkpoint` still overrides either default.
+
 ## 0.104.0 — 2026-10-08
 
 - **`Roblox.stage(bundles, replaced)` -> `{bundles, hidden, publish, revert}`:** stages new bundles, keyed by name, in place of existing parts, a pattern every replacement of a published piece repeats.

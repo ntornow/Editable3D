@@ -715,6 +715,20 @@ end
 function R.pruneLedger(ledger: Types.PublishLedger): number
 	return require(script.Parent.PublishPipeline).pruneLedger(ledger)
 end
+-- Defaults for bakes over parts read back from the scene: the caller chose the parts, so the triangle limit is the
+-- mesh's own count (Bake's 250k default stops a many-part head), and the bake yields between rows (without a
+-- checkpoint a long bake holds Studio's main thread until it ends).
+local function sceneBakeLimits(mesh: Mesh, o: any): (number, () -> ())
+	local count = 0
+	for _, face in mesh.faces do
+		count += math.max(0, #face.vertices - 2)
+	end
+	local limit = o.maxTriangles or math.max(250000, count)
+	local checkpoint = o.checkpoint or function()
+		task.wait()
+	end
+	return limit, checkpoint
+end
 -- Multiplies the colour maps of MeshParts by a factor field over their surfaces and leaves every other texel
 -- byte-identical. Parts sharing a colour map are read back (world space) and joined; factor(position, normal) ->
 -- number or Color3 (a linear multiple per channel) is rasterized at the map's size in its UV space (padded by
@@ -758,6 +772,7 @@ function R.modulateColor(
 				task.wait()
 			end
 			local mesh = Topology.join(meshes)
+			local limit, checkpoint = sceneBakeLimits(mesh, o)
 			local old = if g.content.SourceType == Enum.ContentSourceType.Object
 				then g.content.Object
 				else AS:CreateEditableImageAsync(g.content)
@@ -773,8 +788,8 @@ function R.modulateColor(
 				maxSeconds = o.maxSeconds,
 				maxWork = o.maxWork,
 				maxBytes = o.maxBytes,
-				maxTriangles = o.maxTriangles,
-				checkpoint = o.checkpoint,
+				maxTriangles = limit,
+				checkpoint = checkpoint,
 				cancelled = o.cancelled,
 			})
 			local pixels, n = Bake.modulateBytes(
@@ -875,6 +890,7 @@ function R.rebake(
 				previousTexture = R.fromEditableImage(previousImage :: EditableImage, o.srgb)
 			end
 		end
+		local limit, checkpoint = sceneBakeLimits(mesh, o)
 		local texture = Bake.rasterize(mesh, size, size, function(ctx)
 			return shader(ctx.position, ctx.normal, part, ctx, previousTexture)
 		end, {
@@ -883,8 +899,9 @@ function R.rebake(
 			maxWork = o.maxWork,
 			maxBytes = o.maxBytes,
 			maxPixels = o.maxPixels,
+			maxTriangles = limit,
 			checkpointEvery = o.checkpointEvery,
-			checkpoint = o.checkpoint,
+			checkpoint = checkpoint,
 			cancelled = o.cancelled,
 		})
 		if previousImage then
