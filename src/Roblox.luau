@@ -848,8 +848,9 @@ local function sceneBakeLimits(mesh: Mesh, o: any): (number, () -> ())
 	return limit, checkpoint
 end
 -- Multiplies the colour maps of MeshParts by a factor field over their surfaces and leaves every other texel
--- byte-identical. Parts sharing a colour map are read back (world space) and joined; factor(position, normal) ->
--- number or Color3 (a linear multiple per channel) is rasterized at the map's size in its UV space (padded by
+-- byte-identical. Parts sharing a colour map are read back (world space) and joined; factor(position, normal,
+-- current) -> number or Color3 (a linear multiple per channel; current is the texel's colour before, as a Color3 of
+-- its sRGB bytes, for factors that regrade it) is rasterized at the map's size in its UV space (padded by
 -- `padding` texels, default 6) and the map's pixels are multiplied where it covers them (Bake.modulateBytes). Each
 -- part gets a new SurfaceAppearance carrying the result (one is not reliably refreshed in place), with its other
 -- maps kept. Re-rasterizing the whole colour over a read-back mesh instead leaves seams along its triangle edges.
@@ -858,7 +859,7 @@ export type ModulateOptions = Types.Limits & { padding: number?, tolerance: numb
 export type Modulation = { images: { EditableImage }, changed: number, revert: () -> () }
 function R.modulateColor(
 	parts: { MeshPart },
-	factor: (Vector3, Vector3) -> number | Color3,
+	factor: (Vector3, Vector3, Color3) -> number | Color3,
 	options: ModulateOptions?
 ): Modulation
 	local o: any = options or {}
@@ -895,8 +896,19 @@ function R.modulateColor(
 				then g.content.Object
 				else AS:CreateEditableImageAsync(g.content)
 			local size = old.Size
-			local ftex = Bake.rasterize(mesh, size.X, size.Y, function(ctx)
-				local f = factor(ctx.position, ctx.normal)
+			local before = old:ReadPixelsBuffer(Vector2.zero, size)
+			local ftex = Bake.rasterize(mesh, size.X, size.Y, function(ctx: Types.BakeContext)
+				-- the texel's current colour (sRGB bytes as a Color3) for factors that depend on it
+				local uv: Vector2 = ctx.uv
+				local x = math.clamp(math.floor(uv.X * size.X), 0, size.X - 1)
+				local y = math.clamp(math.floor(uv.Y * size.Y), 0, size.Y - 1)
+				local i = (y * size.X + x) * 4
+				local current = Color3.fromRGB(
+					buffer.readu8(before, i),
+					buffer.readu8(before, i + 1),
+					buffer.readu8(before, i + 2)
+				)
+				local f = factor(ctx.position, ctx.normal, current)
 				if typeof(f) == "number" then
 					return Color3.new(f, f, f), 1
 				end
@@ -910,13 +922,7 @@ function R.modulateColor(
 				checkpoint = checkpoint,
 				cancelled = o.cancelled,
 			})
-			local pixels, n = Bake.modulateBytes(
-				old:ReadPixelsBuffer(Vector2.zero, size),
-				size.X,
-				size.Y,
-				ftex,
-				o.tolerance
-			)
+			local pixels, n = Bake.modulateBytes(before, size.X, size.Y, ftex, o.tolerance)
 			if g.content.SourceType ~= Enum.ContentSourceType.Object then
 				old:Destroy()
 			end
@@ -962,7 +968,9 @@ export type NormalMapBake = { images: { EditableImage }, revert: () -> () }
 -- colour map's size (or options.size). Each part gets a new SurfaceAppearance with the map and its other
 -- maps kept; revert() restores the originals. Publish with Roblox.publishMaterials. Tangent frames follow
 -- each triangle's UVs (read-back meshes have split corners); on a smooth UV layout that is the engine's
--- per-vertex frame to within the triangle's variation.
+-- per-vertex frame to within the triangle's variation. Roblox renders a published colour map with an
+-- editable normal map white, so a published colour map is previewed from an editable copy (in images),
+-- which publishMaterials uploads along with the normal map.
 function R.bakeNormalMap(
 	parts: { MeshPart },
 	normal: (Vector3, Vector3) -> Vector3?,
@@ -998,16 +1006,16 @@ function R.bakeNormalMap(
 			end
 			local mesh = Topology.join(meshes)
 			local limit, checkpoint = sceneBakeLimits(mesh, o)
-			local size = o.size
-			if not size then
-				local probe = if g.content.SourceType == Enum.ContentSourceType.Object
-					then g.content.Object
-					else AS:CreateEditableImageAsync(g.content)
-				size = probe.Size
-				if g.content.SourceType ~= Enum.ContentSourceType.Object then
-					probe:Destroy()
-				end
+			-- Roblox renders a SurfaceAppearance with a published (Uri) colour map and an EditableImage normal
+			-- map white; with both maps editable it renders. A published colour map is therefore previewed from
+			-- an editable copy of itself (publishing uploads that copy too).
+			local colorCopy: EditableImage? = nil
+			if g.content.SourceType ~= Enum.ContentSourceType.Object then
+				colorCopy = AS:CreateEditableImageAsync(g.content)
+				table.insert(images, colorCopy :: EditableImage)
 			end
+			local size = o.size
+				or (if colorCopy then colorCopy.Size else (g.content.Object :: EditableImage).Size)
 			local tex = Bake.worldNormalMap(mesh, size.X, size.Y, function(ctx)
 				return normal(ctx.position, ctx.normal)
 			end, {
@@ -1025,6 +1033,9 @@ function R.bakeNormalMap(
 				local sa = part:FindFirstChildOfClass("SurfaceAppearance") :: SurfaceAppearance
 				local fresh = sa:Clone()
 				fresh.NormalMapContent = Content.fromObject(img)
+				if colorCopy then
+					fresh.ColorMapContent = Content.fromObject(colorCopy)
+				end
 				table.insert(previous, { part = part, surface = sa })
 				sa.Parent = nil
 				fresh.Parent = part

@@ -682,7 +682,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.publish(bundle: Bundle, metadata: unknown, options: Types.PublishOptions?): Types.PublishReport`
 - `Roblox.publishInChunks(bundle: Bundle, metadata: unknown, options: (Types.PublishOptions & { partsPerTransaction: number? })?): Types.PublishReport`
 - `Roblox.pruneLedger(ledger: Types.PublishLedger): number`
-- `Roblox.modulateColor(parts: { MeshPart }, factor: (Vector3, Vector3) -> number | Color3, options: ModulateOptions?): Modulation`
+- `Roblox.modulateColor(parts: { MeshPart }, factor: (Vector3, Vector3, Color3) -> number | Color3, options: ModulateOptions?): Modulation`
 - `Roblox.bakeNormalMap(parts: { MeshPart }, normal: (Vector3, Vector3) -> Vector3?, options: NormalMapOptions?): NormalMapBake`
 - `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart, any, Texture?) -> (Color3, number?), options: RebakeOptions?): Rebake`
 - `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart) -> Vector3, options: ReshapeOptions?): Reshape`

@@ -2,11 +2,13 @@
 
 ## 0.107.0 — 2026-10-08
 
+- **`Roblox.modulateColor`'s factor also receives the texel's current colour:** `factor(position, normal, current)`, with `current` a Color3 of the map's sRGB bytes before modulating. Factors can now regrade a map, for example lifting baked ambient occlusion that reads too dark, rather than only multiplying by a field.
 - **`Roblox.bakeNormalMap(parts, normal, {size, padding, ...limits})` -> `{images, revert}`:** bakes a normal map onto existing (usually published) MeshParts from a world-space shading normal per texel.
   - `normal(position, meshNormal)` returns the normal wanted there, or nil to leave the texel flat.
   - Parts sharing a colour map share its UV space, so they are read back, joined and baked together into one map, at the colour map's size or `size`.
   - Each part gets a new SurfaceAppearance with the map and its other maps kept. `revert()` restores the originals. Publish with `Roblox.publishMaterials`.
   - The counterpart of `Roblox.modulateColor` for detail the mesh can't carry, such as fine folds or strands measured from photographs, without rebuilding the parts.
+  - Roblox renders a SurfaceAppearance whose colour map is published (Uri) and whose normal map is an EditableImage white. With both maps editable, or both published, it renders. So a published colour map is previewed from an editable copy of itself (included in `images`); `publishMaterials` uploads that copy along with the normal map. The copy renders a little brighter than the asset (median 129 → 139 on one head), so judge brightness after publishing.
 
 ## 0.106.0 — 2026-10-08
 

@@ -272,6 +272,7 @@ return function(E, options)
 				E.Roblox.toModel(E.UV.box(E.Primitives.box(Vector3.new(2, 2, 2))), { name = "ReshapeGone" })
 			other.model.Parent = holder
 			local gonePart = other.handles[1].part
+			gonePart.Name = "ReshapeGone" -- toModel names its parts Mesh_1, Mesh_2, ...
 			local both = E.Roblox.reshape({ part, gonePart }, function(p)
 				return p
 			end, {
@@ -421,6 +422,23 @@ return function(E, options)
 			)
 			result.revert()
 			assert(part:FindFirstChildOfClass("SurfaceAppearance") == surface, "original surface restored")
+			-- the factor sees each texel's current colour: halve texels brighter than 90/255 (all of them here)
+			local seen = 0
+			local graded = E.Roblox.modulateColor({ part }, function(_, _, current)
+				if math.abs(current.R * 255 - 100) < 0.5 then
+					seen += 1
+				end
+				return if current.R > 90 / 255 then 0.5 else 1
+			end, { padding = 1 })
+			local gp = graded.images[1]:ReadPixelsBuffer(Vector2.zero, Vector2.new(32, 32))
+			local halved = 0
+			for i = 0, 32 * 32 - 1 do
+				if buffer.readu8(gp, i * 4) == 50 then
+					halved += 1
+				end
+			end
+			assert(seen > 0 and halved == graded.changed and halved > 0, "graded by colour: " .. halved)
+			graded.revert()
 		end)
 		holder:Destroy()
 		E.Roblox.destroy(source)
