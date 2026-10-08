@@ -902,6 +902,38 @@ return function(E)
 			end, { blend = -1 })
 		end, "Section blend must be nonnegative")
 	end)
+	test("sectionScaleMap is sectionScale's point map: a height band widened about an axis", function()
+		local box = E.Primitives.box(Vector3.new(2, 10, 4))
+		local rule = function(h: number): (number?, number?, number?)
+			if h < 0 then
+				return nil
+			end
+			return 0.5, 2, 0.5
+		end
+		local viaMesh = E.Deform.sectionScale(box, CFrame.identity, rule, { blend = 0.3 })
+		local map = E.Deform.sectionScaleMap(CFrame.identity, rule, 0.3)
+		for id, v in viaMesh.vertices do
+			near((map(box.vertices[id]) - v).Magnitude, 0, 1e-5)
+		end
+		-- a neck-like band: world x scaled by 1 + 0.1 inside y in [1, 2], unchanged outside
+		local band = E.Deform.sectionScaleMap(
+			CFrame.fromMatrix(Vector3.zero, Vector3.zAxis, Vector3.yAxis),
+			function(y: number): (number?, number?, number?)
+				if y < 1 or y > 2 then
+					return nil
+				end
+				return 0, 1.1, 1.1
+			end
+		)
+		local p = band(Vector3.new(2, 1.5, -3))
+		near(p.X, 2.2, 1e-5)
+		near(p.Y, 1.5, 1e-5)
+		near(p.Z, -3, 1e-5)
+		near((band(Vector3.new(2, 3, -3)) - Vector3.new(2, 3, -3)).Magnitude, 0, 1e-5)
+		rejects(function()
+			E.Deform.sectionScaleMap(CFrame.identity, rule, -1)
+		end, "Section blend must be nonnegative")
+	end)
 	test("edgeField is the position map behind Deform.edge", function()
 		local m = E.Mesh.new()
 		local ids = {}

@@ -785,9 +785,21 @@ function D.sectionScale(
 	options: SectionScaleOptions?
 ): Mesh
 	local o: SectionScaleOptions = options or {}
-	local blend = o.blend or 0
-	assert(blend >= 0, "Section blend must be nonnegative")
-	return D.map(mesh, function(p: Vector3): Vector3
+	return D.map(mesh, D.sectionScaleMap(frame, section, o.blend), o.mask)
+end
+-- The point map of Deform.sectionScale, for Roblox.reshape (published parts) or Deform.map: positions are scaled
+-- about the per-height centre along the frame's local Z, with the same section(height) -> (centre, below, above)
+-- rule and blend. A band of a figure widened or slimmed by a height bump (a neck, a waist) is
+-- sectionScaleMap(CFrame.fromMatrix(Vector3.zero, Vector3.zAxis, Vector3.yAxis), function(y) return 0, k(y), k(y) end):
+-- local Z then runs along world -X, so world x scales by k(y) about x = 0.
+function D.sectionScaleMap(
+	frame: CFrame,
+	section: (number) -> (number?, number?, number?),
+	blend: number?
+): (Vector3) -> Vector3
+	local b = blend or 0
+	assert(b >= 0, "Section blend must be nonnegative")
+	return function(p: Vector3): Vector3
 		local q = frame:PointToObjectSpace(p)
 		local centre, below, above = section(q.Y)
 		if centre == nil then
@@ -796,14 +808,14 @@ function D.sectionScale(
 		local c, sBelow, sAbove = centre :: number, below or 1, above or 1
 		assert(U.finite(c) and U.finite(sBelow) and U.finite(sAbove), "Section returned invalid values")
 		local scale
-		if blend > 0 then
-			local t = math.clamp((q.Z - c + blend) / (2 * blend), 0, 1)
+		if b > 0 then
+			local t = math.clamp((q.Z - c + b) / (2 * b), 0, 1)
 			scale = sBelow + (sAbove - sBelow) * t * t * (3 - 2 * t)
 		else
 			scale = if q.Z < c then sBelow else sAbove
 		end
 		return frame:PointToWorldSpace(Vector3.new(q.X, q.Y, c + (q.Z - c) * scale))
-	end, o.mask)
+	end
 end
 export type SmoothDisplacementOptions = {
 	sigma: number?,
