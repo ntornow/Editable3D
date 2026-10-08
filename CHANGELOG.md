@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.108.0 — 2026-10-08
+
+- **Scene publishes default their time budget to the work.** `Roblox.publish`, `publishInChunks`, `publishMaterials` and `publishImages` (the scene adapter) raise the operation budget's 60-second default, meant for headless work, when the caller sets no `maxSeconds`: 10 minutes, or 2 minutes per part or image if more. A caller's `maxSeconds` is kept.
+  - Why: publishing the colour maps of 23 parts sharing six 1024² maps failed at readback with "Operation time limit exceeded"; the uploads and native read-backs take minutes in a large place.
+
 ## 0.107.0 — 2026-10-08
 
 - **`Roblox.modulateColor`'s factor also receives the texel's current colour:** `factor(position, normal, current)`, with `current` a Color3 of the map's sRGB bytes before modulating. Factors can now regrade a map, for example lifting baked ambient occlusion that reads too dark, rather than only multiplying by a field.

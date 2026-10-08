@@ -4,6 +4,16 @@ local Pipeline = require(script.Parent.PublishPipeline)
 local harness = require(script.Parent.TestHarness)
 return function(E, options)
 	local report, test, rejects = harness()
+	test("Scene publishes default their time budget to the work (a caller's limit is kept)", function()
+		local small = Adapter.sceneOptions({ handles = { {}, {} } }, nil)
+		assert(small.maxSeconds == 600, "at least ten minutes: " .. tostring(small.maxSeconds))
+		local handles = table.create(23, {})
+		local big = Adapter.sceneOptions({ handles = handles, images = { {}, {} } }, { attempts = 3 })
+		assert(big.maxSeconds == 120 * 25 and big.attempts == 3, "two minutes per part or image")
+		local ledger = {}
+		local kept = Adapter.sceneOptions({ handles = handles }, { maxSeconds = 30, resume = ledger })
+		assert(kept.maxSeconds == 30 and kept.resume == ledger, "caller's limit and ledger kept")
+	end)
 	if options and options.native == false then
 		return report
 	end

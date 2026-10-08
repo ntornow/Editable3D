@@ -119,16 +119,32 @@ local function backendFor(assetService)
 	}
 	return backend
 end
+-- Scene publishes upload and read back every mesh chunk and map, which takes minutes in a large place, so the
+-- operation budget's 60-second default (meant for headless work) is raised when the caller sets none: 10 minutes,
+-- or 2 minutes per part or image if more. A caller's maxSeconds is kept.
+local function sceneOptions(bundle, options)
+	local o = table.clone(options or {})
+	if o.maxSeconds == nil then
+		local n = #(bundle.handles or {}) + #(bundle.images or {})
+		o.maxSeconds = math.max(600, 120 * n)
+	end
+	return o
+end
 local function run(bundle, metadata, options)
-	return Pipeline.run(bundle, metadata, options, backendFor(game:GetService("AssetService")))
+	return Pipeline.run(
+		bundle,
+		metadata,
+		sceneOptions(bundle, options),
+		backendFor(game:GetService("AssetService"))
+	)
 end
 local function runChunked(bundle, metadata, options, perTransaction)
 	return Pipeline.runChunked(
 		bundle,
 		metadata,
-		options,
+		sceneOptions(bundle, options),
 		backendFor(game:GetService("AssetService")),
 		perTransaction
 	)
 end
-return table.freeze({ run = run, runChunked = runChunked, backend = backendFor })
+return table.freeze({ run = run, runChunked = runChunked, backend = backendFor, sceneOptions = sceneOptions })
