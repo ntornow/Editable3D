@@ -47,6 +47,7 @@ export type ModelOptions = {
 	rig: any?,
 	cframe: CFrame?,
 	name: string?,
+	partName: string?,
 	maxTriangles: number?,
 	anchored: boolean?,
 	collisionFidelity: Enum.CollisionFidelity?,
@@ -56,6 +57,7 @@ export type TexturedModelOptions = {
 	rig: any?,
 	cframe: CFrame?,
 	name: string?,
+	partName: string?,
 	maxTriangles: number?,
 	anchored: boolean?,
 	collisionFidelity: Enum.CollisionFidelity?,
@@ -456,7 +458,8 @@ function R.toModel(mesh: Mesh, options: ModelOptions?): Bundle
 			handle.material = chunk.material
 			R.createPart(handle, {
 				parent = model :: Instance,
-				name = "Mesh_" .. i,
+				-- partName names every chunk (scene code finds its parts by name); the default numbers them
+				name = options.partName or ("Mesh_" .. i),
 				anchored = options.anchored,
 				collisionFidelity = options.collisionFidelity,
 			});
@@ -593,6 +596,7 @@ export type BakedModelOptions = Types.Limits & {
 	normal: ((Types.BakeContext) -> Vector3?)?,
 	size: number?,
 	padding: number?,
+	partName: string?,
 	roughness: (EditableImage | Content)?,
 	metalness: (EditableImage | Content)?,
 	material: Enum.Material?,
@@ -655,6 +659,7 @@ function R.bakedModel(mesh: Mesh, options: BakedModelOptions): Bundle
 		end
 		local built = R.toModel(mesh, {
 			name = o.name,
+			partName = o.partName,
 			maxTriangles = o.maxTriangles or 18000,
 			anchored = o.anchored,
 			collisionFidelity = o.collisionFidelity or Enum.CollisionFidelity.Box,
@@ -1730,7 +1735,7 @@ export type GridModelOptions = Types.Limits & {
 -- per-vertex tables (shade, occlusion, fold normals) are read with Bake.gridSample(values, row, column) exactly where
 -- the grid put them. sectors are column boundaries (default one sector); the UV inset leaves padding texels (default
 -- 8) of room at each map's edge; vertexNormal(r, c, position) gives whole-grid normals (no seams between sectors);
--- the other options are bakedModel's. Returns one bundle per sector, named name .. k (default "Grid" .. k).
+-- the other options are bakedModel's. Returns one bundle per sector; its model and parts are named name .. k (default "Grid" .. k).
 function R.gridModel(rows: { { Vector3 | false } }, options: GridModelOptions): { Bundle }
 	local Topology = require(script.Parent.Topology) :: any
 	local o = options
@@ -1771,6 +1776,7 @@ function R.gridModel(rows: { { Vector3 | false } }, options: GridModelOptions): 
 					doubleSided = o.doubleSided,
 					castShadow = o.castShadow,
 					name = (o.name or "Grid") .. k,
+					partName = (o.name or "Grid") .. k,
 					maxTriangles = o.maxTriangles,
 					anchored = o.anchored,
 					collisionFidelity = o.collisionFidelity,

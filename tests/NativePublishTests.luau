@@ -465,7 +465,8 @@ return function(E, options)
 					parent = holder,
 				})
 				assert(#bundles == 2, "one bundle per sector")
-				assert(bundles[1].handles[1].part.Name == "GridFixture1", "named per sector")
+				assert(bundles[1].handles[1].part.Name == "GridFixture1", "parts named per sector")
+				assert(bundles[2].model.Name == "GridFixture2", "models named per sector")
 				-- the map's centre is the middle column of each sector: 3 and 7 of 9, shade 0.25 and 0.75
 				for k, want in { 0.25, 0.75 } do
 					local px = bundles[k].images[1]:ReadPixelsBuffer(Vector2.new(15, 15), Vector2.new(2, 2))

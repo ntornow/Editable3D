@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.111.0 — 2026-10-08
+
+- **`Roblox.toModel` and `Roblox.bakedModel` take `partName`:** every chunk part gets that name instead of `Mesh_1`, `Mesh_2`, ... Scene code finds its parts by name and renamed them after every build. `Roblox.gridModel` names each sector's parts after the sector (`name .. k`).
+
 ## 0.110.0 — 2026-10-08
 
 - **`Roblox.gridModel(rows, {color, normal, sectors, flip, vertexNormal, size, padding, ...bakedModel options})` -> `{bundles}`:** a textured model from a grid of points with per-vertex data, the usual output of an offline fit (a height field sampled on rows and columns, a lofted sleeve).
