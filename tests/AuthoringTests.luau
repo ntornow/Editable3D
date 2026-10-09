@@ -1641,6 +1641,71 @@ return function(E)
 			E.Topology.gridSheet({ { Vector3.zero, Vector3.xAxis } })
 		end, "gridSheet needs at least two rows")
 	end)
+	test(
+		"Topology.gridSectors cuts columns into sheets whose inset UVs map back to grid positions",
+		function()
+			local rows = {}
+			for r = 1, 4 do
+				local row = {}
+				for c = 1, 9 do
+					local a = (c - 1) / 8 * math.pi
+					row[c] = Vector3.new(math.cos(a), r - 1, math.sin(a))
+				end
+				rows[r] = row
+			end
+			local seen = {}
+			local pieces = E.Topology.gridSectors(rows, {
+				sectors = { 1, 5, 9 },
+				inset = 0.1,
+				normal = function(r, c)
+					seen[c] = true
+					return Vector3.new(1, 0, 0)
+				end,
+			})
+			assert(#pieces == 2, "two sectors")
+			assert(
+				pieces[1].first == 1 and pieces[1].last == 5 and pieces[2].first == 5 and pieces[2].last == 9,
+				"bounds"
+			)
+			assert(seen[9] and seen[5] and seen[1], "normals asked with whole-grid columns")
+			for _, piece in pieces do
+				-- 3 x 4 cells
+				assert(count(piece.mesh.faces) == 24, "faces " .. count(piece.mesh.faces))
+				for _, f in piece.mesh.faces do
+					for i, v in f.vertices do
+						local p = piece.mesh.vertices[v]
+						local uv = f.corners[i].uv
+						assert(
+							uv.X >= 0.1 - 1e-9
+								and uv.X <= 0.9 + 1e-9
+								and uv.Y >= 0.1 - 1e-9
+								and uv.Y <= 0.9 + 1e-9,
+							"inset"
+						)
+						local row, column = piece.toGrid(uv)
+						near(row, p.Y + 1)
+						local want = math.acos(math.clamp(p.X, -1, 1)) / math.pi * 8 + 1
+						near(column, want)
+					end
+				end
+			end
+			rejects(function()
+				E.Topology.gridSectors(rows, { sectors = { 1, 5 } })
+			end, "gridSectors bounds must run from 1 to the column count")
+		end
+	)
+	test("Bake.gridSample interpolates numbers and vectors bilinearly, clamped to the grid", function()
+		local values = { { 0, 10 }, { 20, 30 } }
+		near(E.Bake.gridSample(values, 1.5, 1.5), 15)
+		near(E.Bake.gridSample(values, 1, 2), 10)
+		near(E.Bake.gridSample(values, 9, -3), 20)
+		local vecs = { { Vector3.zero, Vector3.xAxis }, { Vector3.yAxis, Vector3.one } }
+		local v = E.Bake.gridSample(vecs, 1.5, 1.5)
+		near(v.X, 0.5)
+		near(v.Y, 0.5)
+		near(v.Z, 0.25)
+		near(E.Bake.gridSample({ { 7 } }, 3, 3), 7)
+	end)
 	test("Topology.gridSheet writes explicit unit normals to every corner, unchanged by flip", function()
 		local rows = {}
 		for r = 1, 3 do

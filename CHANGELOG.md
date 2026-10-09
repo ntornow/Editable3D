@@ -1,5 +1,14 @@
 # Editable3D changes
 
+## 0.110.0 — 2026-10-08
+
+- **`Roblox.gridModel(rows, {color, normal, sectors, flip, vertexNormal, size, padding, ...bakedModel options})` -> `{bundles}`:** a textured model from a grid of points with per-vertex data, the usual output of an offline fit (a height field sampled on rows and columns, a lofted sleeve).
+  - The grid is cut into column sectors (one map each), and each sector becomes a `bakedModel`.
+  - Its shaders also receive the texel's fractional grid position `{row, column}`, so per-vertex tables (shade, occlusion, fold normals) are read with `Bake.gridSample` exactly where the grid put them.
+  - This replaces reconstructing a parametrisation from positions in the shader. That needs a frame per surface (a straight axis for a tube, say) and breaks on a bent one.
+- **`Topology.gridSectors(rows, {sectors, inset, flip, normal})` -> `{ {mesh, first, last, toGrid} }`:** cuts a grid into sheets by column ranges, each with UVs filling an inset rectangle. `toGrid(uv)` inverts that mapping to the whole grid's fractional (row, column). Normals are asked with whole-grid indices, so sectors join without shading seams.
+- **`Bake.gridSample(values, row, column)`:** bilinear sample of a per-vertex grid table (numbers or Vector3s) at a fractional position, clamped to the grid.
+
 ## 0.109.0 — 2026-10-08
 
 - **`Bake.skyVisibility(occluders, {directions, pixel, bias, minElevation, ...limits})` -> `(sampler(position, normal) -> visibility, info)`:** sky visibility by shadow maps. Roblox draws sun shadows but no ambient occlusion; multiply a colour map by `1 - s * (1 - visibility)` (with `Roblox.modulateColor`) to darken where other parts hide the sky, such as cloth under an arm.

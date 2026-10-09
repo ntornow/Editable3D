@@ -438,6 +438,51 @@ return function(E, options)
 			assert(ok, err)
 		end
 	)
+	test(
+		"Roblox.gridModel bakes each column sector with shaders that read per-vertex tables at the texel",
+		function()
+			local holder = Instance.new("Folder")
+			local bundles
+			local ok, err = pcall(function()
+				local rows, shade = {}, {}
+				for r = 1, 6 do
+					local row, srow = {}, {}
+					for c = 1, 9 do
+						local a = (c - 1) / 8 * math.pi
+						row[c] = Vector3.new(4 * math.cos(a), r - 1, 4 * math.sin(a))
+						srow[c] = (c - 1) / 8
+					end
+					rows[r], shade[r] = row, srow
+				end
+				bundles = E.Roblox.gridModel(rows, {
+					sectors = { 1, 5, 9 },
+					size = 32,
+					color = function(_, at)
+						local g = E.Bake.gridSample(shade, at.row, at.column)
+						return Color3.new(g, g, g), 1
+					end,
+					name = "GridFixture",
+					parent = holder,
+				})
+				assert(#bundles == 2, "one bundle per sector")
+				assert(bundles[1].handles[1].part.Name == "GridFixture1", "named per sector")
+				-- the map's centre is the middle column of each sector: 3 and 7 of 9, shade 0.25 and 0.75
+				for k, want in { 0.25, 0.75 } do
+					local px = bundles[k].images[1]:ReadPixelsBuffer(Vector2.new(15, 15), Vector2.new(2, 2))
+					local g = buffer.readu8(px, 0) / 255
+					assert(
+						math.abs(g - want) < 0.05,
+						string.format("sector %d centre %.3f, want %.2f", k, g, want)
+					)
+				end
+			end)
+			for _, b in bundles or {} do
+				E.Roblox.destroy(b)
+			end
+			holder:Destroy()
+			assert(ok, err)
+		end
+	)
 	test("Roblox.modulateColor multiplies only the covered texels and revert restores the surface", function()
 		local service = game:GetService("AssetService")
 		local source =

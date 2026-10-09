@@ -529,6 +529,23 @@ function B.skyVisibility(
 	end
 	return sampler, info
 end
+-- Bilinear sample of a per-vertex grid table (rows of numbers or Vector3s, as the points given to
+-- Topology.gridSheet / gridSectors) at the fractional position (row, column), clamped to the grid; with
+-- Topology.gridSectors' toGrid this reads per-vertex values (a baked shade, an occlusion, a colour) at any texel.
+function B.gridSample(values: { { any } }, row: number, column: number): any
+	local nr = #values
+	assert(nr >= 1 and #values[1] >= 1, "gridSample needs a non-empty grid")
+	local nc = #values[1]
+	local r = math.clamp(row, 1, nr)
+	local c = math.clamp(column, 1, nc)
+	local r0 = math.min(math.floor(r), math.max(nr - 1, 1))
+	local c0 = math.min(math.floor(c), math.max(nc - 1, 1))
+	local r1, c1 = math.min(r0 + 1, nr), math.min(c0 + 1, nc)
+	local fr, fc = math.clamp(r - r0, 0, 1), math.clamp(c - c0, 0, 1)
+	local a, b = values[r0][c0], values[r0][c1]
+	local d, e = values[r1][c0], values[r1][c1]
+	return (a * (1 - fc) + b * fc) * (1 - fr) + (d * (1 - fc) + e * fc) * fr
+end
 export type OcclusionSamplerOptions = BakeOptions & {
 	weld: number?,
 	radius: number?,

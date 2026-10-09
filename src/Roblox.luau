@@ -1704,4 +1704,93 @@ function R.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainF
 	end
 	return land
 end
+export type GridPoint = { row: number, column: number }
+export type GridModelOptions = Types.Limits & {
+	color: (Types.BakeContext, GridPoint) -> (Color3, number?),
+	normal: ((Types.BakeContext, GridPoint) -> Vector3?)?,
+	sectors: { number }?,
+	flip: boolean?,
+	vertexNormal: ((number, number, Vector3) -> Vector3)?,
+	size: number?,
+	padding: number?,
+	roughness: (EditableImage | Content)?,
+	metalness: (EditableImage | Content)?,
+	material: Enum.Material?,
+	doubleSided: boolean?,
+	castShadow: boolean?,
+	name: string?,
+	maxTriangles: number?,
+	anchored: boolean?,
+	collisionFidelity: Enum.CollisionFidelity?,
+	parent: Instance?,
+}
+-- A textured model from a grid of points with per-vertex data, the usual output of an offline fit (a height field
+-- sampled on rows and columns, a lofted sleeve): Topology.gridSectors cuts the grid into column sectors, and each
+-- becomes a bakedModel whose shaders also receive the texel's fractional grid position { row, column }, so
+-- per-vertex tables (shade, occlusion, fold normals) are read with Bake.gridSample(values, row, column) exactly where
+-- the grid put them. sectors are column boundaries (default one sector); the UV inset leaves padding texels (default
+-- 8) of room at each map's edge; vertexNormal(r, c, position) gives whole-grid normals (no seams between sectors);
+-- the other options are bakedModel's. Returns one bundle per sector, named name .. k (default "Grid" .. k).
+function R.gridModel(rows: { { Vector3 | false } }, options: GridModelOptions): { Bundle }
+	local Topology = require(script.Parent.Topology) :: any
+	local o = options
+	assert(type(o) == "table" and type(o.color) == "function", "gridModel needs a color shader")
+	local size = o.size or 1024
+	local padding = o.padding or 8
+	local pieces = Topology.gridSectors(rows, {
+		sectors = o.sectors,
+		inset = math.min(0.25, (padding - 2) / size),
+		flip = o.flip,
+		normal = o.vertexNormal,
+	})
+	local bundles: { Bundle } = {}
+	local ok, err = pcall(function()
+		for k, piece in pieces do
+			local toGrid = piece.toGrid
+			local function at(ctx: Types.BakeContext): GridPoint
+				local row, column = toGrid(ctx.uv :: any)
+				return { row = row, column = column }
+			end
+			local normalShader = o.normal
+			table.insert(
+				bundles,
+				R.bakedModel(piece.mesh, {
+					color = function(ctx)
+						return o.color(ctx, at(ctx))
+					end,
+					normal = if normalShader
+						then function(ctx)
+							return normalShader(ctx, at(ctx))
+						end
+						else nil,
+					size = size,
+					padding = padding,
+					roughness = o.roughness,
+					metalness = o.metalness,
+					material = o.material,
+					doubleSided = o.doubleSided,
+					castShadow = o.castShadow,
+					name = (o.name or "Grid") .. k,
+					maxTriangles = o.maxTriangles,
+					anchored = o.anchored,
+					collisionFidelity = o.collisionFidelity,
+					parent = o.parent,
+					maxSeconds = o.maxSeconds,
+					maxWork = o.maxWork,
+					maxBytes = o.maxBytes,
+					checkpoint = o.checkpoint,
+					cancelled = o.cancelled,
+				})
+			)
+		end
+	end)
+	if not ok then
+		for _, bundle in bundles do
+			R.destroy(bundle :: any)
+		end
+		error(err, 0)
+	end
+	return bundles
+end
+
 return R

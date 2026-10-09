@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.109.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.110.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -83,6 +83,7 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: number }, Types.Progress)`
 - `Bake.skyVisibility(occluders: { Mesh }, options: SkyVisibilityOptions?): ((Vector3, Vector3) -> number, SkyVisibilityInfo)`
+- `Bake.gridSample(values: { { any } }, row: number, column: number): any`
 - `Bake.occlusionSampler(meshes: { Mesh }, options: OcclusionSamplerOptions?): ((Vector3, Vector3?) -> number?, number)`
 - `Bake.heightOcclusion(heights: { { number } }, options: HeightOcclusionOptions?): { { number } }`
 - `Bake.slopeFit(heights: { { number } }, normals: { { Vector3? } }, options: SlopeFitOptions?): ({ { number } }, SlopeFitReport)`
@@ -690,6 +691,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart) -> Vector3, options: ReshapeOptions?): Reshape`
 - `Roblox.stage(bundles: { [string]: Bundle }, replaced: { BasePart }): Stage`
 - `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`
+- `Roblox.gridModel(rows: { { Vector3 | false } }, options: GridModelOptions): { Bundle }`
 
 ## Sculpt
 
@@ -908,6 +910,7 @@ Source: [src/Topology.luau](src/Topology.luau)
 - `Topology.triangulate(mesh: Mesh): Mesh`
 - `Topology.join(meshes: { Mesh }): Mesh`
 - `Topology.gridSheet(rows: { { Vector3 | false } }, options: GridSheetOptions?): Mesh`
+- `Topology.gridSectors(rows: { { Vector3 | false } }, options: GridSectorOptions?): { GridSector }`
 - `Topology.extract(mesh: Mesh, faces: FaceSet): Mesh`
 - `Topology.components(mesh: Mesh): { Mesh }`
 - `Topology.reverse(mesh: Mesh): Mesh`

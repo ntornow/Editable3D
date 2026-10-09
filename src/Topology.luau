@@ -191,6 +191,76 @@ function T.gridSheet(rows: { { Vector3 | false } }, options: GridSheetOptions?):
 	end
 	return out
 end
+export type GridSectorOptions = {
+	sectors: { number }?,
+	inset: number?,
+	flip: boolean?,
+	normal: ((number, number, Vector3) -> Vector3)?,
+}
+export type GridSector = {
+	mesh: Mesh,
+	first: number,
+	last: number,
+	toGrid: (Vector2) -> (number, number),
+}
+-- A grid of points (as gridSheet) cut into sheets by column ranges, each with its own UV rectangle: one texture
+-- per sector, for a surface too large for one map (a robe, a sleeve all round an arm). sectors lists the column
+-- boundaries (1-based, ascending, first 1 and last the column count; default { 1, columns }); neighbouring sectors
+-- share their boundary column. Each sector's UVs fill [inset, 1 - inset] (inset in UV units, default 0, so baked
+-- padding has room): u along its columns, v along the rows. toGrid(uv) inverts that mapping to the fractional
+-- (row, column) of the whole grid, so a bake shader can sample per-vertex tables there (Bake.gridSample) instead
+-- of reconstructing a parametrisation from positions. normal(r, c, position) and flip are passed to gridSheet with
+-- whole-grid indices, so normals computed over the full grid join without seams.
+function T.gridSectors(rows: { { Vector3 | false } }, options: GridSectorOptions?): { GridSector }
+	local o: GridSectorOptions = options or {}
+	local nr = #rows
+	assert(nr >= 2, "gridSectors needs at least two rows")
+	local nc = #rows[1]
+	assert(nc >= 2, "gridSectors needs at least two columns")
+	local bounds = o.sectors or { 1, nc }
+	assert(
+		#bounds >= 2 and bounds[1] == 1 and bounds[#bounds] == nc,
+		"gridSectors bounds must run from 1 to the column count"
+	)
+	local inset = o.inset or 0
+	assert(inset >= 0 and inset < 0.5, "gridSectors inset must be in [0, 0.5)")
+	local span = 1 - 2 * inset
+	local out: { GridSector } = {}
+	for k = 1, #bounds - 1 do
+		local first, last = bounds[k], bounds[k + 1]
+		assert(last > first, "gridSectors bounds must ascend")
+		local sub: { { Vector3 | false } } = table.create(nr)
+		for r = 1, nr do
+			local row: { Vector3 | false } = table.create(last - first + 1)
+			for c = first, last do
+				row[c - first + 1] = rows[r][c]
+			end
+			sub[r] = row
+		end
+		local sheetOptions: GridSheetOptions = {
+			flip = o.flip,
+			uv = function(r: number, c: number, _p: Vector3): Vector2
+				return Vector2.new(inset + span * (c - 1) / (last - first), inset + span * (r - 1) / (nr - 1))
+			end,
+		}
+		local normal = o.normal
+		if normal then
+			sheetOptions.normal = function(r: number, c: number, p: Vector3): Vector3
+				return normal(r, first + c - 1, p)
+			end
+		end
+		local mesh = T.gridSheet(sub, sheetOptions)
+		table.insert(out, {
+			mesh = mesh,
+			first = first,
+			last = last,
+			toGrid = function(uv: Vector2): (number, number)
+				return 1 + (uv.Y - inset) / span * (nr - 1), first + (uv.X - inset) / span * (last - first)
+			end,
+		})
+	end
+	return out
+end
 function T.extract(mesh: Mesh, faces: FaceSet): Mesh
 	local out = mesh:clone()
 	for id in out.faces do
