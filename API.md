@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.108.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.109.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -82,6 +82,7 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.worldNormalMap(mesh: Mesh, width: number, height: number, normal: (Types.BakeContext) -> Vector3?, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.ambientOcclusion(mesh: Mesh, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
 - `Bake.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: number }, Types.Progress)`
+- `Bake.skyVisibility(occluders: { Mesh }, options: SkyVisibilityOptions?): ((Vector3, Vector3) -> number, SkyVisibilityInfo)`
 - `Bake.occlusionSampler(meshes: { Mesh }, options: OcclusionSamplerOptions?): ((Vector3, Vector3?) -> number?, number)`
 - `Bake.heightOcclusion(heights: { { number } }, options: HeightOcclusionOptions?): { { number } }`
 - `Bake.slopeFit(heights: { { number } }, normals: { { Vector3? } }, options: SlopeFitOptions?): ({ { number } }, SlopeFitReport)`
@@ -672,6 +673,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.material(maps: MaterialMaps): (SurfaceAppearance, { [string]: EditableImage })`
 - `Roblox.applyMaterial(bundle: Bundle, maps: MaterialMaps, slot: number?): { [string]: EditableImage }`
 - `Roblox.toTexturedModel(mesh: Mesh, maps: MaterialMaps, options: TexturedModelOptions?): Bundle`
+- `Roblox.bakedModel(mesh: Mesh, options: BakedModelOptions): Bundle`
 - `Roblox.release(bundle: Disposable)`
 - `Roblox.destroy(bundle: Disposable, options: DestroyOptions?)`
 - `Roblox.liveEditables(roots: { Instance }?): { [any]: boolean }`

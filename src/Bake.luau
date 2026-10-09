@@ -362,7 +362,6 @@ end
 export type SkyVisibilityOptions = BakeOptions & {
 	directions: number?,
 	pixel: number?,
-	bias: number?,
 	minElevation: number?,
 }
 export type SkyVisibilityInfo = { directions: number, pixels: number, triangles: number }
@@ -384,9 +383,9 @@ function B.skyVisibility(
 	local budget, owned = Budget.acquire(o, "Bake.skyVisibility")
 	local count = o.directions or 48
 	U.integer(count, 1)
-	local pixel = o.pixel or 0.1
+	local pixel: number = o.pixel or 0.1
 	assert(pixel > 0, "pixel must be positive")
-	local bias = o.bias or 0.15
+	local bias: number = o.bias or 0.15
 	local minSin = math.sin(o.minElevation or math.rad(-10))
 	-- directions: a Fibonacci spread over the sphere, keeping those above minElevation
 	local dirs: { Vector3 } = {}
