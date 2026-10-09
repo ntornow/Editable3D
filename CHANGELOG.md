@@ -1,5 +1,11 @@
 # Editable3D changes
 
+## 0.112.0 — 2026-10-08
+
+- **`Normals.curvature(meshes, {tolerance, smooth})` -> `(points, normals, values)`:** mean curvature per vertex of one surface given as one or more meshes (parts cut from it, or published parts read back, whose triangles share no vertices). The meshes are welded, and the umbrella operator along the vertex normal gives H: 1/R on a sphere, 1/(2R) on a cylinder, positive on ridges and negative in creases. `smooth` averages with neighbours. Feed the arrays to `Bake.pointSampler` for cavity and edge masks in bake shaders, such as crisp creases baked into a sculpt's colour map.
+- **`Curves.ellipseStack(levels, {columns, exponent, step, capBottom, capTop})` -> rows of rings:** a closed form measured from two orthographic elevations. At each level y the front elevation gives the x range and the side elevation the z range, and the ring is the superellipse inscribed in that rectangle, so both outlines match by construction (a sleeve's hanging bag, a sack, a rounded mass on a figure). Levels are interpolated every `step` studs; the caps close the ends round. Feed the rows to `Topology.gridSheet` or `Roblox.gridModel`.
+- **`Roblox.studioLimits(overrides)` -> limits:** long-job limits for Studio work (30 minutes, 1e11 work, 2 GiB, 4e6 triangles, a checkpoint that yields with `task.wait`), to merge into a bake's, sky visibility's or reshape's options. The operation budget's defaults suit headless work and stop large scene operations.
+
 ## 0.111.0 — 2026-10-08
 
 - **`Roblox.toModel` and `Roblox.bakedModel` take `partName`:** every chunk part gets that name instead of `Mesh_1`, `Mesh_2`, ... Scene code finds its parts by name and renamed them after every build. `Roblox.gridModel` names each sector's parts after the sector (`name .. k`).

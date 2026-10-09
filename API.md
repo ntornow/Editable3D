@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.111.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.112.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -187,6 +187,7 @@ Source: [src/Curves.luau](src/Curves.luau)
 - `Curves.circle(radius: number, segments: number): { Vector2 }`
 - `Curves.loft(rings: { { Vector3 } }, caps: boolean?, options: LoftOptions?): Mesh`
 - `Curves.sweep(profile: SweepProfile, path: { Vector3 }, options: SweepOptions?): Mesh`
+- `Curves.ellipseStack(levels: { EllipseLevel }, options: EllipseStackOptions?): { { Vector3 } }`
 - `Curves.lathe(profile: { Vector2 }, segments: number): Mesh`
 - `Curves.bezierSurface(control: { { Vector3 } }, uSegments: number, vSegments: number): Mesh`
 - `Curves.stroke2D(points: { Vector2 }, width: number, options: Stroke2DOptions?): Mesh`
@@ -517,6 +518,7 @@ Source: [src/Normals.luau](src/Normals.luau)
 - `Normals.flip(mesh: Mesh, options: Options?)`
 - `Normals.markSharp(mesh: Mesh, edges: { [string]: boolean }, options: Options?)`
 - `Normals.unify(meshes: { Mesh }, options: UnifyOptions?): { Mesh }`
+- `Normals.curvature(meshes: { Mesh }, options: CurvatureOptions?): ({ Vector3 }, { Vector3 }, { number })`
 - `Normals.tangents(mesh: Mesh, options: Options?)`
 
 ## Particles
@@ -691,6 +693,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart) -> Vector3, options: ReshapeOptions?): Reshape`
 - `Roblox.stage(bundles: { [string]: Bundle }, replaced: { BasePart }): Stage`
 - `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`
+- `Roblox.studioLimits(overrides: { [string]: any }?): { [string]: any }`
 - `Roblox.gridModel(rows: { { Vector3 | false } }, options: GridModelOptions): { Bundle }`
 
 ## Sculpt

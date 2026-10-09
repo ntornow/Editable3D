@@ -1641,6 +1641,104 @@ return function(E)
 			E.Topology.gridSheet({ { Vector3.zero, Vector3.xAxis } })
 		end, "gridSheet needs at least two rows")
 	end)
+	test("Normals.curvature gives 1/R on a sphere, 1/(2R) on a tube, and welds split parts", function()
+		local sphere = E.Primitives.sphere(2, 48, 24)
+		local _, normals, values = E.Normals.curvature({ sphere })
+		local inside = 0
+		for k, h in values do
+			-- skip the poles' fans, where the umbrella operator is lopsided
+			if math.abs(normals[k].Y) < 0.8 then
+				assert(math.abs(h - 0.5) < 0.08, "sphere curvature " .. h)
+				inside += 1
+			end
+		end
+		assert(inside > 100, "sphere vertices checked")
+		-- a tube of radius 1 with rings every 0.5 studs: |H| = 1/2 away from its open ends
+		local profile = {}
+		for i = 0, 8 do
+			table.insert(profile, Vector2.new(1, -2 + 0.5 * i))
+		end
+		local tube = E.Curves.lathe(profile, 64)
+		local points, _, tv = E.Normals.curvature({ tube })
+		local checked = 0
+		for k, p in points do
+			if math.abs(p.Y) < 1.2 then
+				assert(math.abs(math.abs(tv[k]) - 0.5) < 0.06, "tube curvature " .. tv[k])
+				checked += 1
+			end
+		end
+		assert(checked > 100, "tube vertices checked")
+		-- two halves of the sphere weld into one surface: the seam's vertices match the whole sphere's
+		local top, bottom = {}, {}
+		for fid, f in sphere.faces do
+			local c = Vector3.zero
+			for _, v in f.vertices do
+				c += sphere.vertices[v]
+			end
+			if c.Y >= 0 then
+				top[fid] = true
+			else
+				bottom[fid] = true
+			end
+		end
+		local parts = { E.Topology.extract(sphere, top), E.Topology.extract(sphere, bottom) }
+		local p2, n2, v2 = E.Normals.curvature(parts)
+		local seam = 0
+		for k, h in v2 do
+			if math.abs(p2[k].Y) < 0.2 and math.abs(n2[k].Y) < 0.8 then
+				assert(math.abs(h - 0.5) < 0.08, "seam curvature " .. h)
+				seam += 1
+			end
+		end
+		assert(seam > 10, "seam vertices checked")
+		local _, _, smoothed = E.Normals.curvature({ sphere }, { smooth = 3 })
+		assert(#smoothed == #values, "smoothing keeps one value per vertex")
+		rejects(function()
+			E.Normals.curvature({})
+		end, "curvature needs meshes")
+	end)
+	test(
+		"Curves.ellipseStack inscribes rings in each level's x and z ranges and caps the ends round",
+		function()
+			local levels = {
+				{ y = 0, x0 = -2, x1 = 2, z0 = -1, z1 = 1 },
+				{ y = 2, x0 = -3, x1 = 1, z0 = -2, z1 = 2 },
+				{ y = 4, x0 = -1, x1 = 1, z0 = -1, z1 = 1 },
+			}
+			local rows = E.Curves.ellipseStack(levels, { columns = 16 })
+			assert(#rows == 3 and #rows[1] == 17, "rows and columns")
+			near((rows[1][1] - rows[1][17]).Magnitude, 0)
+			-- the middle level touches its rectangle at the axis directions: +x at column 1, +z a quarter round
+			near(rows[2][1].X, 1)
+			near(rows[2][1].Z, 0)
+			near(rows[2][5].Z, 2)
+			near(rows[2][9].X, -3)
+			for _, row in rows do
+				for _, p in row do
+					assert(p.Y == row[1].Y, "rings lie at their level")
+				end
+			end
+			-- resampled every 0.5 studs with interpolated ranges; caps shrink the ends toward the centre
+			local fine = E.Curves.ellipseStack(
+				levels,
+				{ columns = 8, step = 0.5, capBottom = 1, capTop = 1, exponent = 3 }
+			)
+			assert(#fine == 9, "levels every 0.5 studs: " .. #fine)
+			near(fine[3][1].Y, 1)
+			near(fine[3][1].X, 1.5) -- x1 halfway between 2 and 1 at y 1, no cap there
+			assert((fine[1][1] - Vector3.new(0, 0, 0)).Magnitude < 0.01, "bottom closed to its centre")
+			rejects(function()
+				E.Curves.ellipseStack({ levels[2], levels[1] })
+			end, "ellipseStack levels must ascend in y")
+		end
+	)
+	test("Roblox.studioLimits gives long-job limits and keeps overrides", function()
+		local l = E.Roblox.studioLimits({ maxSeconds = 60, padding = 4 })
+		assert(l.maxSeconds == 60 and l.padding == 4, "overrides kept")
+		assert(l.maxWork == 1e11 and l.maxBytes == 2 ^ 31 and l.maxTriangles == 4e6, "defaults")
+		assert(type(l.checkpoint) == "function", "yielding checkpoint")
+		assert(E.Roblox.studioLimits().maxSeconds == 1800, "default time")
+	end)
 	test(
 		"Topology.gridSectors cuts columns into sheets whose inset UVs map back to grid positions",
 		function()

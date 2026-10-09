@@ -1709,6 +1709,29 @@ function R.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainF
 	end
 	return land
 end
+-- Limits for long jobs in Studio: the operation budget's defaults (60 s and modest work, byte and triangle caps)
+-- suit headless work, and a bake, sky visibility or reshape over a scene of large parts stops with "Operation time
+-- limit exceeded" or a triangle limit, or blocks the main thread until it finishes. These defaults (30 minutes, 1e11
+-- work, 2 GiB, 4e6 triangles, a checkpoint that yields with task.wait) are meant to be merged into an operation's
+-- options; fields in overrides win.
+function R.studioLimits(overrides: { [string]: any }?): { [string]: any }
+	local out: { [string]: any } = {
+		maxSeconds = 1800,
+		maxWork = 1e11,
+		maxBytes = 2 ^ 31,
+		maxTriangles = 4e6,
+		checkpoint = function()
+			task.wait()
+		end,
+	}
+	if overrides then
+		for k, v in overrides do
+			out[k] = v
+		end
+	end
+	return out
+end
+
 export type GridPoint = { row: number, column: number }
 export type GridModelOptions = Types.Limits & {
 	color: (Types.BakeContext, GridPoint) -> (Color3, number?),

@@ -140,6 +140,92 @@ function N.unify(meshes: { Mesh }, options: UnifyOptions?): { Mesh }
 	end
 	return out
 end
+-- Mean curvature per vertex of one surface given as one or more meshes: parts cut from it, or published parts read
+-- back, whose triangles share no vertices. The meshes are welded (tolerance, default 1e-4) and the cotangent
+-- Laplacian gives the mean-curvature normal at each vertex, K = (1 / 2A) sum (cot a + cot b) (p - q) with A a third
+-- of the area of the triangles round it (exact enough on stretched grids such as lofts, where a uniform umbrella
+-- under-reads badly); H = K . n / 2 with n the area-weighted vertex normal: 1/R on a sphere of radius R, 1/(2R) on a
+-- cylinder, positive on ridges and bulges, negative in valleys and creases (faces wound counter-clockwise seen from
+-- outside). Values at open boundaries are one-sided. smooth (default 0) averages each value with its neighbours
+-- that many times. Returns the welded vertices' positions, normals and curvatures as parallel arrays for
+-- Bake.pointSampler: cavity and edge masks in bake shaders, crisp creases baked into a sculpt's colour map.
+export type CurvatureOptions = { tolerance: number?, smooth: number? }
+function N.curvature(meshes: { Mesh }, options: CurvatureOptions?): ({ Vector3 }, { Vector3 }, { number })
+	local Topology = require(script.Parent.Topology) :: any
+	local o: CurvatureOptions = options or {}
+	local tolerance = o.tolerance or 1e-4
+	local smooth = o.smooth or 0
+	assert(#meshes > 0, "curvature needs meshes")
+	assert(tolerance > 0 and smooth >= 0, "Invalid curvature options")
+	local welded: Mesh = Topology.weld(Topology.join(meshes), tolerance)
+	local V = welded.vertices
+	local weight: { [number]: { [number]: number } } = {}
+	local area: { [number]: number } = {}
+	local normal: { [number]: Vector3 } = {}
+	local function addWeight(i: number, j: number, w: number)
+		weight[i] = weight[i] or {}
+		weight[j] = weight[j] or {}
+		weight[i][j] = (weight[i][j] or 0) + w
+		weight[j][i] = (weight[j][i] or 0) + w
+	end
+	local function triangle(i: number, j: number, k: number)
+		local a, b, c = V[i], V[j], V[k]
+		local cross = (b - a):Cross(c - a)
+		local twice = cross.Magnitude
+		if twice < 1e-14 then
+			return
+		end
+		-- the cotangent of each corner weights the opposite edge
+		addWeight(j, k, (b - a):Dot(c - a) / twice)
+		addWeight(k, i, (c - b):Dot(a - b) / twice)
+		addWeight(i, j, (a - c):Dot(b - c) / twice)
+		for _, v in { i, j, k } do
+			area[v] = (area[v] or 0) + twice / 6
+			normal[v] = (normal[v] or Vector3.zero) + cross
+		end
+	end
+	for _, f in welded.faces do
+		local vs = f.vertices
+		for t = 2, #vs - 1 do
+			triangle(vs[1], vs[t], vs[t + 1])
+		end
+	end
+	local ids: { number }, index: { [number]: number } = {}, {}
+	for id in V do
+		if weight[id] then
+			table.insert(ids, id)
+			index[id] = #ids
+		end
+	end
+	local points: { Vector3 } = table.create(#ids)
+	local normals: { Vector3 } = table.create(#ids)
+	local values: { number } = table.create(#ids)
+	for k, id in ids do
+		local p = V[id]
+		local sum = Vector3.zero
+		for j, w in weight[id] do
+			sum += (p - V[j]) * w
+		end
+		local n = normal[id]
+		n = if n.Magnitude > 1e-12 then n.Unit else Vector3.yAxis
+		local A = area[id]
+		points[k], normals[k] = p, n
+		values[k] = if A > 1e-14 then (sum / (2 * A)):Dot(n) / 2 else 0
+	end
+	for _ = 1, smooth do
+		local nextValues: { number } = table.create(#ids)
+		for k, id in ids do
+			local total, count = values[k], 1
+			for j in weight[id] do
+				total += values[index[j]]
+				count += 1
+			end
+			nextValues[k] = total / count
+		end
+		values = nextValues
+	end
+	return points, normals, values
+end
 function N.tangents(mesh: Mesh, options: Options?)
 	return require(script.Parent.NormalTangents)(mesh, options)
 end

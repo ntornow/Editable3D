@@ -288,6 +288,82 @@ function C.sweep(profile: SweepProfile, path: { Vector3 }, options: SweepOptions
 	end
 	return C.loft(rings, options.caps ~= false, { closed = options.closed, triangles = options.triangles })
 end
+export type EllipseLevel = { y: number, x0: number, x1: number, z0: number, z1: number }
+export type EllipseStackOptions = {
+	columns: number?,
+	exponent: number?,
+	step: number?,
+	capBottom: number?,
+	capTop: number?,
+}
+-- Rows of rings for a closed form measured from two orthographic elevations: at each level y the front (or back)
+-- elevation gives the x range [x0, x1] and the side elevation the z range [z0, z1], and the ring is the superellipse
+-- (exponent, default 2 = ellipse; larger is boxier) inscribed in that rectangle. Both outlines then match by
+-- construction: a sleeve's hanging bag, a sack, a rounded mass on a figure. Levels are interpolated linearly every
+-- step studs (default: the levels as given); capBottom / capTop shrink the semi-axes as a quarter ellipse over that
+-- many studs so the form closes round. Each row has columns + 1 points (default 64; the last repeats the first),
+-- column 1 at +x, advancing toward +z. Use with Topology.gridSheet or Roblox.gridModel.
+function C.ellipseStack(levels: { EllipseLevel }, options: EllipseStackOptions?): { { Vector3 } }
+	local o: EllipseStackOptions = options or {}
+	assert(#levels >= 2, "ellipseStack needs at least two levels")
+	for i = 2, #levels do
+		assert(levels[i].y > levels[i - 1].y, "ellipseStack levels must ascend in y")
+	end
+	local columns = o.columns or 64
+	U.integer(columns, 3)
+	local n = o.exponent or 2
+	assert(n > 0, "ellipseStack exponent must be positive")
+	local y0, y1 = levels[1].y, levels[#levels].y
+	local ys: { number } = {}
+	if o.step then
+		assert(o.step > 0, "ellipseStack step must be positive")
+		local count = math.max(1, math.ceil((y1 - y0) / o.step))
+		for i = 0, count do
+			table.insert(ys, y0 + (y1 - y0) * i / count)
+		end
+	else
+		for _, l in levels do
+			table.insert(ys, l.y)
+		end
+	end
+	local function at(y: number): (number, number, number, number)
+		local k = 1
+		while k < #levels - 1 and levels[k + 1].y < y do
+			k += 1
+		end
+		local a, b = levels[k], levels[k + 1]
+		local t = math.clamp((y - a.y) / (b.y - a.y), 0, 1)
+		return a.x0 + (b.x0 - a.x0) * t,
+			a.x1 + (b.x1 - a.x1) * t,
+			a.z0 + (b.z0 - a.z0) * t,
+			a.z1 + (b.z1 - a.z1) * t
+	end
+	local rows: { { Vector3 } } = {}
+	for _, y in ys do
+		local x0, x1, z0, z1 = at(y)
+		local cx, cz, ax, az = (x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2
+		local shrink = 1
+		if o.capBottom and o.capBottom > 0 then
+			local h = math.clamp((y - y0) / o.capBottom, 0, 1)
+			shrink *= math.sqrt(1 - (1 - h) ^ 2)
+		end
+		if o.capTop and o.capTop > 0 then
+			local h = math.clamp((y1 - y) / o.capTop, 0, 1)
+			shrink *= math.sqrt(1 - (1 - h) ^ 2)
+		end
+		shrink = math.max(shrink, 1e-3)
+		local row: { Vector3 } = table.create(columns + 1)
+		for j = 0, columns do
+			local a = 2 * math.pi * (j % columns) / columns
+			local c, sn = math.cos(a), math.sin(a)
+			local ex = math.sign(c) * math.abs(c) ^ (2 / n)
+			local ez = math.sign(sn) * math.abs(sn) ^ (2 / n)
+			row[j + 1] = Vector3.new(cx + ax * shrink * ex, y, cz + az * shrink * ez)
+		end
+		table.insert(rows, row)
+	end
+	return rows
+end
 function C.lathe(profile: { Vector2 }, segments: number): Mesh
 	U.integer(segments, 3)
 	assert(#profile >= 2)
