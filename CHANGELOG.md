@@ -1,5 +1,11 @@
 # Editable3D changes
 
+## 0.114.0
+
+- `Topology.componentLabels(mesh, {tolerance})`: the connected pieces of a mesh as labels on its vertices, with coincident vertices welded (triangle soups and seam-split read-backs label each solid piece once), plus each piece's centroid, count and bounds.
+- `Roblox.reshape(parts, map, {components = true})` passes `map` a third argument, the vertex's piece (`{index, centroid, count, min, max}`), so multi-piece meshes (a crown's spikes) transform piece by piece. Assigning vertices by the nearest axis tore pieces whose bases overlap.
+- `Roblox.bakeCavity` samples curvature with a radius that follows the meshes' own vertex spacing by default (the larger of 1.5x the median edge and the 90th-percentile edge, within 0.01-0.5). The fixed default of 0.15 blurred grooves finer than ~0.3 studs away (the sampler's Gaussian has sigma radius / 2). An explicit `radius` still wins.
+
 ## 0.113.0 — 2026-10-09
 
 - **`Roblox.bakeCavity(parts, {strength, ridge, scale, radius, smooth, weld, ...modulate options})` -> `{images, changed, revert}`:** crisp creases baked into the colour maps of published or editable parts. The parts are read back, welded and measured with `Normals.curvature`, and each texel's colour is multiplied down in creases and slightly up on ridges (sampled with `Bake.pointSampler`), so folds and grooves read sharp under Roblox's soft lighting, which draws no ambient occlusion. Publish with `Roblox.publishMaterials`.

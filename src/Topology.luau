@@ -298,6 +298,104 @@ function T.components(mesh: Mesh): { Mesh }
 	end
 	return result
 end
+export type ComponentInfo = { index: number, centroid: Vector3, count: number, min: Vector3, max: Vector3 }
+-- Connected pieces of a mesh as labels on its vertices, with coincident vertices welded: faces join their corners,
+-- and vertices closer than `tolerance` (default 1e-4) join each other, so a triangle soup or a mesh split at UV
+-- seams still labels each solid piece once. Returns the label of every vertex id and, per label (numbered in order
+-- of first vertex id), its centroid, vertex count and bounds. Unlike Topology.components, nothing is copied.
+function T.componentLabels(
+	mesh: Mesh,
+	options: { tolerance: number? }?
+): ({ [number]: number }, { ComponentInfo })
+	local tolerance = options and options.tolerance or 1e-4
+	assert(tolerance >= 0, "Invalid weld tolerance")
+	local parent: { [number]: number } = {}
+	local function find(i: number): number
+		local r = i
+		while parent[r] ~= r do
+			r = parent[r]
+		end
+		while parent[i] ~= r do
+			local nextId = parent[i]
+			parent[i] = r
+			i = nextId
+		end
+		return r
+	end
+	local function join(a: number, b: number)
+		local ra, rb = find(a), find(b)
+		if ra ~= rb then
+			parent[rb] = ra
+		end
+	end
+	local ids = U.keys(mesh.vertices)
+	table.sort(ids)
+	for _, id in ids do
+		parent[id] = id
+	end
+	for _, f in mesh.faces do
+		for k = 2, #f.vertices do
+			join(f.vertices[1], f.vertices[k])
+		end
+	end
+	if tolerance > 0 then
+		local cell = tolerance
+		local grid: { [string]: { number } } = {}
+		local function keyOf(x: number, y: number, z: number): string
+			return string.format("%d,%d,%d", x, y, z)
+		end
+		for _, id in ids do
+			local p = mesh.vertices[id]
+			local cx, cy, cz = math.floor(p.X / cell), math.floor(p.Y / cell), math.floor(p.Z / cell)
+			for dx = -1, 1 do
+				for dy = -1, 1 do
+					for dz = -1, 1 do
+						local list = grid[keyOf(cx + dx, cy + dy, cz + dz)]
+						if list then
+							for _, other in list do
+								if (mesh.vertices[other] - p).Magnitude <= tolerance then
+									join(other, id)
+								end
+							end
+						end
+					end
+				end
+			end
+			local k = keyOf(cx, cy, cz)
+			local list = grid[k]
+			if not list then
+				list = {}
+				grid[k] = list
+			end
+			table.insert(list, id)
+		end
+	end
+	local labels: { [number]: number } = {}
+	local infos: { ComponentInfo } = {}
+	local labelOf: { [number]: number } = {}
+	local sums: { Vector3 } = {}
+	for _, id in ids do
+		local r = find(id)
+		local label: number = labelOf[r] or 0
+		local p = mesh.vertices[id]
+		if label == 0 then
+			label = #infos + 1
+			labelOf[r] = label
+			infos[label] = { index = label, centroid = Vector3.zero, count = 0, min = p, max = p }
+			sums[label] = Vector3.zero
+		end
+		labels[id] = label
+		local info = infos[label]
+		info.count += 1
+		info.min = info.min:Min(p)
+		info.max = info.max:Max(p)
+		sums[label] += p
+	end
+	for label, info in infos do
+		info.centroid = sums[label] / info.count
+	end
+	return labels, infos
+end
 function T.reverse(mesh: Mesh): Mesh
 	local out = mesh:clone()
 	local maps = { corner = {}, identity = { corner = false } }

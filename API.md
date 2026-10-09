@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.113.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.114.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -690,7 +690,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.modulateColor(parts: { MeshPart }, factor: (Vector3, Vector3, Color3) -> number | Color3, options: ModulateOptions?): Modulation`
 - `Roblox.bakeNormalMap(parts: { MeshPart }, normal: (Vector3, Vector3) -> Vector3?, options: NormalMapOptions?): NormalMapBake`
 - `Roblox.rebake(parts: { MeshPart }, shader: (Vector3, Vector3, MeshPart, any, Texture?) -> (Color3, number?), options: RebakeOptions?): Rebake`
-- `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart) -> Vector3, options: ReshapeOptions?): Reshape`
+- `Roblox.reshape(parts: { MeshPart }, map: (Vector3, MeshPart, any?) -> Vector3, options: ReshapeOptions?): Reshape`
 - `Roblox.stage(bundles: { [string]: Bundle }, replaced: { BasePart }): Stage`
 - `Roblox.fillTerrain(terrain: Terrain, outline: { Vector2 }, options: TerrainFillOptions): number`
 - `Roblox.studioLimits(overrides: { [string]: any }?): { [string]: any }`
@@ -917,6 +917,7 @@ Source: [src/Topology.luau](src/Topology.luau)
 - `Topology.gridSectors(rows: { { Vector3 | false } }, options: GridSectorOptions?): { GridSector }`
 - `Topology.extract(mesh: Mesh, faces: FaceSet): Mesh`
 - `Topology.components(mesh: Mesh): { Mesh }`
+- `Topology.componentLabels(mesh: Mesh, options: { tolerance: number? }?): ({ [number]: number }, { ComponentInfo })`
 - `Topology.reverse(mesh: Mesh): Mesh`
 - `Topology.weld(mesh: Mesh, tolerance: number): (Mesh, { [number]: number })`
 - `Topology.extrude(mesh: Mesh, selected: FaceSet, offset: Vector3): (Mesh, { [number]: number })`

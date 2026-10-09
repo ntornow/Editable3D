@@ -484,6 +484,45 @@ return function(E, options)
 			assert(ok, err)
 		end
 	)
+	test("Roblox.reshape with components passes each vertex's piece, so pieces move whole", function()
+		local a = E.Primitives.box(Vector3.new(1, 1, 1))
+		local b = E.Deform.transform(E.Primitives.box(Vector3.new(1, 1, 1)), CFrame.new(1.2, 0, 0))
+		local both = E.Topology.join({ a, b })
+		local built = E.Roblox.toModel(both, { name = "PiecesFixture" })
+		local holder = Instance.new("Folder")
+		built.model.Parent = holder
+		local part = built.handles[1].part
+		local ok, err = pcall(function()
+			-- the boxes' facing sides are 0.2 apart: nearest-centre assignment by position alone would still work
+			-- here, but the callback must see whole pieces: lift the piece whose centroid is at x > 0.6
+			local seen = {}
+			local handle = E.Roblox.reshape({ part }, function(p, _, piece)
+				assert(piece, "piece passed")
+				seen[piece.index] = piece.centroid
+				return if piece.centroid.X > 0.6 then p + Vector3.new(0, 3, 0) else p
+			end, { components = true })
+			local n = 0
+			for _ in seen do
+				n += 1
+			end
+			assert(n == 2, "two pieces seen, got " .. n)
+			local copy = handle.entries[1].bundle.handles[1].part
+			local m = E.Roblox.fromPart(copy)
+			local lifted, stayed = 0, 0
+			for _, p in m.vertices do
+				if p.Y > 2 then
+					lifted += 1
+					assert(p.X > 0.6, "only the right box lifted")
+				else
+					stayed += 1
+				end
+			end
+			assert(lifted > 0 and stayed > 0, "one box moved, the other stayed")
+			handle:revert()
+		end)
+		holder:Destroy()
+		assert(ok, err)
+	end)
 	test("Roblox.bakeCavity darkens a groove's texels and leaves the flat sheet alone", function()
 		local service = game:GetService("AssetService")
 		local rows = {}
@@ -532,6 +571,51 @@ return function(E, options)
 				part:FindFirstChildOfClass("SurfaceAppearance").ColorMapContent.Object == image,
 				"revert restores the map"
 			)
+		end)
+		holder:Destroy()
+		image:Destroy()
+		assert(ok, err)
+	end)
+	test("Roblox.bakeCavity's default radius follows a fine mesh and keeps a narrow groove dark", function()
+		local service = game:GetService("AssetService")
+		local rows = {}
+		for r = 1, 21 do
+			local row = {}
+			for c = 1, 101 do
+				local x, z = (c - 51) * 0.02, (r - 11) * 0.02
+				-- a groove 0.08 studs wide on a sheet with vertices 0.02 apart: a fixed 0.15 sampling radius
+				-- (sigma 0.075) would average its concave floor with its convex shoulders
+				row[c] = Vector3.new(x, -0.03 * math.exp(-(x / 0.04) ^ 2), z)
+			end
+			rows[r] = row
+		end
+		local built =
+			E.Roblox.toModel(E.Topology.gridSheet(rows, { flip = true }), { name = "FineCavityFixture" })
+		local part = built.handles[1].part
+		local image = assert(service:CreateEditableImage({ Size = Vector2.new(64, 64) }))
+		local gray = buffer.create(64 * 64 * 4)
+		for i = 0, 64 * 64 - 1 do
+			buffer.writeu8(gray, i * 4, 160)
+			buffer.writeu8(gray, i * 4 + 1, 160)
+			buffer.writeu8(gray, i * 4 + 2, 160)
+			buffer.writeu8(gray, i * 4 + 3, 255)
+		end
+		image:WritePixelsBuffer(Vector2.zero, image.Size, gray)
+		local surface = Instance.new("SurfaceAppearance")
+		surface.ColorMapContent = Content.fromObject(image)
+		surface.Parent = part
+		local holder = Instance.new("Folder")
+		built.model.Parent = holder
+		local ok, err = pcall(function()
+			local result = E.Roblox.bakeCavity({ part }, { strength = 0.5, scale = 2 })
+			local out = part:FindFirstChildOfClass("SurfaceAppearance").ColorMapContent.Object
+			local px = out:ReadPixelsBuffer(Vector2.zero, out.Size)
+			local function at(u, v)
+				return buffer.readu8(px, (math.floor(v * 63) * 64 + math.floor(u * 63)) * 4)
+			end
+			assert(at(0.5, 0.5) < 120, "narrow groove darkened: " .. at(0.5, 0.5))
+			assert(math.abs(at(0.1, 0.5) - 160) <= 2, "flat sheet unchanged: " .. at(0.1, 0.5))
+			result.revert()
 		end)
 		holder:Destroy()
 		image:Destroy()

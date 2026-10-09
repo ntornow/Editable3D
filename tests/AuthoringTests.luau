@@ -1941,5 +1941,30 @@ return function(E)
 			near(radiusAt(out, dir, 5), 0.5, 1e-3)
 		end
 	end)
+	test("Topology.componentLabels welds a triangle soup into its solid pieces", function()
+		local m = E.Mesh.new()
+		-- two tetrahedra as triangle soup: every face has its own three vertices
+		local function tetra(offset)
+			local a, b, c, d =
+				Vector3.new(0, 0, 0) + offset,
+				Vector3.new(1, 0, 0) + offset,
+				Vector3.new(0, 1, 0) + offset,
+				Vector3.new(0, 0, 1) + offset
+			for _, tri in { { a, c, b }, { a, b, d }, { a, d, c }, { b, c, d } } do
+				m:addFace({ m:addVertex(tri[1]), m:addVertex(tri[2]), m:addVertex(tri[3]) })
+			end
+		end
+		tetra(Vector3.zero)
+		tetra(Vector3.new(5, 0, 0))
+		local labels, infos = E.Topology.componentLabels(m)
+		assert(#infos == 2, "two pieces, got " .. #infos)
+		assert(infos[1].count == 12 and infos[2].count == 12, "every soup vertex labelled")
+		assert(math.abs(infos[1].centroid.X - 0.25) < 1e-6 and math.abs(infos[2].centroid.X - 5.25) < 1e-6)
+		for id, label in labels do
+			assert((m.vertices[id].X < 2) == (label == 1), "label follows the piece")
+		end
+		local _, apart = E.Topology.componentLabels(m, { tolerance = 0 })
+		assert(#apart == 8, "without welding each soup face stands alone, got " .. #apart)
+	end)
 	return report
 end

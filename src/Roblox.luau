@@ -1305,7 +1305,13 @@ end
 -- a published mesh that a new piece replaces); faces that survive keep their UVs and textures. A part
 -- that loses every face has no preview: it is hidden (entry.removed) and destroyed when a publish
 -- succeeds for every other part (its report row has removed = true; report.removed lists its name).
+-- components = true passes map a third argument: the vertex's connected piece of its part
+-- (Topology.componentLabels, coincident vertices welded within `weld`, default 1e-4) as { index, centroid, count,
+-- min, max }. Transform pieces whole (each spike of a crown, each bolt of a set) by their centroid: assigning
+-- vertices by nearest axis tears pieces whose bases overlap.
 export type ReshapeOptions = {
+	components: boolean?,
+	weld: number?,
 	unify: boolean?,
 	angle: number?,
 	tolerance: number?,
@@ -1331,7 +1337,7 @@ export type Reshape = {
 }
 function R.reshape(
 	parts: { MeshPart },
-	map: (Vector3, MeshPart) -> Vector3,
+	map: (Vector3, MeshPart, any?) -> Vector3,
 	options: ReshapeOptions?
 ): Reshape
 	local o: ReshapeOptions = options or {}
@@ -1355,8 +1361,13 @@ function R.reshape(
 		end
 		-- a part that keeps no face is removed rather than previewed
 		if next(source.faces) ~= nil then
-			meshes[i] = Deform.map(source, function(position: Vector3): Vector3
-				return map(position, part)
+			local labels, infos
+			if o.components then
+				local Topology = require(script.Parent.Topology) :: any
+				labels, infos = Topology.componentLabels(source, { tolerance = o.weld or 1e-4 })
+			end
+			meshes[i] = Deform.map(source, function(position: Vector3, id: number): Vector3
+				return map(position, part, if labels then infos[labels[id]] else nil)
 			end)
 		end
 	end
@@ -1743,11 +1754,36 @@ export type CavityOptions = ModulateOptions & {
 -- Crisp creases baked into the colour maps of parts (published or editable). The parts are read back
 -- (Roblox.fromPart), welded into one surface and measured per vertex (Normals.curvature, smoothed `smooth` times,
 -- default 1); each texel's colour is multiplied by 1 - strength * clamp(-H / scale, 0, 1) + ridge * clamp(H / scale,
--- 0, 1), with H sampled by Bake.pointSampler (radius studs, default 0.15; normals must agree). Defaults: strength 0.3,
--- ridge 0.05, scale 3 per stud, weld 2e-3. Folds and grooves then read sharp under Roblox's soft lighting, which
+-- 0, 1), with H sampled by Bake.pointSampler (radius studs; normals must agree). The sampler blends with a Gaussian of
+-- sigma radius / 2, so a radius much wider than the mesh's vertex spacing blurs fine grooves away; by default it
+-- follows the meshes' own spacing (the larger of 1.5x the median edge and the 90th-percentile edge, within
+-- 0.01-0.5). Defaults: strength 0.3, ridge 0.05, scale 3 per stud, weld 2e-3. Folds and grooves then read sharp under Roblox's soft lighting, which
 -- draws no ambient occlusion. Size scale and radius for the published look: lines a texel wide that look crisp in
 -- an EditableImage preview fade once the map is published. Returns modulateColor's { images, changed, revert };
 -- publish with Roblox.publishMaterials.
+-- Sampling radius from the meshes' edge lengths (a sample of up to ~4000 faces per mesh).
+local function cavityRadius(meshes: { any }): number
+	local lengths = {}
+	for _, m in meshes do
+		local faces = m.faces
+		local step = math.max(1, math.floor(#faces / 4000))
+		for f = 1, #faces, step do
+			local vs = faces[f].vertices
+			for k = 1, #vs do
+				local a, b = m.vertices[vs[k]], m.vertices[vs[k % #vs + 1]]
+				table.insert(lengths, (a - b).Magnitude)
+			end
+		end
+	end
+	if #lengths == 0 then
+		return 0.15
+	end
+	table.sort(lengths)
+	local median = lengths[math.max(1, math.floor(#lengths * 0.5))]
+	local p90 = lengths[math.max(1, math.floor(#lengths * 0.9))]
+	return math.clamp(math.max(1.5 * median, p90), 0.01, 0.5)
+end
+
 function R.bakeCavity(parts: { MeshPart }, options: CavityOptions?): Modulation
 	local o: CavityOptions = options or {}
 	local Normals = require(script.Parent.Normals) :: any
@@ -1761,7 +1797,7 @@ function R.bakeCavity(parts: { MeshPart }, options: CavityOptions?): Modulation
 	end
 	local points, normals, values =
 		Normals.curvature(meshes, { tolerance = o.weld or 2e-3, smooth = o.smooth or 1 })
-	local sampler = Bake.pointSampler(points, values, o.radius or 0.15, normals)
+	local sampler = Bake.pointSampler(points, values, o.radius or cavityRadius(meshes), normals)
 	local strength, ridge, scale = o.strength or 0.3, o.ridge or 0.05, o.scale or 3
 	assert(strength >= 0 and ridge >= 0 and scale > 0, "Invalid cavity options")
 	return R.modulateColor(parts, function(position: Vector3, normal: Vector3): number
