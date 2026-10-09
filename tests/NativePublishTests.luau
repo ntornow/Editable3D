@@ -498,8 +498,10 @@ return function(E, options)
 			end
 			return E.Topology.gridSheet(rows, { flip = sign < 0 })
 		end
-		local a = E.Roblox.toModel(half(-1), { name = "TentLeft" })
-		local b = E.Roblox.toModel(half(1), { name = "TentRight" })
+		-- flat open sheets have no collision volume: Box fidelity, as reshape's own bundles use
+		local box = Enum.CollisionFidelity.Box
+		local a = E.Roblox.toModel(half(-1), { name = "TentLeft", collisionFidelity = box })
+		local b = E.Roblox.toModel(half(1), { name = "TentRight", collisionFidelity = box })
 		local holder = Instance.new("Folder")
 		a.model.Parent = holder
 		b.model.Parent = holder
@@ -514,7 +516,7 @@ return function(E, options)
 				local ys = {}
 				for _, p in m.vertices do
 					if math.abs(p.X) < 1e-3 and math.abs(p.Z) < 0.5 then
-						ys[string.format("%.3f", p.Z)] = p.Y
+						ys[math.floor(p.Z * 1000 + 0.5)] = p.Y
 					end
 				end
 				return ys
