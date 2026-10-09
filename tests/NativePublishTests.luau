@@ -484,6 +484,74 @@ return function(E, options)
 			assert(ok, err)
 		end
 	)
+	test(
+		"Roblox.localContrast lifts a mid-scale blob toward its surroundings and keeps a fine line",
+		function()
+			local service = game:GetService("AssetService")
+			-- a flat 4 x 4 stud sheet facing +y; its 128 x 128 map has 32 texels per stud
+			local rows = {}
+			for r = 1, 9 do
+				local row = {}
+				for c = 1, 9 do
+					row[c] = Vector3.new((c - 5) * 0.5, 0, (r - 5) * 0.5)
+				end
+				rows[r] = row
+			end
+			local built = E.Roblox.toModel(
+				E.Topology.gridSheet(rows, { flip = true }),
+				{ name = "ContrastFixture", collisionFidelity = Enum.CollisionFidelity.Box }
+			)
+			local part = built.handles[1].part
+			local N = 128
+			local image = assert(service:CreateEditableImage({ Size = Vector2.new(N, N) }))
+			local px = buffer.create(N * N * 4)
+			for y = 0, N - 1 do
+				for x = 0, N - 1 do
+					local v = 150
+					-- a dark blob 0.75 studs across (24 texels) at the centre
+					if math.abs(x - 64) < 12 and math.abs(y - 64) < 12 then
+						v = 90
+					end
+					-- a dark line one texel wide, away from the blob
+					if x == 20 then
+						v = 90
+					end
+					local i = (y * N + x) * 4
+					buffer.writeu8(px, i, v)
+					buffer.writeu8(px, i + 1, v)
+					buffer.writeu8(px, i + 2, v)
+					buffer.writeu8(px, i + 3, 255)
+				end
+			end
+			image:WritePixelsBuffer(Vector2.zero, image.Size, px)
+			local surface = Instance.new("SurfaceAppearance")
+			surface.ColorMapContent = Content.fromObject(image)
+			surface.Parent = part
+			local holder = Instance.new("Folder")
+			built.model.Parent = holder
+			local ok, err = pcall(function()
+				local result = E.Roblox.localContrast(
+					{ part },
+					{ strength = 1, broadStrength = 0, minFactor = 0.5, maxFactor = 2 }
+				)
+				assert(result.cells > 0, "cells sampled")
+				local out = part:FindFirstChildOfClass("SurfaceAppearance").ColorMapContent.Object
+				local got = out:ReadPixelsBuffer(Vector2.zero, out.Size)
+				local function at(x, y)
+					return buffer.readu8(got, (y * N + x) * 4)
+				end
+				assert(at(64, 64) > 105, "blob lifted toward its surroundings: " .. at(64, 64))
+				assert(
+					at(20, 100) < 0.8 * at(26, 100),
+					"fine line kept dark: " .. at(20, 100) .. " vs " .. at(26, 100)
+				)
+				result.revert()
+			end)
+			holder:Destroy()
+			image:Destroy()
+			assert(ok, err)
+		end
+	)
 	test("Roblox.reshape with edit smooths across part seams as one surface, opening no crack", function()
 		-- a tent: two sheets meeting at a raised ridge along x = 0, each its own part
 		local function half(sign)

@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.116.0
+
+- `Roblox.localContrast(parts, options)`: compresses (or expands) the local contrast of colour maps by scale, in world space. Shading baked at the scale of folds is evened out while detail finer than a cell (seams, creases, streaks) is kept. Pass 1 accumulates texel luminance into world cells (bucketed by normal axis); pass 2 multiplies by (m2/m1)^strength · (m3/m2)^broadStrength with the cell means interpolated between cell centres.
+
 ## 0.115.0
 
 - `Roblox.reshape(parts, map?, {edit = function(mesh) ... end})`: all parts are read back, joined and welded (`weld`, default 1e-3) into one Mesh for `edit` (Sculpt.smooth with a mask, Sculpt.fair, Sculpt.brush...), and each part's vertices take their welded vertex's new position. Neighbourhood edits that cross part seams move both sides together; per-part edits pin each seam as a boundary or open cracks. `map` may now be nil.

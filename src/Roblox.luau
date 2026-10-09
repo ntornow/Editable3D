@@ -1896,6 +1896,238 @@ function R.bakeCavity(parts: { MeshPart }, options: CavityOptions?): Modulation
 	end, o)
 end
 
+export type LocalContrastOptions = ModulateOptions & {
+	cell: number?,
+	near: number?,
+	far: number?,
+	coarse: number?,
+	broad: number?,
+	strength: number?,
+	broadStrength: number?,
+	minFactor: number?,
+	maxFactor: number?,
+}
+-- Visits every covered texel of the parts' colour maps (grouped by map, as modulateColor) with its world position,
+-- normal and current colour, without writing anything.
+local function visitTexels(parts: { MeshPart }, visit: (Vector3, Vector3, Color3) -> (), o: any)
+	local Bake = require(script.Parent.Bake) :: any
+	local Topology = require(script.Parent.Topology) :: any
+	local AS = game:GetService("AssetService")
+	local groups, order = {}, {}
+	for _, part in parts do
+		local sa = part:FindFirstChildOfClass("SurfaceAppearance")
+		assert(sa, "localContrast needs a SurfaceAppearance on every part")
+		local content = sa.ColorMapContent
+		local key: any = if content.SourceType == Enum.ContentSourceType.Object
+			then content.Object
+			else content.Uri
+		assert(key ~= nil and key ~= "", "localContrast needs a colour map on every part")
+		if not groups[key] then
+			groups[key] = { content = content, parts = {} }
+			table.insert(order, key)
+		end
+		table.insert(groups[key].parts, part)
+	end
+	for _, key in order do
+		local g = groups[key]
+		local meshes = {}
+		for i, part in g.parts do
+			meshes[i] = R.fromPart(part)
+			task.wait()
+		end
+		local mesh = Topology.join(meshes)
+		local limit, checkpoint = sceneBakeLimits(mesh, o)
+		local old = if g.content.SourceType == Enum.ContentSourceType.Object
+			then g.content.Object
+			else AS:CreateEditableImageAsync(g.content)
+		local size = old.Size
+		local before = old:ReadPixelsBuffer(Vector2.zero, size)
+		if g.content.SourceType ~= Enum.ContentSourceType.Object then
+			old:Destroy()
+		end
+		Bake.rasterize(mesh, size.X, size.Y, function(ctx: Types.BakeContext)
+			local uv: Vector2 = ctx.uv
+			local x = math.clamp(math.floor(uv.X * size.X), 0, size.X - 1)
+			local y = math.clamp(math.floor(uv.Y * size.Y), 0, size.Y - 1)
+			local i = (y * size.X + x) * 4
+			visit(
+				ctx.position,
+				ctx.normal,
+				Color3.fromRGB(
+					buffer.readu8(before, i),
+					buffer.readu8(before, i + 1),
+					buffer.readu8(before, i + 2)
+				)
+			)
+			return Color3.new(1, 1, 1), 1
+		end, {
+			padding = 0,
+			maxSeconds = o.maxSeconds,
+			maxWork = o.maxWork,
+			maxBytes = o.maxBytes,
+			maxTriangles = limit,
+			checkpoint = checkpoint,
+			cancelled = o.cancelled,
+		})
+	end
+end
+
+-- Local contrast of colour maps, by scale, in world space: shading baked into textures at the scale of folds or dents
+-- is compressed (strength > 0) or expanded (< 0) while detail finer than a cell (seams, creases, streaks) is kept.
+-- Pass 1 accumulates every texel's luminance into world cells of `cell` studs (default 0.25) and coarse cells of
+-- `coarse` studs (1), each bucketed by the dominant axis of the texel's normal so the two sides of a thin sheet do not
+-- mix. Pass 2 multiplies each texel by (m2 / m1)^strength * (m3 / m2)^broadStrength (defaults 0.5 and 0.4), clamped to
+-- [minFactor, maxFactor] (0.7, 1.4): m1 and m2 are the means over +-near and +-far cells (1, 3), m3 over +-broad coarse
+-- cells (2); m1/m2 per cell and m3 per coarse cell are interpolated trilinearly between cell centres (a mean taken
+-- per containing cell steps at every cell boundary and draws a grid). Returns modulateColor's { images, changed,
+-- revert } plus cells (the fine cells used); publish with Roblox.publishMaterials.
+function R.localContrast(parts: { MeshPart }, options: LocalContrastOptions?): Modulation
+	local o: LocalContrastOptions = options or {}
+	local C, CC = o.cell or 0.25, o.coarse or 1
+	local near, far, broad = o.near or 1, o.far or 3, o.broad or 2
+	local kMid, kBroad = o.strength or 0.5, o.broadStrength or 0.4
+	local lo, hi = o.minFactor or 0.7, o.maxFactor or 1.4
+	assert(
+		C > 0 and CC > 0 and near >= 0 and far > near and broad >= 0 and lo > 0 and hi >= lo,
+		"Invalid localContrast options"
+	)
+	-- cell indices relative to the parts' bounds, packed into one number per (cell, normal bucket)
+	local minCorner = Vector3.new(math.huge, math.huge, math.huge)
+	local maxCorner = -minCorner
+	for _, part in parts do
+		local half = part.Size / 2
+		local corner = part.Position
+		local extent = math.max(half.X, half.Y, half.Z) * math.sqrt(3)
+		minCorner = minCorner:Min(corner - Vector3.one * extent)
+		maxCorner = maxCorner:Max(corner + Vector3.one * extent)
+	end
+	local base = minCorner - Vector3.one * (math.max(C * (far + 2), CC * (broad + 2)))
+	local span = (maxCorner - base) / C
+	assert(
+		math.max(span.X, span.Y, span.Z) < 65536 - far - 2,
+		"localContrast: parts span too many cells; raise cell"
+	)
+	local function keyOf(i: number, j: number, k: number, a: number): number
+		return ((i * 65536 + j) * 65536 + k) * 8 + a
+	end
+	local function axisOf(n: Vector3): number
+		local ax, ay, az = math.abs(n.X), math.abs(n.Y), math.abs(n.Z)
+		if ax >= ay and ax >= az then
+			return if n.X >= 0 then 1 else 2
+		elseif ay >= az then
+			return if n.Y >= 0 then 3 else 4
+		end
+		return if n.Z >= 0 then 5 else 6
+	end
+	local sum, cnt, csum, ccnt = {}, {}, {}, {}
+	visitTexels(parts, function(p: Vector3, n: Vector3, c: Color3)
+		local a = axisOf(n)
+		local l = 0.299 * c.R + 0.587 * c.G + 0.114 * c.B
+		local q = p - base
+		local key = keyOf(math.floor(q.X / C), math.floor(q.Y / C), math.floor(q.Z / C), a)
+		sum[key] = (sum[key] or 0) + l
+		cnt[key] = (cnt[key] or 0) + 1
+		local ckey = keyOf(math.floor(q.X / CC), math.floor(q.Y / CC), math.floor(q.Z / CC), a)
+		csum[ckey] = (csum[ckey] or 0) + l
+		ccnt[ckey] = (ccnt[ckey] or 0) + 1
+	end, o)
+	local function unpack(key: number): (number, number, number, number)
+		local a = key % 8
+		local rest = (key - a) / 8
+		local k = rest % 65536
+		rest = (rest - k) / 65536
+		local j = rest % 65536
+		return (rest - j) / 65536, j, k, a
+	end
+	local checkpoint = o.checkpoint or function()
+		task.wait()
+	end
+	local broadMean = {}
+	local visited = 0
+	for ckey in ccnt do
+		local i, j, k, a = unpack(ckey)
+		local s3, c3 = 0, 0
+		for di = -broad, broad do
+			for dj = -broad, broad do
+				for dk = -broad, broad do
+					local kk = keyOf(i + di, j + dj, k + dk, a)
+					local cc = ccnt[kk]
+					if cc then
+						s3 += csum[kk]
+						c3 += cc
+					end
+				end
+			end
+		end
+		broadMean[ckey] = s3 / c3
+		visited += 1
+		if visited % 2000 == 0 then
+			(checkpoint :: any)()
+		end
+	end
+	-- trilinear interpolation of a per-cell field between cell centres (same normal bucket)
+	local function interpolate(field: { [number]: number }, q: Vector3, size: number, a: number): number?
+		local fx, fy, fz = q.X / size - 0.5, q.Y / size - 0.5, q.Z / size - 0.5
+		local i0, j0, k0 = math.floor(fx), math.floor(fy), math.floor(fz)
+		local tx, ty, tz = fx - i0, fy - j0, fz - k0
+		local acc, wsum = 0, 0
+		for di = 0, 1 do
+			for dj = 0, 1 do
+				for dk = 0, 1 do
+					local v = field[keyOf(i0 + di, j0 + dj, k0 + dk, a)]
+					if v then
+						local w = (if di == 1 then tx else 1 - tx)
+							* (if dj == 1 then ty else 1 - ty)
+							* (if dk == 1 then tz else 1 - tz)
+						acc += v * w
+						wsum += w
+					end
+				end
+			end
+		end
+		return if wsum > 1e-6 then acc / wsum else nil
+	end
+	local ratio = {}
+	local cells = 0
+	for key in cnt do
+		local i, j, k, a = unpack(key)
+		local s1, c1, s2, c2 = 0, 0, 0, 0
+		for di = -far, far do
+			for dj = -far, far do
+				for dk = -far, far do
+					local kk = keyOf(i + di, j + dj, k + dk, a)
+					local cc = cnt[kk]
+					if cc then
+						s2 += sum[kk]
+						c2 += cc
+						if math.abs(di) <= near and math.abs(dj) <= near and math.abs(dk) <= near then
+							s1 += sum[kk]
+							c1 += cc
+						end
+					end
+				end
+			end
+		end
+		local m1, m2 = s1 / c1, s2 / c2
+		local centre = Vector3.new((i + 0.5) * C, (j + 0.5) * C, (k + 0.5) * C)
+		local m3 = interpolate(broadMean, centre, CC, a) or m2
+		local r = 1
+		if m1 > 1e-4 and m2 > 1e-4 then
+			r = (m2 / m1) ^ kMid * (m3 / m2) ^ kBroad
+		end
+		ratio[key] = math.clamp(r, lo, hi)
+		cells += 1
+		if cells % 2000 == 0 then
+			(checkpoint :: any)()
+		end
+	end
+	local result: any = R.modulateColor(parts, function(p: Vector3, n: Vector3): number
+		return interpolate(ratio, p - base, C, axisOf(n)) or 1
+	end, o)
+	result.cells = cells
+	return result
+end
+
 export type GridPoint = { row: number, column: number }
 export type GridModelOptions = Types.Limits & {
 	color: (Types.BakeContext, GridPoint) -> (Color3, number?),
