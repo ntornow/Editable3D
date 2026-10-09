@@ -359,6 +359,177 @@ function B.vertexOcclusion(mesh: Mesh, options: BakeOptions?): ({ [number]: numb
 	end
 	return result, complete(budget, owned)
 end
+export type SkyVisibilityOptions = BakeOptions & {
+	directions: number?,
+	pixel: number?,
+	bias: number?,
+	minElevation: number?,
+}
+export type SkyVisibilityInfo = { directions: number, pixels: number, triangles: number }
+-- Sky visibility by shadow maps: for each of `directions` (default 48) directions spread over the sky (down to
+-- minElevation radians below the horizon, default 10 degrees), the occluders' triangles are rasterized into an
+-- orthographic map (pixel studs, default 0.1) of their furthest extent toward the sky, then max-filtered by a pixel.
+-- The sampler(position, normal) returns the cosine-weighted fraction of those directions in which nothing reaches
+-- past the point by more than bias (default 0.15) plus a slope-scaled 3 pixel tan(angle to the normal), so a surface
+-- does not shadow itself at grazing angles: 1 in the open, lower under overhangs and beside other parts.
+-- Roblox draws sun shadows but no ambient occlusion; multiply a colour map by 1 - s * (1 - visibility) (for
+-- example with Roblox.modulateColor) to darken where other parts hide the sky. Unlike occlusionSampler it needs
+-- no ray casts per vertex, and it is exact for a distant sky; detail finer than the pixel is lost.
+function B.skyVisibility(
+	occluders: { Mesh },
+	options: SkyVisibilityOptions?
+): ((Vector3, Vector3) -> number, SkyVisibilityInfo)
+	local o: SkyVisibilityOptions = options or {}
+	assert(#occluders > 0, "skyVisibility needs occluders")
+	local budget, owned = Budget.acquire(o, "Bake.skyVisibility")
+	local count = o.directions or 48
+	U.integer(count, 1)
+	local pixel = o.pixel or 0.1
+	assert(pixel > 0, "pixel must be positive")
+	local bias = o.bias or 0.15
+	local minSin = math.sin(o.minElevation or math.rad(-10))
+	-- directions: a Fibonacci spread over the sphere, keeping those above minElevation
+	local dirs: { Vector3 } = {}
+	local total = count * 3
+	local golden = math.pi * (3 - math.sqrt(5))
+	for k = 0, total - 1 do
+		local y = 1 - 2 * (k + 0.5) / total
+		if y > minSin then
+			local r = math.sqrt(1 - y * y)
+			local a = golden * k
+			table.insert(dirs, Vector3.new(r * math.cos(a), y, r * math.sin(a)))
+			if #dirs >= count then
+				break
+			end
+		end
+	end
+	-- the triangles once (fan triangulation of each face)
+	local tris: { { Vector3 } } = {}
+	for _, mesh in occluders do
+		for _, f in mesh.faces do
+			local vs = f.vertices
+			for t = 2, #vs - 1 do
+				table.insert(tris, { mesh.vertices[vs[1]], mesh.vertices[vs[t]], mesh.vertices[vs[t + 1]] })
+			end
+		end
+		budget:step()
+	end
+	local maps = {}
+	local pixels = 0
+	for _, d in dirs do
+		local u = d:Cross(if math.abs(d.Z) < 0.9 then Vector3.zAxis else Vector3.xAxis).Unit
+		local v = d:Cross(u)
+		local uMin, uMax, vMin, vMax = math.huge, -math.huge, math.huge, -math.huge
+		for _, t in tris do
+			for i = 1, 3 do
+				local a, b = t[i]:Dot(u), t[i]:Dot(v)
+				uMin, uMax = math.min(uMin, a), math.max(uMax, a)
+				vMin, vMax = math.min(vMin, b), math.max(vMax, b)
+			end
+		end
+		uMin, vMin = uMin - 2 * pixel, vMin - 2 * pixel
+		local w = math.floor((uMax - uMin) / pixel) + 4
+		local h = math.floor((vMax - vMin) / pixel) + 4
+		budget:reserve(w * h * 8)
+		local map = buffer.create(w * h * 4)
+		buffer.fill(map, 0, 0xFF) -- NaN bit pattern: read back as "nothing here"
+		local function put(x: number, y: number, depth: number)
+			if x >= 0 and x < w and y >= 0 and y < h then
+				local index = (y * w + x) * 4
+				local old = buffer.readf32(map, index)
+				if old ~= old or depth > old then
+					buffer.writef32(map, index, depth)
+				end
+			end
+		end
+		for _, t in tris do
+			budget:step()
+			local a, b, c = t[1], t[2], t[3]
+			local ax, ay = (a:Dot(u) - uMin) / pixel, (a:Dot(v) - vMin) / pixel
+			local bx, by = (b:Dot(u) - uMin) / pixel, (b:Dot(v) - vMin) / pixel
+			local cx, cy = (c:Dot(u) - uMin) / pixel, (c:Dot(v) - vMin) / pixel
+			local ad, bd, cd = a:Dot(d), b:Dot(d), c:Dot(d)
+			local x0, x1 = math.floor(math.min(ax, bx, cx)), math.floor(math.max(ax, bx, cx))
+			local y0, y1 = math.floor(math.min(ay, by, cy)), math.floor(math.max(ay, by, cy))
+			if x1 - x0 <= 1 and y1 - y0 <= 1 then
+				-- a triangle within a pixel or two: its vertices stand for it
+				put(math.floor(ax), math.floor(ay), ad)
+				put(math.floor(bx), math.floor(by), bd)
+				put(math.floor(cx), math.floor(cy), cd)
+			else
+				local den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+				if math.abs(den) > 1e-12 then
+					for y = y0, y1 do
+						for x = x0, x1 do
+							local px, py = x + 0.5, y + 0.5
+							local l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / den
+							local l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / den
+							local l3 = 1 - l1 - l2
+							if l1 >= -0.02 and l2 >= -0.02 and l3 >= -0.02 then
+								put(x, y, l1 * ad + l2 * bd + l3 * cd)
+							end
+						end
+					end
+				end
+				put(math.floor(ax), math.floor(ay), ad)
+				put(math.floor(bx), math.floor(by), bd)
+				put(math.floor(cx), math.floor(cy), cd)
+			end
+		end
+		-- a one-pixel max filter closes the gaps between rasterized triangles
+		local filtered = buffer.create(w * h * 4)
+		buffer.fill(filtered, 0, 0xFF)
+		for y = 0, h - 1 do
+			budget:step()
+			for x = 0, w - 1 do
+				local best = 0 / 0
+				for dy = -1, 1 do
+					local yy = y + dy
+					if yy >= 0 and yy < h then
+						for dx = -1, 1 do
+							local xx = x + dx
+							if xx >= 0 and xx < w then
+								local value = buffer.readf32(map, (yy * w + xx) * 4)
+								if value == value and (best ~= best or value > best) then
+									best = value
+								end
+							end
+						end
+					end
+				end
+				buffer.writef32(filtered, (y * w + x) * 4, best)
+			end
+		end
+		pixels += w * h
+		table.insert(maps, { d = d, u = u, v = v, u0 = uMin, v0 = vMin, w = w, h = h, map = filtered })
+	end
+	local info: SkyVisibilityInfo = { directions = #maps, pixels = pixels, triangles = #tris }
+	complete(budget, owned)
+	local function sampler(position: Vector3, normal: Vector3): number
+		local lit, sum = 0, 0
+		for _, m in maps do
+			local weight = normal:Dot(m.d)
+			if weight > 0 then
+				sum += weight
+				local x = math.floor((position:Dot(m.u) - m.u0) / pixel)
+				local y = math.floor((position:Dot(m.v) - m.v0) / pixel)
+				local blocked = false
+				if x >= 0 and x < m.w and y >= 0 and y < m.h then
+					local reach = buffer.readf32(m.map, (y * m.w + x) * 4)
+					-- slope-scaled bias: at grazing angles a pixel (three after the max filter) spans a strip of
+					-- the point's own surface whose far end reaches past it by pixel * tan(angle)
+					local tangent = math.min(math.sqrt(math.max(0, 1 - weight * weight)) / weight, 20)
+					blocked = reach == reach and reach > position:Dot(m.d) + bias + 3 * pixel * tangent
+				end
+				if not blocked then
+					lit += weight
+				end
+			end
+		end
+		return if sum > 0 then lit / sum else 1
+	end
+	return sampler, info
+end
 export type OcclusionSamplerOptions = BakeOptions & {
 	weld: number?,
 	radius: number?,

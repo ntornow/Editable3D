@@ -2,6 +2,10 @@
 
 ## 0.109.0 — 2026-10-08
 
+- **`Bake.skyVisibility(occluders, {directions, pixel, bias, minElevation, ...limits})` -> `(sampler(position, normal) -> visibility, info)`:** sky visibility by shadow maps. Roblox draws sun shadows but no ambient occlusion; multiply a colour map by `1 - s * (1 - visibility)` (with `Roblox.modulateColor`) to darken where other parts hide the sky, such as cloth under an arm.
+  - For each of 48 directions spread over the sky, the occluders are rasterized into an orthographic map of their furthest extent toward it. A point is lit along a direction when nothing in its pixel reaches past it.
+  - A slope-scaled bias (3 pixel × tan of the angle to the normal) keeps a surface from shadowing itself at grazing angles.
+  - Unlike `occlusionSampler` there are no per-vertex ray casts. It is exact for a distant sky; detail finer than `pixel` (0.1 studs) is lost.
 - **`Roblox.bakedModel(mesh, {color, normal, size, padding, roughness, metalness, material, doubleSided, castShadow, name, maxTriangles, ...limits})` -> bundle:** builds a model whose maps are baked over the mesh's UVs from shader functions, the common shape of a scene piece built from measurements.
   - `color(ctx)` gives the colour map (`Bake.rasterize`); the optional `normal(ctx)` gives a world-space normal for a normal map (`Bake.worldNormalMap`).
   - Shared roughness and metalness maps (EditableImages or Content) go on every part but are not owned by the bundle.
