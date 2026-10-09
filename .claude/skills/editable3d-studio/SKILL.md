@@ -141,6 +141,7 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 ## Published meshes differ from previews
 
 - Sliver triangles (rows or columns a few thousandths of a stud apart) render as light stripes once the mesh is published, though the EditableMesh preview looks fine. Interleaving two sets of sample rows (`unique(concat(linspace(...), linspace(...)))`) causes it. Keep row spacing even, or merge near-duplicate rows before lofting.
+- `toModel` of a perfectly flat open sheet fails with "Async physics data generation task failed" at the default collision fidelity: a planar sheet has no hull volume. Pass `collisionFidelity = Enum.CollisionFidelity.Box` for flat sheets (reshape's bundles already do).
 - After publishing, a new texture renders white for a few seconds while it loads. Wait before judging it, and before measuring colour.
 
 ## Lofting organic forms from rings
