@@ -484,6 +484,55 @@ return function(E, options)
 			assert(ok, err)
 		end
 	)
+	test("Roblox.reshape with edit smooths across part seams as one surface, opening no crack", function()
+		-- a tent: two sheets meeting at a raised ridge along x = 0, each its own part
+		local function half(sign)
+			local rows = {}
+			for r = 1, 9 do
+				local row = {}
+				for c = 1, 6 do
+					local x = sign * (c - 1) * 0.2
+					row[c] = Vector3.new(x, 0.5 - math.abs(x) * 0.5, (r - 5) * 0.2)
+				end
+				rows[r] = row
+			end
+			return E.Topology.gridSheet(rows, { flip = sign < 0 })
+		end
+		local a = E.Roblox.toModel(half(-1), { name = "TentLeft" })
+		local b = E.Roblox.toModel(half(1), { name = "TentRight" })
+		local holder = Instance.new("Folder")
+		a.model.Parent = holder
+		b.model.Parent = holder
+		local ok, err = pcall(function()
+			local handle = E.Roblox.reshape({ a.handles[1].part, b.handles[1].part }, nil, {
+				edit = function(mesh)
+					return E.Sculpt.smooth(mesh, nil, 4, { taubin = false })
+				end,
+			})
+			local function ridge(entry)
+				local m = E.Roblox.fromPart(entry.bundle.handles[1].part)
+				local ys = {}
+				for _, p in m.vertices do
+					if math.abs(p.X) < 1e-3 and math.abs(p.Z) < 0.5 then
+						ys[string.format("%.3f", p.Z)] = p.Y
+					end
+				end
+				return ys
+			end
+			local ya, yb = ridge(handle.entries[1]), ridge(handle.entries[2])
+			local n = 0
+			for z, y in ya do
+				assert(yb[z], "the right part has the ridge vertex at z " .. z)
+				assert(math.abs(y - yb[z]) < 1e-4, "both sides of the seam moved together")
+				assert(y < 0.49, "the ridge was smoothed across the seam: " .. y)
+				n += 1
+			end
+			assert(n >= 3, "ridge vertices found: " .. n)
+			handle:revert()
+		end)
+		holder:Destroy()
+		assert(ok, err)
+	end)
 	test("Roblox.reshape with components passes each vertex's piece, so pieces move whole", function()
 		local a = E.Primitives.box(Vector3.new(1, 1, 1))
 		local b = E.Deform.transform(E.Primitives.box(Vector3.new(1, 1, 1)), CFrame.new(1.2, 0, 0))

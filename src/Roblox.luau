@@ -1309,9 +1309,14 @@ end
 -- (Topology.componentLabels, coincident vertices welded within `weld`, default 1e-4) as { index, centroid, count,
 -- min, max }. Transform pieces whole (each spike of a crown, each bolt of a set) by their centroid: assigning
 -- vertices by nearest axis tears pieces whose bases overlap.
+-- edit = function(mesh) -> mesh edits all parts as ONE surface: they are read back, joined and welded (coincident
+-- vertices within `weld`, default 1e-3) into a single Mesh, edit returns it with moved vertices (same ids: Sculpt.smooth
+-- with a mask, Sculpt.fair, Sculpt.brush...), and every part's vertices take their welded vertex's new position, so a
+-- smoothing that crosses part seams moves both sides together and opens no crack. map (may be nil) then applies on top.
 export type ReshapeOptions = {
 	components: boolean?,
 	weld: number?,
+	edit: ((any) -> any)?,
 	unify: boolean?,
 	angle: number?,
 	tolerance: number?,
@@ -1337,13 +1342,14 @@ export type Reshape = {
 }
 function R.reshape(
 	parts: { MeshPart },
-	map: (Vector3, MeshPart, any?) -> Vector3,
+	map: ((Vector3, MeshPart, any?) -> Vector3)?,
 	options: ReshapeOptions?
 ): Reshape
 	local o: ReshapeOptions = options or {}
 	local Deform = require(script.Parent.Deform) :: any
 	local Normals = require(script.Parent.Normals) :: any
 	local meshes = {}
+	local sources = {}
 	for i, part in parts do
 		local source = R.fromPart(part)
 		local keep = o.keep
@@ -1361,13 +1367,94 @@ function R.reshape(
 		end
 		-- a part that keeps no face is removed rather than previewed
 		if next(source.faces) ~= nil then
+			sources[i] = source
+		end
+	end
+	-- edit: one welded mesh of every part, edited as a whole (smoothing, fairing, brushes see across part seams)
+	local edited: { [number]: { [number]: Vector3 } } = {}
+	if o.edit then
+		local MeshModule = require(script.Parent.Mesh) :: any
+		local weld = o.weld or 1e-3
+		local joined = MeshModule.new()
+		-- numeric cell keys (a collision only adds candidates: distances are checked)
+		local grid: { [number]: { number } } = {}
+		local function keyOf(x: number, y: number, z: number): number
+			return x * 73856093 + y * 19349663 + z * 83492791
+		end
+		local function weldedId(p: Vector3): number
+			local cx, cy, cz = math.floor(p.X / weld), math.floor(p.Y / weld), math.floor(p.Z / weld)
+			for dx = -1, 1 do
+				for dy = -1, 1 do
+					for dz = -1, 1 do
+						local list = grid[keyOf(cx + dx, cy + dy, cz + dz)]
+						if list then
+							for _, id in list do
+								if (joined.vertices[id] - p).Magnitude <= weld then
+									return id
+								end
+							end
+						end
+					end
+				end
+			end
+			local id = joined:addVertex(p)
+			local k = keyOf(cx, cy, cz)
+			grid[k] = grid[k] or {}
+			table.insert(grid[k], id)
+			return id
+		end
+		local maps: { [number]: { [number]: number } } = {}
+		for i in parts do
+			local source = sources[i]
+			if source then
+				local m: { [number]: number } = {}
+				for id, p in source.vertices do
+					m[id] = weldedId(p)
+				end
+				for _, f in source.faces do
+					local ids, seen, ok = {}, {}, true
+					for _, v in f.vertices do
+						local w = m[v]
+						if seen[w] then
+							ok = false
+							break
+						end
+						seen[w] = true
+						table.insert(ids, w)
+					end
+					if ok then
+						joined:addFace(ids)
+					end
+				end
+				maps[i] = m
+			end
+		end
+		local result = (o.edit :: any)(joined)
+		for i, m in maps do
+			local positions: { [number]: Vector3 } = {}
+			for id, w in m do
+				positions[id] = result.vertices[w]
+			end
+			edited[i] = positions
+		end
+	end
+	for i, part in parts do
+		local source = sources[i]
+		if source then
 			local labels, infos
 			if o.components then
 				local Topology = require(script.Parent.Topology) :: any
 				labels, infos = Topology.componentLabels(source, { tolerance = o.weld or 1e-4 })
 			end
+			local positions = edited[i]
 			meshes[i] = Deform.map(source, function(position: Vector3, id: number): Vector3
-				return map(position, part, if labels then infos[labels[id]] else nil)
+				if positions then
+					position = positions[id] or position
+				end
+				if map then
+					return map(position, part, if labels then infos[labels[id]] else nil)
+				end
+				return position
 			end)
 		end
 	end

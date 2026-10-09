@@ -340,9 +340,10 @@ function T.componentLabels(
 	end
 	if tolerance > 0 then
 		local cell = tolerance
-		local grid: { [string]: { number } } = {}
-		local function keyOf(x: number, y: number, z: number): string
-			return string.format("%d,%d,%d", x, y, z)
+		-- numeric cell keys (a collision only adds candidates: distances are checked)
+		local grid: { [number]: { number } } = {}
+		local function keyOf(x: number, y: number, z: number): number
+			return x * 73856093 + y * 19349663 + z * 83492791
 		end
 		for _, id in ids do
 			local p = mesh.vertices[id]

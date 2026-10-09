@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.115.0
+
+- `Roblox.reshape(parts, map?, {edit = function(mesh) ... end})`: all parts are read back, joined and welded (`weld`, default 1e-3) into one Mesh for `edit` (Sculpt.smooth with a mask, Sculpt.fair, Sculpt.brush...), and each part's vertices take their welded vertex's new position. Neighbourhood edits that cross part seams move both sides together; per-part edits pin each seam as a boundary or open cracks. `map` may now be nil.
+
 ## 0.114.0
 
 - `Topology.componentLabels(mesh, {tolerance})`: the connected pieces of a mesh as labels on its vertices, with coincident vertices welded (triangle soups and seam-split read-backs label each solid piece once), plus each piece's centroid, count and bounds.
