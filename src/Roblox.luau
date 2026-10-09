@@ -1732,6 +1732,47 @@ function R.studioLimits(overrides: { [string]: any }?): { [string]: any }
 	return out
 end
 
+export type CavityOptions = ModulateOptions & {
+	strength: number?,
+	ridge: number?,
+	scale: number?,
+	radius: number?,
+	smooth: number?,
+	weld: number?,
+}
+-- Crisp creases baked into the colour maps of parts (published or editable). The parts are read back
+-- (Roblox.fromPart), welded into one surface and measured per vertex (Normals.curvature, smoothed `smooth` times,
+-- default 1); each texel's colour is multiplied by 1 - strength * clamp(-H / scale, 0, 1) + ridge * clamp(H / scale,
+-- 0, 1), with H sampled by Bake.pointSampler (radius studs, default 0.15; normals must agree). Defaults: strength 0.3,
+-- ridge 0.05, scale 3 per stud, weld 2e-3. Folds and grooves then read sharp under Roblox's soft lighting, which
+-- draws no ambient occlusion. Size scale and radius for the published look: lines a texel wide that look crisp in
+-- an EditableImage preview fade once the map is published. Returns modulateColor's { images, changed, revert };
+-- publish with Roblox.publishMaterials.
+function R.bakeCavity(parts: { MeshPart }, options: CavityOptions?): Modulation
+	local o: CavityOptions = options or {}
+	local Normals = require(script.Parent.Normals) :: any
+	local Bake = require(script.Parent.Bake) :: any
+	local meshes = {}
+	for i, part in parts do
+		meshes[i] = R.fromPart(part)
+		if o.checkpoint then
+			(o.checkpoint :: any)()
+		end
+	end
+	local points, normals, values =
+		Normals.curvature(meshes, { tolerance = o.weld or 2e-3, smooth = o.smooth or 1 })
+	local sampler = Bake.pointSampler(points, values, o.radius or 0.15, normals)
+	local strength, ridge, scale = o.strength or 0.3, o.ridge or 0.05, o.scale or 3
+	assert(strength >= 0 and ridge >= 0 and scale > 0, "Invalid cavity options")
+	return R.modulateColor(parts, function(position: Vector3, normal: Vector3): number
+		local h = sampler(position, normal)
+		if not h then
+			return 1
+		end
+		return 1 - strength * math.clamp(-h / scale, 0, 1) + ridge * math.clamp(h / scale, 0, 1)
+	end, o)
+end
+
 export type GridPoint = { row: number, column: number }
 export type GridModelOptions = Types.Limits & {
 	color: (Types.BakeContext, GridPoint) -> (Color3, number?),

@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.113.0 — 2026-10-09
+
+- **`Roblox.bakeCavity(parts, {strength, ridge, scale, radius, smooth, weld, ...modulate options})` -> `{images, changed, revert}`:** crisp creases baked into the colour maps of published or editable parts. The parts are read back, welded and measured with `Normals.curvature`, and each texel's colour is multiplied down in creases and slightly up on ridges (sampled with `Bake.pointSampler`), so folds and grooves read sharp under Roblox's soft lighting, which draws no ambient occlusion. Publish with `Roblox.publishMaterials`.
+
 ## 0.112.0 — 2026-10-08
 
 - **`Normals.curvature(meshes, {tolerance, smooth})` -> `(points, normals, values)`:** mean curvature per vertex of one surface given as one or more meshes (parts cut from it, or published parts read back, whose triangles share no vertices). The meshes are welded, and the umbrella operator along the vertex normal gives H: 1/R on a sphere, 1/(2R) on a cylinder, positive on ridges and negative in creases. `smooth` averages with neighbours. Feed the arrays to `Bake.pointSampler` for cavity and edge masks in bake shaders, such as crisp creases baked into a sculpt's colour map.

@@ -484,6 +484,59 @@ return function(E, options)
 			assert(ok, err)
 		end
 	)
+	test("Roblox.bakeCavity darkens a groove's texels and leaves the flat sheet alone", function()
+		local service = game:GetService("AssetService")
+		local rows = {}
+		for r = 1, 41 do
+			local row = {}
+			for c = 1, 41 do
+				local x, z = (c - 21) * 0.1, (r - 21) * 0.1
+				-- a groove 0.3 studs deep along x = 0, sheet facing +y (rows advance along z, columns along x)
+				row[c] = Vector3.new(x, -0.3 * math.exp(-(x / 0.25) ^ 2), z)
+			end
+			rows[r] = row
+		end
+		local mesh = E.Topology.gridSheet(rows, { flip = true })
+		local built = E.Roblox.toModel(mesh, { name = "CavityFixture" })
+		local part = built.handles[1].part
+		local image = assert(service:CreateEditableImage({ Size = Vector2.new(64, 64) }))
+		local gray = buffer.create(64 * 64 * 4)
+		for i = 0, 64 * 64 - 1 do
+			buffer.writeu8(gray, i * 4, 160)
+			buffer.writeu8(gray, i * 4 + 1, 160)
+			buffer.writeu8(gray, i * 4 + 2, 160)
+			buffer.writeu8(gray, i * 4 + 3, 255)
+		end
+		image:WritePixelsBuffer(Vector2.zero, image.Size, gray)
+		local surface = Instance.new("SurfaceAppearance")
+		surface.ColorMapContent = Content.fromObject(image)
+		surface.Parent = part
+		local holder = Instance.new("Folder")
+		built.model.Parent = holder
+		local result
+		local ok, err = pcall(function()
+			result = E.Roblox.bakeCavity({ part }, { strength = 0.5, scale = 2, radius = 0.15 })
+			local sa = part:FindFirstChildOfClass("SurfaceAppearance")
+			local out = sa.ColorMapContent.Object
+			local px = out:ReadPixelsBuffer(Vector2.zero, out.Size)
+			-- UV u follows the columns (x): the groove is the middle column of texels, the flat sheet the edges
+			local function at(u, v)
+				local x = math.floor(u * 63)
+				local y = math.floor(v * 63)
+				return buffer.readu8(px, (y * 64 + x) * 4)
+			end
+			assert(at(0.5, 0.5) < 140, "groove darkened: " .. at(0.5, 0.5))
+			assert(math.abs(at(0.1, 0.5) - 160) <= 2, "flat sheet unchanged: " .. at(0.1, 0.5))
+			result.revert()
+			assert(
+				part:FindFirstChildOfClass("SurfaceAppearance").ColorMapContent.Object == image,
+				"revert restores the map"
+			)
+		end)
+		holder:Destroy()
+		image:Destroy()
+		assert(ok, err)
+	end)
 	test("Roblox.modulateColor multiplies only the covered texels and revert restores the surface", function()
 		local service = game:GetService("AssetService")
 		local source =
