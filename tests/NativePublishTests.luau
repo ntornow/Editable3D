@@ -552,6 +552,80 @@ return function(E, options)
 			assert(ok, err)
 		end
 	)
+	test(
+		"Roblox.fillColor replaces a painted blob with its surroundings' colour and keeps the rest",
+		function()
+			local service = game:GetService("AssetService")
+			local rows = {}
+			for r = 1, 9 do
+				local row = {}
+				for c = 1, 9 do
+					row[c] = Vector3.new((c - 5) * 0.5, 0, (r - 5) * 0.5)
+				end
+				rows[r] = row
+			end
+			local built = E.Roblox.toModel(
+				E.Topology.gridSheet(rows, { flip = true }),
+				{ name = "FillFixture", collisionFidelity = Enum.CollisionFidelity.Box }
+			)
+			local part = built.handles[1].part
+			local N = 128
+			local image = assert(service:CreateEditableImage({ Size = Vector2.new(N, N) }))
+			local px = buffer.create(N * N * 4)
+			local function background(x)
+				return math.floor(100 + 100 * x / (N - 1) + 0.5)
+			end
+			for y = 0, N - 1 do
+				for x = 0, N - 1 do
+					local v = background(x)
+					-- a dark blob 0.75 studs across (24 texels) at the centre
+					if math.abs(x - 64) < 12 and math.abs(y - 64) < 12 then
+						v = 40
+					end
+					local i = (y * N + x) * 4
+					buffer.writeu8(px, i, v)
+					buffer.writeu8(px, i + 1, v)
+					buffer.writeu8(px, i + 2, v)
+					buffer.writeu8(px, i + 3, 255)
+				end
+			end
+			image:WritePixelsBuffer(Vector2.zero, image.Size, px)
+			local surface = Instance.new("SurfaceAppearance")
+			surface.ColorMapContent = Content.fromObject(image)
+			surface.Parent = part
+			local holder = Instance.new("Folder")
+			built.model.Parent = holder
+			local ok, err = pcall(function()
+				-- the region: a box of half-width 0.45 studs about the centre, its edge soft out to 0.55
+				local result = E.Roblox.fillColor({ part }, function(p)
+					local d = math.max(math.abs(p.X), math.abs(p.Z))
+					return 1 - math.clamp((d - 0.45) / 0.1, 0, 1)
+				end, { cell = 0.05, reach = 0.5 })
+				assert(
+					result.samples > 0 and result.filled > 0,
+					"samples " .. result.samples .. " filled " .. result.filled
+				)
+				local out = part:FindFirstChildOfClass("SurfaceAppearance").ColorMapContent.Object
+				local got = out:ReadPixelsBuffer(Vector2.zero, out.Size)
+				local function at(x, y)
+					return buffer.readu8(got, (y * N + x) * 4)
+				end
+				assert(
+					math.abs(at(64, 64) - background(64)) < 12,
+					"blob filled: " .. at(64, 64) .. " vs " .. background(64)
+				)
+				assert(
+					at(58, 70) > 110 and at(70, 58) > 110,
+					"the whole blob is filled: " .. at(58, 70) .. ", " .. at(70, 58)
+				)
+				assert(at(10, 10) == background(10) and at(120, 100) == background(120), "outside untouched")
+				result.revert()
+			end)
+			holder:Destroy()
+			image:Destroy()
+			assert(ok, err)
+		end
+	)
 	test("Roblox.reshape with edit smooths across part seams as one surface, opening no crack", function()
 		-- a tent: two sheets meeting at a raised ridge along x = 0, each its own part
 		local function half(sign)

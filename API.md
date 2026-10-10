@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.118.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.119.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -697,6 +697,7 @@ Source: [src/Roblox.luau](src/Roblox.luau)
 - `Roblox.studioLimits(overrides: { [string]: any }?): { [string]: any }`
 - `Roblox.bakeCavity(parts: { MeshPart }, options: CavityOptions?): Modulation`
 - `Roblox.localContrast(parts: { MeshPart }, options: LocalContrastOptions?): Modulation`
+- `Roblox.fillColor(parts: { MeshPart }, weight: (Vector3, Vector3) -> number, options: FillColorOptions?): Modulation`
 - `Roblox.gridModel(rows: { { Vector3 | false } }, options: GridModelOptions): { Bundle }`
 
 ## Sculpt

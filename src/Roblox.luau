@@ -2163,6 +2163,179 @@ function R.localContrast(parts: { MeshPart }, options: LocalContrastOptions?): M
 	return result
 end
 
+-- Fills a region of colour maps from its surroundings, in world space (inpainting): removes a painted feature (an
+-- outline, a decal, a seam, an old eye) before new shading goes on. weight(position, normal) is 0 outside the region,
+-- 1 inside and between at its soft edge. Pass 1 averages the colour of every texel outside the region (weight < 1e-3)
+-- into world cells of `cell` studs (default 0.05), bucketed by the dominant axis of the normal. The fill is computed
+-- at the centres of the region's cells as the inverse-distance-squared (Shepard) mean of the outside cells within
+-- `reach` studs (default 0.6) in the same bucket, then interpolated trilinearly between cell centres; each region texel
+-- becomes lerp(colour, fill, weight). Returns modulateColor's { images, changed, revert } plus samples (outside cells
+-- used) and filled (region cells); publish with Roblox.publishMaterials.
+export type FillColorOptions = ModulateOptions & { cell: number?, reach: number? }
+function R.fillColor(
+	parts: { MeshPart },
+	weight: (Vector3, Vector3) -> number,
+	options: FillColorOptions?
+): Modulation
+	local o: FillColorOptions = options or {}
+	local C, reach = o.cell or 0.05, o.reach or 0.6
+	assert(C > 0 and reach > C, "fillColor needs 0 < cell < reach")
+	local minCorner = Vector3.new(math.huge, math.huge, math.huge)
+	local maxCorner = -minCorner
+	for _, part in parts do
+		local extent = math.max(part.Size.X, part.Size.Y, part.Size.Z) * math.sqrt(3) / 2
+		minCorner = minCorner:Min(part.Position - Vector3.one * extent)
+		maxCorner = maxCorner:Max(part.Position + Vector3.one * extent)
+	end
+	local base = minCorner - Vector3.one * (reach + 2 * C)
+	local span = (maxCorner - base) / C
+	assert(math.max(span.X, span.Y, span.Z) < 65536 - 4, "fillColor: parts span too many cells; raise cell")
+	local function keyOf(i: number, j: number, k: number, a: number): number
+		return ((i * 65536 + j) * 65536 + k) * 8 + a
+	end
+	local function axisOf(n: Vector3): number
+		local ax, ay, az = math.abs(n.X), math.abs(n.Y), math.abs(n.Z)
+		if ax >= ay and ax >= az then
+			return if n.X >= 0 then 1 else 2
+		elseif ay >= az then
+			return if n.Y >= 0 then 3 else 4
+		end
+		return if n.Z >= 0 then 5 else 6
+	end
+	-- pass 1: outside texels into cells (sums of RGB), region texels mark their cells
+	local sr, sg, sb, cnt, region = {}, {}, {}, {}, {}
+	visitTexels(parts, function(p: Vector3, n: Vector3, c: Color3)
+		local q = p - base
+		local key = keyOf(math.floor(q.X / C), math.floor(q.Y / C), math.floor(q.Z / C), axisOf(n))
+		if weight(p, n) < 1e-3 then
+			sr[key] = (sr[key] or 0) + c.R
+			sg[key] = (sg[key] or 0) + c.G
+			sb[key] = (sb[key] or 0) + c.B
+			cnt[key] = (cnt[key] or 0) + 1
+		else
+			region[key] = true
+		end
+	end, o)
+	local function unpack(key: number): (number, number, number, number)
+		local a = key % 8
+		local rest = (key - a) / 8
+		local k = rest % 65536
+		rest = (rest - k) / 65536
+		local j = rest % 65536
+		return (rest - j) / 65536, j, k, a
+	end
+	local checkpoint = o.checkpoint or function()
+		task.wait()
+	end
+	-- outside cells near the region only, hashed coarsely (reach-sized buckets) for the Shepard sums
+	local R2 = math.ceil(reach / C)
+	local coarse: { [number]: { number } } = {}
+	local samples = 0
+	local near: { [number]: boolean } = {}
+	for key in region do
+		local i, j, k, a = unpack(key)
+		for di = -R2, R2, math.max(1, R2 // 3) do
+			for dj = -R2, R2, math.max(1, R2 // 3) do
+				for dk = -R2, R2, math.max(1, R2 // 3) do
+					near[keyOf((i + di) // R2, (j + dj) // R2, (k + dk) // R2, a)] = true
+				end
+			end
+		end
+	end
+	for key, n in cnt do
+		local i, j, k, a = unpack(key)
+		local ck = keyOf(i // R2, j // R2, k // R2, a)
+		if near[ck] and n > 0 then
+			local list = coarse[ck]
+			if not list then
+				list = {}
+				coarse[ck] = list
+			end
+			table.insert(list, key)
+			samples += 1
+		end
+	end
+	-- the fill at each region cell's centre
+	local fillR, fillG, fillB = {}, {}, {}
+	local filled = 0
+	for key in region do
+		local i, j, k, a = unpack(key)
+		local ci, cj, ck = i // R2, j // R2, k // R2
+		local wr, wg, wb, ws = 0, 0, 0, 0
+		for di = -1, 1 do
+			for dj = -1, 1 do
+				for dk = -1, 1 do
+					local list = coarse[keyOf(ci + di, cj + dj, ck + dk, a)]
+					if list then
+						for _, s in list do
+							local si, sj, sk = unpack(s)
+							local d2 = ((si - i) ^ 2 + (sj - j) ^ 2 + (sk - k) ^ 2) * C * C
+							if d2 <= reach * reach then
+								local w = 1 / math.max(d2, C * C)
+								local n = cnt[s]
+								wr += w * sr[s] / n
+								wg += w * sg[s] / n
+								wb += w * sb[s] / n
+								ws += w
+							end
+						end
+					end
+				end
+			end
+		end
+		if ws > 0 then
+			fillR[key], fillG[key], fillB[key] = wr / ws, wg / ws, wb / ws
+		end
+		filled += 1
+		if filled % 500 == 0 then
+			(checkpoint :: any)()
+		end
+	end
+	local function interpolate(q: Vector3, a: number): Color3?
+		local fx, fy, fz = q.X / C - 0.5, q.Y / C - 0.5, q.Z / C - 0.5
+		local i0, j0, k0 = math.floor(fx), math.floor(fy), math.floor(fz)
+		local tx, ty, tz = fx - i0, fy - j0, fz - k0
+		local r, g, b, wsum = 0, 0, 0, 0
+		for di = 0, 1 do
+			for dj = 0, 1 do
+				for dk = 0, 1 do
+					local key = keyOf(i0 + di, j0 + dj, k0 + dk, a)
+					local fr = fillR[key]
+					if fr then
+						local w = (if di == 1 then tx else 1 - tx)
+							* (if dj == 1 then ty else 1 - ty)
+							* (if dk == 1 then tz else 1 - tz)
+						r += fr * w
+						g += fillG[key] * w
+						b += fillB[key] * w
+						wsum += w
+					end
+				end
+			end
+		end
+		return if wsum > 1e-6 then Color3.new(r / wsum, g / wsum, b / wsum) else nil
+	end
+	local result: any = R.modulateColor(parts, function(p: Vector3, n: Vector3, c: Color3): number | Color3
+		local w = math.clamp(weight(p, n), 0, 1)
+		if w < 1e-3 then
+			return 1
+		end
+		local fill = interpolate(p - base, axisOf(n))
+		if not fill then
+			return 1
+		end
+		-- the factor that turns c into lerp(c, fill, w), per channel
+		local function f(cv: number, fv: number): number
+			local target = cv + (fv - cv) * w
+			return if cv > 1e-3 then target / cv else 1
+		end
+		return Color3.new(f(c.R, fill.R), f(c.G, fill.G), f(c.B, fill.B))
+	end, o)
+	result.samples = samples
+	result.filled = filled
+	return result
+end
+
 export type GridPoint = { row: number, column: number }
 export type GridModelOptions = Types.Limits & {
 	color: (Types.BakeContext, GridPoint) -> (Color3, number?),

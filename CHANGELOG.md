@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.119.0
+
+- `Roblox.fillColor(parts, weight, {cell, reach, ...modulate options})`: inpaints a region of colour maps from its surroundings, in world space. weight(position, normal) is 0 outside the region, 1 inside and soft at its edge. Texels outside the region are averaged into world cells (bucketed by normal axis); the fill at each region cell is the inverse-distance-squared mean of the outside cells within `reach`, interpolated between cell centres, and each region texel becomes lerp(colour, fill, weight). Removes a painted feature (an outline, a decal, an old eye) before new shading goes on.
+
 ## 0.118.0
 
 - `Bake.transfer(target, source, texture, width, height, {map, maxDistance, wrap, factor, padding})`: bakes a mesh's texture from another mesh's. Each target texel goes to its closest point on the source (a Spatial index), whose corner UVs are interpolated with the barycentric weights there, and the source texture is sampled. A rebuilt mesh (new topology, UV layout or domain) keeps a painted or baked colour map. `map` carries target positions into the source's space (a surface that moved); `factor(ctx, colour, hit)` re-shades each sample. Texels beyond `maxDistance` stay uncovered so `padding` fills them from their neighbours.
