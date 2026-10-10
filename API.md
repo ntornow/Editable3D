@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.119.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.120.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -246,6 +246,7 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.taperComponents(mesh: Mesh, anchor: Vector3, baseScale: number, tipScale: number?, weld: number?): Mesh`
 - `Deform.sectionScale(mesh: Mesh, frame: CFrame, section: (number) -> (number?, number?, number?), options: SectionScaleOptions?): Mesh`
 - `Deform.sectionScaleMap(frame: CFrame, section: (number) -> (number?, number?, number?), blend: number?): (Vector3) -> Vector3`
+- `Deform.cylindricalMap(frame: CFrame, fn: (number, number, number) -> (number?, number?, number?)): (Vector3) -> Vector3`
 - `Deform.smoothDisplacement(meshes: Mesh | { Mesh }, displace: (Vector3) -> Vector3, options: SmoothDisplacementOptions?): (Vector3) -> Vector3`
 
 ## Dynamics
