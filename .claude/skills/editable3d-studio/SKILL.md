@@ -65,6 +65,8 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 
 ## Release: verify then install
 
+- Don't change the working tree (`git stash`, `git checkout`, edits) while `tools/validate.py` runs. It packages both profiles from `src/` at its end, a second apart. A stash taken to compare against the previous release landed between them: the development package was the new version and the production package the old one. The Studio gate passed on the development tree, and the installer refused with "Runtime source was not verified". Rebuilding only `tools/package.py --profile production` (and its rojo build) fixed it.
+
 1. `python3 tools/validate.py` (all gates) → commit.
 2. Serve `dist/` on `127.0.0.1:8772`; run `tools/studio_verify.luau` in Edit. It builds a fresh tree and runs **all** suites and examples, including native ones. Poll `TestState`/`CurrentSuite` attributes on the tree.
 3. Read the report, require 0 failures and source parity.
