@@ -141,6 +141,8 @@ Headless tests (`tools/headless.luau`, Lune) cover the math. The engine adds beh
 - Apply the image on a **new** SurfaceAppearance, copying the other maps' URIs, `Color` and `AlphaMode` from the old one, then destroy the old one.
 - Publish with `Roblox.publishMaterials(parts, metadata, {resume = ledger, maxBytes = 2^31})`: only the editable maps upload, and the meshes are guarded but not replaced. Asset-URI maps are skipped, so one changed map per part means one image asset.
 - Keep color-map encoding consistent with earlier bakes (`toEditableImage(texture, srgb)`); switching the flag shifts every tone.
+- When a rebuilt mesh replaces a published one whose colour maps carry passes applied after their first bake (regrades, patina, plates, contrast), bake the new mesh's colour from the old maps instead of from the original recipe. Use `Bake.transfer(newMesh, oldMesh, oldTexture, w, h, {map, factor, padding})` (0.118): each new texel samples the old texture at its closest point on the old mesh. Read the old map with `AssetService:CreateEditableImageAsync(sa.ColorMapContent)` and `Roblox.fromEditableImage`, and join the old chunk parts that share the map. `factor` re-shades where the folds changed (new shading over old). Re-running the recipe and every later pass on the new parts alone drifts from the neighbouring parts' look.
+  - Where the cloth moved far from its old surface, pass `map` to carry each texel back onto the old surface along the same parametric coordinates (a tube's s and phi), or the closest point lands on the wrong fold.
 
 ## Published meshes differ from previews
 

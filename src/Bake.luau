@@ -1422,6 +1422,70 @@ function B.project(
 	report.operation = complete(budget, owned)
 	return image, report
 end
+-- Bakes `target`'s texture from `source`'s: each target texel's position (or options.map(position), carrying the target
+-- into the source's space) goes to its closest point on `source` (a Spatial index), where the source triangle's corner
+-- UVs are interpolated with the barycentric weights and `texture` is sampled (bilinear; options.wrap repeats it). A
+-- rebuilt mesh (new topology, UV layout or domain) keeps a painted or baked colour map this way. options.factor(ctx,
+-- colour, hit) -> Color3 adjusts each sample (re-shading where the geometry changed). Texels whose closest source
+-- point lies farther than options.maxDistance (default unlimited) stay uncovered for the padding to fill.
+export type TransferOptions = BakeOptions & {
+	map: ((Vector3) -> Vector3)?,
+	maxDistance: number?,
+	wrap: boolean?,
+	factor: ((Types.BakeContext, Color3, any) -> Color3)?,
+}
+function B.transfer(
+	target: Mesh,
+	source: Mesh,
+	texture: Texture,
+	width: number,
+	height: number,
+	options: TransferOptions?
+): (Texture, BakeReport)
+	local o: any = options or {}
+	local budget, owned = Budget.acquire(o, "Bake.transfer")
+	local index = spatial(source, budget, o)
+	local shared = table.clone(o)
+	shared._budget = budget
+	-- padding runs after the misses are taken out of the coverage, so it fills them from their neighbours
+	shared.padding = nil
+	local map, factor, maxDistance, wrap = o.map, o.factor, o.maxDistance, o.wrap
+	local missed = {}
+	local image, report = B.rasterize(target, width, height, function(ctx)
+		local p = if map then map(ctx.position) else ctx.position
+		local hit = index:closest(p, maxDistance)
+		if not hit then
+			local x = math.floor(ctx.uv.X * width)
+			local y = math.floor(ctx.uv.Y * height)
+			missed[y * width + x] = true
+			return Color3.new(), 0
+		end
+		local t = hit.triangle
+		local f = index.mesh.faces[t.face]
+		local ca, cb, cc = f.corners[t.corners[1]], f.corners[t.corners[2]], f.corners[t.corners[3]]
+		local a, b, c = ca.uv, cb.uv, cc.uv
+		if not (a and b and c) then
+			return Color3.new(), 0
+		end
+		local w = hit.barycentric
+		local color, alpha = texture:sample(a * w.X + b * w.Y + c * w.Z, wrap)
+		if factor then
+			color = factor(ctx, color, hit)
+		end
+		return color, alpha
+	end, shared)
+	for i in missed do
+		if buffer.readu8(report.coverage, i) == 1 then
+			buffer.writeu8(report.coverage, i, 0)
+			report.coveredPixels -= 1
+		end
+	end
+	if o.padding then
+		image = B.dilate(image, report.coverage, o.padding, Budget.options(budget))
+	end
+	report.operation = complete(budget, owned)
+	return image, report
+end
 -- Never called: lets the type checker verify the implementation against Types.BakeLibrary.
 local function _contract(): Types.BakeLibrary
 	return B

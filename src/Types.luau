@@ -162,6 +162,7 @@ export type BakeLibrary = {
 	heightOcclusion: ({ { number } }, any?) -> { { number } },
 	slopeFit: ({ { number } }, { { Vector3? } }, any?) -> ({ { number } }, any),
 	project: (Mesh, Texture, Camera, number, number, BakeOptions?) -> (Texture, BakeReport),
+	transfer: (Mesh, Mesh, Texture, number, number, any?) -> (Texture, BakeReport),
 }
 export type PublishOptions = Publishing.Options
 export type PublishLedger = { Publishing.LedgerEntry }

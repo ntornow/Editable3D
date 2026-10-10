@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.117.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.118.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -91,6 +91,7 @@ Source: [src/Bake.luau](src/Bake.luau)
 - `Bake.flowSmooth(field: { { number } }, directions: { { Vector2 } }, options: FlowSmoothOptions?): { { number } }`
 - `Bake.pointSampler(points: { Vector3 }, values: { number }, radius: number, normals: { Vector3 }?): (Vector3, Vector3?) -> number?`
 - `Bake.project(mesh: Mesh, texture: Texture, camera: Types.Camera, width: number, height: number, options: BakeOptions?): (Texture, BakeReport)`
+- `Bake.transfer(target: Mesh, source: Mesh, texture: Texture, width: number, height: number, options: TransferOptions?): (Texture, BakeReport)`
 
 ## Bezier
 

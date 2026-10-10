@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.118.0
+
+- `Bake.transfer(target, source, texture, width, height, {map, maxDistance, wrap, factor, padding})`: bakes a mesh's texture from another mesh's. Each target texel goes to its closest point on the source (a Spatial index), whose corner UVs are interpolated with the barycentric weights there, and the source texture is sampled. A rebuilt mesh (new topology, UV layout or domain) keeps a painted or baked colour map. `map` carries target positions into the source's space (a surface that moved); `factor(ctx, colour, hit)` re-shades each sample. Texels beyond `maxDistance` stay uncovered so `padding` fills them from their neighbours.
+
 ## 0.117.0
 
 - `Roblox.reshape(parts, map, {changedOnly = true, epsilon})`: parts that no vertex of moved more than `epsilon` (default 1e-5) are left in place: no preview, no publish, their entry and report row marked `unchanged`. Their geometry still joins the normal unification, so changed neighbours keep matching seam normals. A local edit of a chunked mesh (a jaw on a head cut into 27 chunks touches 13) rebuilds and uploads only the chunks it touches.

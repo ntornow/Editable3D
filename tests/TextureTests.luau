@@ -257,6 +257,61 @@ return function(E)
 			end
 		end
 	end)
+	test("Bake.transfer carries a texture onto a re-tessellated surface with its own UV layout", function()
+		-- source: a 2 x 2 stud sheet in the xz plane, uv = position; texture: a smooth gradient (u, v, 0)
+		local function sheet(n, uvOf, y)
+			local rows = {}
+			for r = 1, n do
+				local row = {}
+				for c = 1, n do
+					row[c] = Vector3.new((c - 1) / (n - 1) * 2, y or 0, (r - 1) / (n - 1) * 2)
+				end
+				rows[r] = row
+			end
+			return E.Topology.gridSheet(rows, {
+				uv = function(r, c)
+					return uvOf((c - 1) / (n - 1), (r - 1) / (n - 1))
+				end,
+			})
+		end
+		local source = sheet(3, function(u, v)
+			return Vector2.new(u, v)
+		end)
+		local gradient = T.generate(32, 32, function(_, x, y)
+			return Color3.new((x + 0.5) / 32, (y + 0.5) / 32, 0), 1
+		end)
+		-- target: a finer grid of the same surface whose UVs are rotated a quarter turn
+		local target = sheet(5, function(u, v)
+			return Vector2.new(1 - v, u)
+		end)
+		local out, report = E.Bake.transfer(target, source, gradient, 16, 16)
+		assert(report.coveredPixels > 200, "covered " .. report.coveredPixels)
+		-- the target texel at uv (a, b) lies at u = b, v = 1 - a of the surface, so it carries colour (b, 1 - a)
+		for _, xy in { { 3, 5 }, { 8, 8 }, { 12, 2 } } do
+			local a, b = (xy[1] + 0.5) / 16, (xy[2] + 0.5) / 16
+			color(out:get(xy[1], xy[2]), { b, 1 - a, 0 }, 0.04)
+		end
+		-- lifted a stud above the source, the target reaches it through map, and maxDistance alone leaves it bare
+		local lifted = sheet(5, function(u, v)
+			return Vector2.new(1 - v, u)
+		end, 1)
+		local mapped = E.Bake.transfer(lifted, source, gradient, 16, 16, {
+			map = function(p)
+				return p - Vector3.yAxis
+			end,
+			maxDistance = 0.1,
+		})
+		color(mapped:get(8, 8), { 8.5 / 16, 1 - 8.5 / 16, 0 }, 0.04)
+		local _, bare = E.Bake.transfer(lifted, source, gradient, 16, 16, { maxDistance = 0.1 })
+		assert(bare.coveredPixels == 0, "nothing within 0.1 of the source")
+		-- factor re-shades each sample
+		local dark = E.Bake.transfer(target, source, gradient, 16, 16, {
+			factor = function(_, c)
+				return Color3.new(c.R * 0.5, c.G * 0.5, c.B * 0.5)
+			end,
+		})
+		color(dark:get(8, 8), { 8.5 / 16 * 0.5, (1 - 8.5 / 16) * 0.5, 0 }, 0.03)
+	end)
 	report.success = report.failed == 0
 	test("Guided filter keeps the guide's edges and smooths elsewhere", function()
 		-- guide: a sharp vertical step; input: the same step blurred plus noise
