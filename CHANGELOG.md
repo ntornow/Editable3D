@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.117.0
+
+- `Roblox.reshape(parts, map, {changedOnly = true, epsilon})`: parts that no vertex of moved more than `epsilon` (default 1e-5) are left in place: no preview, no publish, their entry and report row marked `unchanged`. Their geometry still joins the normal unification, so changed neighbours keep matching seam normals. A local edit of a chunked mesh (a jaw on a head cut into 27 chunks touches 13) rebuilds and uploads only the chunks it touches.
+- `Deform.moveTable` probes only the hash cells its tolerance box reaches (usually one instead of 27), with numeric cell keys, and takes a flat list `{x, y, z, dx, dy, dz, x, ...}` as decoded from a large JSON array, without a table per move. A table of per-vertex moves computed offline (relaxation, fitting, smoothing on exported geometry) applies to every split copy of each vertex.
+
 ## 0.116.0
 
 - `Roblox.localContrast(parts, options)`: compresses (or expands) the local contrast of colour maps by scale, in world space. Shading baked at the scale of folds is evened out while detail finer than a cell (seams, creases, streaks) is kept. Pass 1 accumulates texel luminance into world cells (bucketed by normal axis); pass 2 multiplies by (m2/m1)^strength · (m3/m2)^broadStrength with the cell means interpolated between cell centres.

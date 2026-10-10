@@ -1313,10 +1313,16 @@ end
 -- vertices within `weld`, default 1e-3) into a single Mesh, edit returns it with moved vertices (same ids: Sculpt.smooth
 -- with a mask, Sculpt.fair, Sculpt.brush...), and every part's vertices take their welded vertex's new position, so a
 -- smoothing that crosses part seams moves both sides together and opens no crack. map (may be nil) then applies on top.
+-- changedOnly = true leaves alone every part that no vertex of moved more than `epsilon` (default 1e-5): it gets no
+-- preview and no publish, stays visible, and its entry has unchanged = true (its report row too). Its geometry still
+-- joins the normal unification, so the parts that do change keep matching normals along their seams with it. A local
+-- edit of a chunked mesh then rebuilds and uploads only the chunks it touches.
 export type ReshapeOptions = {
 	components: boolean?,
 	weld: number?,
 	edit: ((any) -> any)?,
+	changedOnly: boolean?,
+	epsilon: number?,
 	unify: boolean?,
 	angle: number?,
 	tolerance: number?,
@@ -1324,10 +1330,22 @@ export type ReshapeOptions = {
 	collisionFidelity: Enum.CollisionFidelity?,
 	keep: ((Vector3, MeshPart) -> boolean)?,
 }
-export type ReshapeEntry = { part: MeshPart, bundle: Bundle?, transparency: number, removed: boolean? }
+export type ReshapeEntry = {
+	part: MeshPart,
+	bundle: Bundle?,
+	transparency: number,
+	removed: boolean?,
+	unchanged: boolean?,
+}
 -- published and failures are keyed by part name (parts sharing a name overwrite each other there);
 -- parts lists every entry in order, so same-named parts each keep their result.
-export type ReshapeResult = { part: string, meshId: string?, error: string?, removed: boolean? }
+export type ReshapeResult = {
+	part: string,
+	meshId: string?,
+	error: string?,
+	removed: boolean?,
+	unchanged: boolean?,
+}
 export type ReshapeReport = {
 	success: boolean,
 	published: { [string]: string },
@@ -1372,6 +1390,7 @@ function R.reshape(
 	end
 	-- edit: one welded mesh of every part, edited as a whole (smoothing, fairing, brushes see across part seams)
 	local edited: { [number]: { [number]: Vector3 } } = {}
+	local moved: { [number]: number } = {}
 	if o.edit then
 		local MeshModule = require(script.Parent.Mesh) :: any
 		local weld = o.weld or 1e-3
@@ -1447,15 +1466,22 @@ function R.reshape(
 				labels, infos = Topology.componentLabels(source, { tolerance = o.weld or 1e-4 })
 			end
 			local positions = edited[i]
+			local largest = 0
 			meshes[i] = Deform.map(source, function(position: Vector3, id: number): Vector3
+				local start = position
 				if positions then
 					position = positions[id] or position
 				end
 				if map then
-					return map(position, part, if labels then infos[labels[id]] else nil)
+					position = map(position, part, if labels then infos[labels[id]] else nil)
+				end
+				local d = (position - start).Magnitude
+				if d > largest then
+					largest = d
 				end
 				return position
 			end)
+			moved[i] = largest
 		end
 	end
 	if o.unify ~= false then
@@ -1475,10 +1501,15 @@ function R.reshape(
 		end
 	end
 	local entries: { ReshapeEntry } = {}
+	local epsilon = o.epsilon or 1e-5
 	for i, part in parts do
 		if not meshes[i] then
 			table.insert(entries, { part = part, transparency = part.Transparency, removed = true })
 			part.Transparency = 1
+			continue
+		end
+		if o.changedOnly and (moved[i] or 0) <= epsilon then
+			table.insert(entries, { part = part, transparency = part.Transparency, unchanged = true })
 			continue
 		end
 		local bundle = R.toModel(meshes[i], {
@@ -1516,6 +1547,10 @@ function R.reshape(
 			local part = e.part
 			if e.removed then
 				table.insert(removed, e)
+				continue
+			end
+			if e.unchanged then
+				table.insert(report.parts, { part = part.Name, unchanged = true })
 				continue
 			end
 			local bundle = e.bundle :: Bundle

@@ -677,49 +677,83 @@ function D.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (
 end
 -- A position map from a table of per-vertex moves computed elsewhere (offline relaxation, repair or
 -- fitting passes on exported geometry): moves[i] = { x, y, z, dx, dy, dz } moves a vertex found at
--- (x, y, z) by (dx, dy, dz). Positions are matched in a hash of `cell` (default 0.01) within
--- `tolerance` (default 0.003) per axis, so every split copy of a vertex (UV seams, soups, chunked
--- parts) moves with it; unmatched positions pass through. Returns the field and a live stats table
--- { size, hits }. Use it as Roblox.reshape's map to apply corrections without re-deriving them in Luau.
+-- (x, y, z) by (dx, dy, dz); a flat list { x1, y1, z1, dx1, dy1, dz1, x2, ... } (as decoded from a large
+-- JSON array, without a table per move) works too. Positions are matched in a hash of `cell` (default
+-- 0.01) within `tolerance` (default 0.003) per axis, so every split copy of a vertex (UV seams, soups,
+-- chunked parts) moves with it; unmatched positions pass through. Only the cells the tolerance box
+-- reaches are probed (usually one). Returns the field and a live stats table { size, hits }. Use it as
+-- Roblox.reshape's map to apply corrections without re-deriving them in Luau (with changedOnly, so
+-- chunks the table never touches are not rebuilt).
 export type MoveTableOptions = { cell: number?, tolerance: number? }
 function D.moveTable(
-	moves: { { number } },
+	moves: { any },
 	options: MoveTableOptions?
 ): ((Vector3) -> Vector3, { size: number, hits: number })
 	local o: MoveTableOptions = options or {}
 	local cell = o.cell or 0.01
 	local tol = o.tolerance or 0.003
 	assert(cell > 0 and tol >= 0 and tol < cell, "moveTable needs 0 <= tolerance < cell")
-	local hash: { [string]: { { number } } } = {}
-	local function key(x: number, y: number, z: number): string
-		return string.format("%d,%d,%d", x, y, z)
+	-- numeric cell keys: a collision only adds candidates, since every candidate's distance is checked
+	local function key(x: number, y: number, z: number): number
+		return x * 73856093 + y * 19349663 + z * 83492791
 	end
-	for _, m in moves do
-		assert(#m >= 6, "moveTable entries are { x, y, z, dx, dy, dz }")
-		local k = key(math.floor(m[1] / cell), math.floor(m[2] / cell), math.floor(m[3] / cell))
+	local hash: { [number]: { number } } = {}
+	local entries: { number } = {}
+	local function add(x: number, y: number, z: number, dx: number, dy: number, dz: number)
+		local n = #entries
+		entries[n + 1], entries[n + 2], entries[n + 3] = x, y, z
+		entries[n + 4], entries[n + 5], entries[n + 6] = dx, dy, dz
+		local k = key(math.floor(x / cell), math.floor(y / cell), math.floor(z / cell))
 		local list = hash[k]
 		if not list then
 			list = {}
 			hash[k] = list
 		end
-		table.insert(list, m)
+		table.insert(list, n + 1)
 	end
-	local stats = { size = #moves, hits = 0 }
+	local size = 0
+	if type(moves[1]) == "number" then
+		assert(#moves % 6 == 0, "a flat moveTable has six numbers per move")
+		for i = 1, #moves, 6 do
+			add(moves[i], moves[i + 1], moves[i + 2], moves[i + 3], moves[i + 4], moves[i + 5])
+		end
+		size = #moves // 6
+	else
+		for _, m in moves do
+			assert(#m >= 6, "moveTable entries are { x, y, z, dx, dy, dz }")
+			add(m[1], m[2], m[3], m[4], m[5], m[6])
+		end
+		size = #moves
+	end
+	local stats = { size = size, hits = 0 }
+	-- the neighbouring cells along one axis that a box of half-width tol around v reaches
+	local function span(v: number): (number, number)
+		local c = math.floor(v / cell)
+		local lo = if v - c * cell < tol then c - 1 else c
+		local hi = if (c + 1) * cell - v <= tol then c + 1 else c
+		return lo, hi
+	end
 	local function field(p: Vector3): Vector3
-		local cx, cy, cz = math.floor(p.X / cell), math.floor(p.Y / cell), math.floor(p.Z / cell)
-		for dx = -1, 1 do
-			for dy = -1, 1 do
-				for dz = -1, 1 do
-					local list = hash[key(cx + dx, cy + dy, cz + dz)]
+		local x0, x1 = span(p.X)
+		local y0, y1 = span(p.Y)
+		local z0, z1 = span(p.Z)
+		for cx = x0, x1 do
+			for cy = y0, y1 do
+				for cz = z0, z1 do
+					local list = hash[key(cx, cy, cz)]
 					if list then
-						for _, m in list do
+						for _, i in list do
 							if
-								math.abs(m[1] - p.X) <= tol
-								and math.abs(m[2] - p.Y) <= tol
-								and math.abs(m[3] - p.Z) <= tol
+								math.abs(entries[i] - p.X) <= tol
+								and math.abs(entries[i + 1] - p.Y) <= tol
+								and math.abs(entries[i + 2] - p.Z) <= tol
 							then
 								stats.hits += 1
-								return Vector3.new(p.X + m[4], p.Y + m[5], p.Z + m[6])
+								return Vector3.new(
+									p.X + entries[i + 3],
+									p.Y + entries[i + 4],
+									p.Z + entries[i + 5]
+								)
 							end
 						end
 					end

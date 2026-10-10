@@ -603,6 +603,36 @@ return function(E, options)
 		holder:Destroy()
 		assert(ok, err)
 	end)
+	test("Roblox.reshape with changedOnly leaves untouched parts in place without a preview", function()
+		local a = E.Roblox.toModel(E.Primitives.box(Vector3.new(1, 1, 1)), { name = "MovedBox" })
+		local b = E.Roblox.toModel(
+			E.Deform.transform(E.Primitives.box(Vector3.new(1, 1, 1)), CFrame.new(3, 0, 0)),
+			{ name = "StillBox" }
+		)
+		local holder = Instance.new("Folder")
+		a.model.Parent = holder
+		b.model.Parent = holder
+		local pa, pb = a.handles[1].part, b.handles[1].part
+		local ok, err = pcall(function()
+			-- lift only what lies left of x = 1.5: the first box
+			local handle = E.Roblox.reshape({ pa, pb }, function(p)
+				return if p.X < 1.5 then p + Vector3.new(0, 2, 0) else p
+			end, { changedOnly = true })
+			local ea, eb = handle.entries[1], handle.entries[2]
+			assert(ea.bundle and not ea.unchanged, "the moved part is previewed")
+			assert(pa.Transparency == 1, "the moved part's original is hidden")
+			assert(eb.unchanged and eb.bundle == nil, "the untouched part gets no preview")
+			assert(pb.Transparency == 0, "the untouched part stays visible")
+			local m = E.Roblox.fromPart(ea.bundle.handles[1].part)
+			for _, p in m.vertices do
+				assert(p.Y > 1.4, "the preview carries the move: " .. p.Y)
+			end
+			handle:revert()
+			assert(pa.Transparency == 0 and pb.Transparency == 0, "revert shows both")
+		end)
+		holder:Destroy()
+		assert(ok, err)
+	end)
 	test("Roblox.reshape with components passes each vertex's piece, so pieces move whole", function()
 		local a = E.Primitives.box(Vector3.new(1, 1, 1))
 		local b = E.Deform.transform(E.Primitives.box(Vector3.new(1, 1, 1)), CFrame.new(1.2, 0, 0))
