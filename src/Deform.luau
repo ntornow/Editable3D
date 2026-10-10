@@ -880,8 +880,10 @@ function D.cylindricalMap(
 		local q = frame:PointToObjectSpace(p)
 		local r = math.sqrt(q.X * q.X + q.Z * q.Z)
 		local phi = if r < 1e-9 then 0 else math.deg(math.atan2(-q.Z, q.X))
-		local r2, phi2, h2 = fn(r, phi, q.Y)
-		r2, phi2, h2 = r2 or r, phi2 or phi, h2 or q.Y
+		local nr, nphi, nh = fn(r, phi, q.Y)
+		local r2: number = if nr == nil then r else nr
+		local phi2: number = if nphi == nil then phi else nphi
+		local h2: number = if nh == nil then q.Y else nh
 		assert(U.finite(r2) and U.finite(phi2) and U.finite(h2), "cylindricalMap returned invalid values")
 		local a = math.rad(phi2)
 		return frame:PointToWorldSpace(Vector3.new(r2 * math.cos(a), h2, -r2 * math.sin(a)))
