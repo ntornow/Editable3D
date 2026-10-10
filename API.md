@@ -1,6 +1,6 @@
 # Editable3D API reference
 
-Public callable signatures for version 0.120.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
+Public callable signatures for version 0.121.0. See [README.md](README.md) for coordinate, mutation, scope and algorithm contracts.
 
 Typed boundary contracts and resource/publishing options: [PRODUCTION.md](PRODUCTION.md). Development and release workflow: [MAINTAINING.md](MAINTAINING.md).
 
@@ -243,6 +243,8 @@ Source: [src/Deform.luau](src/Deform.luau)
 - `Deform.edge(mesh: Mesh, view: View, polyline: { Vector2 }, options: EdgeOptions?): Mesh`
 - `Deform.edgeField(view: View, polyline: { Vector2 }, options: EdgeOptions): (Vector3) -> Vector3`
 - `Deform.moveTable(moves: { any }, options: MoveTableOptions?): ((Vector3) -> Vector3, { size: number, hits: number })`
+- `Deform.mapComponents(mesh: Mesh, fn: (ComponentPiece) -> ((Vector3, number) -> Vector3)?, weld: number?): Mesh`
+- `Deform.segmentMap(a0: Vector3, b0: Vector3, a1: Vector3, b1: Vector3, across: (number | (number) -> number)?): (Vector3) -> Vector3`
 - `Deform.taperComponents(mesh: Mesh, anchor: Vector3, baseScale: number, tipScale: number?, weld: number?): Mesh`
 - `Deform.sectionScale(mesh: Mesh, frame: CFrame, section: (number) -> (number?, number?, number?), options: SectionScaleOptions?): Mesh`
 - `Deform.sectionScaleMap(frame: CFrame, section: (number) -> (number?, number?, number?), blend: number?): (Vector3) -> Vector3`

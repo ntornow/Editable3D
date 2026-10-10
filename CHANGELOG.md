@@ -1,5 +1,11 @@
 # Editable3D changes
 
+## 0.121.0
+
+- `Deform.mapComponents(mesh, fn, weld?)`: a separate point map for every connected piece of a mesh (welded within `weld` like `Topology.componentLabels`). `fn(piece)` gets the piece's index, vertex count, centre, principal axis, its extreme points on the axis (`lo`, `hi`), length and bounds, and returns a map for that piece's vertices or nil. Rays round a crown, fingers or petals each get their own transform.
+- `Deform.segmentMap(a0, b0, a1, b1, across?)`: a point map carrying the segment a0 -> b0 onto a1 -> b1. The axial coordinate scales with the length ratio; the offset from the axis turns by the least rotation between the two directions and scales by `across` (a number, or a function of u from 0 at a0 to 1 at b0). It re-aims and re-proportions a spike, ray, finger or branch about its own axis.
+- `Deform.taperComponents` is now built on these. Each vertex is scaled about its own welded piece's axis. Before, it took the nearest piece's axis, so pieces whose bases overlap (spikes fanning from one hub, rays round a band) traded vertices and tore into fins.
+
 ## 0.120.0
 
 - `Deform.cylindricalMap(frame, fn)`: a point map in cylindrical coordinates about a frame's Y axis for `Roblox.reshape` or `Deform.map`. `fn(r, phi, h)` returns the new radius, angle (degrees, 0 toward +X, 90 toward -Z) and height, nil to keep one. Pieces squeezed toward a handle over an angular sector, a sleeve swelled toward one side and a band lifted round a waist each take a few lines.

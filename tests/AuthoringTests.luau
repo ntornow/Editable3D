@@ -1978,6 +1978,98 @@ return function(E)
 			near(radiusAt(out, dir, 5), 0.5, 1e-3)
 		end
 	end)
+	test(
+		"Deform.taperComponents keeps spikes with overlapping bases apart (each vertex by its own piece)",
+		function()
+			local function spike(dir)
+				local c = E.Primitives.cylinder(0.5, 4, 12)
+				local frame = CFrame.lookAt(dir * 2.2, dir * 4.2) * CFrame.Angles(-math.pi / 2, 0, 0)
+				return E.Deform.transform(c, frame, nil, { normals = "transform" })
+			end
+			-- two spikes 20 degrees apart from near the origin: their bases overlap
+			local a = spike(Vector3.xAxis)
+			local b = spike(Vector3.new(math.cos(math.rad(20)), math.sin(math.rad(20)), 0))
+			local joined = E.Deform.taperComponents(E.Topology.join({ a, b }), Vector3.zero, 2, 1)
+			local ref = {}
+			for _, piece in
+				{
+					E.Deform.taperComponents(a, Vector3.zero, 2, 1),
+					E.Deform.taperComponents(b, Vector3.zero, 2, 1),
+				}
+			do
+				for _, v in piece.vertices do
+					table.insert(ref, v)
+				end
+			end
+			local worst = 0
+			for _, v in joined.vertices do
+				local best = math.huge
+				for _, r in ref do
+					best = math.min(best, (v - r).Magnitude)
+				end
+				worst = math.max(worst, best)
+			end
+			assert(worst < 1e-4, "every vertex scaled about its own spike: worst " .. worst)
+		end
+	)
+	test("Deform.segmentMap re-aims a segment, scales its length and turns and scales the offsets", function()
+		-- +y of length 2 onto +z of length 4: the least rotation is a quarter turn about +x
+		local map =
+			E.Deform.segmentMap(Vector3.zero, Vector3.new(0, 2, 0), Vector3.xAxis, Vector3.new(1, 0, 4), 0.5)
+		near((map(Vector3.new(0, 1, 0)) - Vector3.new(1, 0, 2)).Magnitude, 0, 1e-6)
+		near((map(Vector3.new(0.3, 1, 0)) - Vector3.new(1.15, 0, 2)).Magnitude, 0, 1e-6)
+		near((map(Vector3.new(0, 1, 0.2)) - Vector3.new(1, -0.1, 2)).Magnitude, 0, 1e-6)
+		near((map(Vector3.new(0, 2, 0)) - Vector3.new(1, 0, 4)).Magnitude, 0, 1e-6)
+		-- across as a function of u (0 at a0, 1 at b0), clamped beyond the ends
+		local tapered = E.Deform.segmentMap(
+			Vector3.zero,
+			Vector3.yAxis,
+			Vector3.zero,
+			Vector3.yAxis,
+			function(u)
+				return 2 - u
+			end
+		)
+		near(tapered(Vector3.new(0.1, 0, 0)).X, 0.2, 1e-6)
+		near(tapered(Vector3.new(0.1, 0.5, 0)).X, 0.15, 1e-6)
+		near(tapered(Vector3.new(0.1, 3, 0)).X, 0.1, 1e-6)
+		near(tapered(Vector3.new(0.1, 3, 0)).Y, 3, 1e-6)
+		-- opposite directions: a half turn
+		local flip = E.Deform.segmentMap(Vector3.zero, Vector3.xAxis, Vector3.zero, -Vector3.xAxis)
+		near((flip(Vector3.new(0.5, 0, 0)) - Vector3.new(-0.5, 0, 0)).Magnitude, 0, 1e-6)
+		near(flip(Vector3.new(0, 0.3, 0)).Magnitude, 0.3, 1e-6)
+	end)
+	test("Deform.mapComponents gives each welded piece its own map and its axis, ends and length", function()
+		local function rod(at)
+			local c = E.Primitives.cylinder(0.25, 4, 8)
+			return E.Deform.transform(c, CFrame.new(at), nil, { normals = "transform" })
+		end
+		local seen = {}
+		local out = E.Deform.mapComponents(
+			E.Topology.join({ rod(Vector3.new(-3, 0, 0)), rod(Vector3.new(3, 0, 0)) }),
+			function(piece)
+				table.insert(seen, piece)
+				near(math.abs(piece.axis.Y), 1, 1e-6)
+				near(piece.length, 4, 1e-6)
+				near(math.min(piece.lo.Y, piece.hi.Y), -2, 1e-6)
+				near(math.max(piece.lo.Y, piece.hi.Y), 2, 1e-6)
+				if piece.center.X > 0 then
+					return function(v)
+						return v + Vector3.new(0, 0, 5)
+					end
+				end
+				return nil
+			end
+		)
+		assert(#seen == 2, "two pieces, got " .. #seen)
+		for _, v in out.vertices do
+			if v.X > 0 then
+				near(v.Z, 5, 1.0)
+			else
+				near(v.Z, 0, 0.5)
+			end
+		end
+	end)
 	test("Topology.componentLabels welds a triangle soup into its solid pieces", function()
 		local m = E.Mesh.new()
 		-- two tetrahedra as triangle soup: every face has its own three vertices

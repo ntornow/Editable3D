@@ -764,11 +764,139 @@ function D.moveTable(
 	end
 	return field, stats
 end
+export type ComponentPiece = {
+	index: number,
+	count: number,
+	center: Vector3,
+	axis: Vector3,
+	lo: Vector3,
+	hi: Vector3,
+	length: number,
+	min: Vector3,
+	max: Vector3,
+}
+-- Applies a separate point map to every connected piece of a mesh (rays round a crown, fingers, petals, branches):
+-- pieces are its components with coincident vertices welded within weld (default 1e-4), as Topology.componentLabels
+-- finds them, so soups and seam-split read-backs work. fn(piece) returns a map (position, vertex id) -> position for
+-- that piece's vertices, or nil to leave it. piece: index, vertex count, center and axis (the area-weighted
+-- principal axis, unit), lo and hi (the extreme points on the axis line, lo at the smaller axial coordinate), length
+-- (|hi - lo|), min and max (bounds). Every vertex goes to its own piece, never to the nearest piece's axis, so pieces
+-- whose ends overlap stay apart. The returned mesh keeps the input's topology, corners and UVs.
+function D.mapComponents(
+	mesh: Mesh,
+	fn: (ComponentPiece) -> ((Vector3, number) -> Vector3)?,
+	weld: number?
+): Mesh
+	local Topology = require(script.Parent.Topology) :: any
+	local Geometry = require(script.Parent.Geometry) :: any
+	local MeshModule = require(script.Parent.Mesh) :: any
+	local labels, infos = Topology.componentLabels(mesh, { tolerance = weld or 1e-4 })
+	local subs: { [number]: any } = {}
+	local remap: { [number]: number } = {}
+	for _, f in mesh.faces do
+		local label = labels[f.vertices[1]]
+		local sub = subs[label]
+		if not sub then
+			sub = MeshModule.new()
+			subs[label] = sub
+		end
+		local ids = {}
+		for _, v in f.vertices do
+			local id = remap[v]
+			if not id then
+				id = sub:addVertex(mesh.vertices[v])
+				remap[v] = id
+			end
+			table.insert(ids, id)
+		end
+		pcall(sub.addFace, sub, ids)
+	end
+	local maps: { [number]: (Vector3, number) -> Vector3 } = {}
+	for label, info in infos do
+		local sub = subs[label]
+		local ok, pa = false, nil
+		if sub then
+			ok, pa = pcall(Geometry.principalAxes, sub)
+		end
+		if ok and pa then
+			local axis: Vector3 = pa.axes[1]
+			local lo, hi = math.huge, -math.huge
+			for _, v in sub.vertices do
+				local t = (v - pa.center):Dot(axis)
+				lo, hi = math.min(lo, t), math.max(hi, t)
+			end
+			local piece: ComponentPiece = {
+				index = label,
+				count = info.count,
+				center = pa.center,
+				axis = axis,
+				lo = pa.center + axis * lo,
+				hi = pa.center + axis * hi,
+				length = hi - lo,
+				min = info.min,
+				max = info.max,
+			}
+			local map = fn(piece)
+			if map then
+				maps[label] = map
+			end
+		end
+	end
+	return D.map(mesh, function(v: Vector3, id: number): Vector3
+		local map = maps[labels[id]]
+		return if map then map(v, id) else v
+	end)
+end
+-- A point map that carries the segment a0 -> b0 onto a1 -> b1 (re-aims and re-proportions a spike, ray, finger or
+-- branch about its axis): each point's coordinate along a0 -> b0 scales with the length ratio, and its offset from
+-- that axis turns by the least rotation taking the old direction onto the new one and scales by across, a number or
+-- a function of u (0 at a0, 1 at b0, clamped to [0, 1] beyond the ends; default 1). Pair with Deform.mapComponents
+-- for one map per piece.
+function D.segmentMap(
+	a0: Vector3,
+	b0: Vector3,
+	a1: Vector3,
+	b1: Vector3,
+	across: (number | (number) -> number)?
+): (Vector3) -> Vector3
+	local d0, d1 = b0 - a0, b1 - a1
+	local l0, l1 = d0.Magnitude, d1.Magnitude
+	assert(l0 > 1e-9 and l1 > 1e-9, "segmentMap needs segments of nonzero length")
+	local u0, u1 = d0 / l0, d1 / l1
+	local cross = u0:Cross(u1)
+	local dot = math.clamp(u0:Dot(u1), -1, 1)
+	local turn = CFrame.identity
+	if cross.Magnitude > 1e-9 then
+		turn = CFrame.fromAxisAngle(cross.Unit, math.acos(dot))
+	elseif dot < 0 then
+		-- opposite directions: a half turn about any perpendicular
+		local side = if math.abs(u0.X) < 0.9 then Vector3.xAxis else Vector3.yAxis
+		turn = CFrame.fromAxisAngle(u0:Cross(side).Unit, math.pi)
+	end
+	local scaleAt: (number) -> number
+	if type(across) == "function" then
+		scaleAt = across
+	else
+		local k: number = if across == nil then 1 else across :: number
+		scaleAt = function(): number
+			return k
+		end
+	end
+	return function(p: Vector3): Vector3
+		local t = (p - a0):Dot(u0)
+		local offset = (p - a0) - u0 * t
+		local u = t / l0
+		local k = scaleAt(math.clamp(u, 0, 1))
+		assert(U.finite(k), "segmentMap across returned an invalid scale")
+		return a1 + u1 * (u * l1) + turn:VectorToWorldSpace(offset) * k
+	end
+end
 -- Thickens or thins elongated pieces (rays, spikes, petals, fingers) independently: every
 -- connected component (welded within weld, default 1e-4) gets its principal axis, its base is the
 -- end nearer `anchor`, and points are scaled about the axis by baseScale at the base blending
 -- linearly to tipScale at the tip. Works on soups (components come from a welded copy; the
--- returned mesh keeps the input's topology, corners and UVs).
+-- returned mesh keeps the input's topology, corners and UVs). Each vertex is scaled about its own
+-- piece's axis (Deform.mapComponents with Deform.segmentMap).
 function D.taperComponents(
 	mesh: Mesh,
 	anchor: Vector3,
@@ -776,45 +904,22 @@ function D.taperComponents(
 	tipScale: number?,
 	weld: number?
 ): Mesh
-	local Topology = require(script.Parent.Topology) :: any
-	local Geometry = require(script.Parent.Geometry) :: any
-	local welded = Topology.weld(mesh, weld or 1e-4)
-	local pieces = Topology.components(welded)
 	local tip = tipScale or 1
-	local rays = {}
-	for _, piece in pieces do
-		local pa = Geometry.principalAxes(piece)
-		local axis = pa.axes[1]
-		local lo, hi = math.huge, -math.huge
-		for _, v in piece.vertices do
-			local t = (v - pa.center):Dot(axis)
-			lo, hi = math.min(lo, t), math.max(hi, t)
+	return D.mapComponents(mesh, function(piece: ComponentPiece): ((Vector3, number) -> Vector3)?
+		if piece.length < 1e-9 then
+			return nil
 		end
-		local baseT = if (anchor - pa.center):Dot(axis) < 0 then lo else hi
-		local tipT = if baseT == lo then hi else lo
-		table.insert(rays, { c = pa.center, a = axis, base = baseT, tip = tipT })
-	end
-	return D.map(mesh, function(v: Vector3): Vector3
-		local best, ray = math.huge, nil
-		for _, r in rays do
-			local d = v - r.c
-			local radial = (d - r.a * d:Dot(r.a)).Magnitude
-			local along = d:Dot(r.a)
-			local outside = math.max(0, math.min(r.base, r.tip) - along, along - math.max(r.base, r.tip))
-			local score = radial + outside
-			if score < best then
-				best, ray = score, r
-			end
+		local base, far = piece.lo, piece.hi
+		if (anchor - piece.hi).Magnitude < (anchor - piece.lo).Magnitude then
+			base, far = piece.hi, piece.lo
 		end
-		if not ray then
-			return v
+		local map = D.segmentMap(base, far, base, far, function(u: number): number
+			return baseScale + (tip - baseScale) * u
+		end)
+		return function(v: Vector3): Vector3
+			return map(v)
 		end
-		local t = (v - ray.c):Dot(ray.a)
-		local u = if ray.tip ~= ray.base then math.clamp((t - ray.base) / (ray.tip - ray.base), 0, 1) else 0
-		local k = baseScale + (tip - baseScale) * u
-		local axial = ray.c + ray.a * t
-		return axial + (v - axial) * k
-	end)
+	end, weld)
 end
 export type SectionScaleOptions = {
 	mask: Mask?,
