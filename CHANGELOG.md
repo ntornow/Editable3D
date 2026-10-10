@@ -1,5 +1,11 @@
 # Editable3D changes
 
+## 0.122.1
+
+- `Roblox.sweep` no longer destroys or counts again an editable that an earlier sweep destroyed and the swept value still references. The report's new `stale` field counts those; a destroyed EditableImage reads as 1x1 and raises nothing, so it could not be told apart before. `destroyed` now counts each object once across sweeps.
+- New guide [PUBLISHED_PARTS.md](PUBLISHED_PARTS.md): reading published parts back, `Roblox.reshape` and its options, the re-texturing passes (`modulateColor`, `rebake`, `localContrast`, `fillColor`, `bakeCavity`, `bakeNormalMap`) with `publishMaterials`, `gridModel` and `Bake.transfer`, staged replacement, resume ledgers, and `release`/`sweep`/`liveEditables`. [DEFORMATION.md](DEFORMATION.md) documents the position-only point maps (`map`, `sectionScale(Map)`, `cylindricalMap`, `mapComponents`, `segmentMap`, `taperComponents`, `moveTable`).
+- Tests: `segmentMap` rejections, `mapComponents` piece fields, topology and skipped pieces without area, `taperComponents` corner data, repeated sweeps; chunked publishes carrying their chunks' cleanup and rollback errors, and resumes compared by a backend's own equivalence. The publishing core's line coverage is now 100% (`tools/coverage.py`).
+
 ## 0.122.0
 
 - `Roblox.sweep(value, {keep = {...}})`: editables listed in `keep`, or held in tables listed there (searched like `value`), are never destroyed. A session reuses some editables across builds without displaying them, such as a shared roughness and metalness pair attached to every new part. Once their parts were published nothing displayed them, a sweep destroyed them, and later builds attached and uploaded them as 1x1 images.

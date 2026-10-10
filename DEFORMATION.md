@@ -237,3 +237,60 @@ The view coordinates in `target(q, front)` are relative to the view frame: `q.Y`
   - Multiply the bake by `1 - k * smoothstep(0.04, 0.54, occlusion)` with k of about 0.35.
   - Then compare the 10th, 50th and 90th luminance percentiles against a reference photo. Stronger darkening overshoots the darks.
 
+
+## Point maps for read-back and published meshes
+
+These functions move vertices by position alone. They work on triangle soups, seam-split read-backs (`Roblox.fromPart` returns one vertex per triangle corner) and chunked meshes, and every split copy of a vertex moves with it. Most return a map `(Vector3) -> Vector3` for `Roblox.reshape(parts, map, options)` or `Deform.map`. See [PUBLISHED_PARTS.md](PUBLISHED_PARTS.md) for the reshape round trip.
+
+`Deform.map(mesh, callback(position, id), mask?)` returns a copy whose vertices are `lerp(position, callback(position, id), mask[id])` (mask default 1). Normals are recalculated from the new positions, so an unwelded read-back comes out faceted: weld it first, or use the map inside `Roblox.reshape`, which unifies normals across all parts afterwards.
+
+### Section maps
+
+`Deform.sectionScaleMap(frame, section, blend?)` and `Deform.sectionScale(mesh, frame, section, {mask, blend})` scale every section of a mesh along the frame's local Z, separately on either side of a per-height centre. `section(height) -> (centre, below, above)` gives, at local Y = height, the centre and the scales for points with local Z below and above it; nil leaves the height alone. `blend` (studs, default 0) moves from one scale to the other over `centre ± blend` instead of switching at the centre. Positions alone decide the result, so soups stay closed. Use it to fit a figure's front and back profiles to measured elevations independently, fading the scales to 1 where the fit should stop.
+
+`Deform.cylindricalMap(frame, fn)` maps points in cylindrical coordinates about the frame's local Y axis. `fn(r, phi, h) -> (r', phi', h')` receives each point's radius, angle (degrees: 0 toward the frame's +X, 90 toward its −Z, in (−180, 180]) and height, and returns new values; nil keeps one. Points on the axis (r < 1e-9) keep angle 0. Squeezing pieces toward an axis over an angular sector, swelling one side of a tube, or lifting a band round a waist each take a few lines.
+
+### Per-piece maps
+
+`Deform.mapComponents(mesh, fn, weld?)` applies a separate map to every connected piece of a mesh: spikes round a hub, fingers, petals, bolts. Pieces are found as in `Topology.componentLabels`, with coincident vertices welded within `weld` (default 1e-4). `fn(piece)` returns a map `(position, id) -> position` for that piece's vertices, or nil to leave it. `piece` holds:
+
+- `index`, `count` (its vertices) and `min`, `max` (its bounds);
+- `center` and `axis`: the area-weighted principal axis, a unit vector;
+- `lo`, `hi`: the extreme points on the axis line, `lo` at the smaller axial coordinate;
+- `length`: `|hi − lo|`.
+
+Every vertex is mapped by its own piece. Choosing the nearest piece's axis per vertex makes pieces whose bases overlap trade vertices and tear. A piece without area (its principal axes are undefined) is left unchanged and `fn` is not called for it. The result keeps vertex and face ids, face order and corner data (UVs); normals are recalculated as in `Deform.map`.
+
+`Deform.segmentMap(a0, b0, a1, b1, across?)` carries the segment `a0 → b0` onto `a1 → b1`. A point's coordinate along `a0 → b0` scales with the length ratio. Its offset from that axis turns by the least rotation taking the old direction onto the new one (a half turn for opposite directions), then scales by `across`: a number, or a function of `u` (0 at `a0`, 1 at `b0`, clamped to [0, 1] beyond the ends), default 1. Zero-length segments and non-finite scales reject. With `mapComponents` it re-aims, re-lengthens and re-thickens each piece about its own axis:
+
+```luau
+local edited = E.Deform.mapComponents(mesh, function(piece)
+    local target = targetFor(piece.center)    -- your measured end points nearest this piece, or nil
+    if not target then
+        return nil
+    end
+    -- lo and hi follow the axis direction: take the end nearer the hub as the base
+    local base, tip = piece.lo, piece.hi
+    if (hub - piece.hi).Magnitude < (hub - piece.lo).Magnitude then
+        base, tip = piece.hi, piece.lo
+    end
+    local map = E.Deform.segmentMap(base, tip, target.base, target.tip, function(u)
+        return 1.4 - 0.4 * u                  -- 1.4x as thick at the base, unchanged at the tip
+    end)
+    return function(position)
+        return map(position)
+    end
+end)
+```
+
+`piece.index` labels a piece within one call; match pieces to outside data by position (`center`, `lo`, `hi`), not by index.
+
+Inside `Roblox.reshape(parts, nil, {edit = function(mesh) return E.Deform.mapComponents(mesh, fn) end})` the pieces are found across all the parts at once.
+
+`Deform.taperComponents(mesh, anchor, baseScale, tipScale?, weld?)` is the common case: each piece is scaled about its own axis by `baseScale` at the end nearer `anchor`, blending linearly to `tipScale` (default 1) at the far end.
+
+### Tables of moves
+
+`Deform.moveTable(moves, {cell, tolerance})` turns per-vertex moves computed elsewhere into a map. Typical sources are an offline relaxation, fit or repair on exported geometry. `moves[i] = {x, y, z, dx, dy, dz}` moves a vertex found at `(x, y, z)` by `(dx, dy, dz)`; a flat list `{x1, y1, z1, dx1, dy1, dz1, x2, ...}` (as decoded from a large JSON array, without a table per move) works too.
+
+Positions are matched in a hash of `cell` studs (default 0.01) within `tolerance` (default 0.003) per axis, so every split copy of a vertex (UV seams, soups, chunks) moves with it; unmatched positions pass through. It returns the map and a live `{size, hits}` table. Apply it with `Roblox.reshape(parts, field, {changedOnly = true})`, so chunks the table never touches are not rebuilt.

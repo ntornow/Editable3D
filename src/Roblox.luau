@@ -801,7 +801,9 @@ export type SweepOptions = {
 	checkpoint: (() -> ())?,
 	isEditable: ((any) -> boolean)?,
 }
-export type SweepReport = { destroyed: number, kept: number, tables: number }
+export type SweepReport = { destroyed: number, kept: number, tables: number, stale: number }
+-- editables a sweep destroyed (weakly held): a later sweep that still reaches them counts them as stale
+local sweptEditables: { [any]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 -- Destroys the editable meshes and images reachable from value (keys and values of nested tables, up
 -- to depth levels, default 8) that nothing under roots displays (Roblox.liveEditables, or the live
 -- set given). Long sessions keep build results (bundles, preview images) in tables; dropping a table
@@ -811,13 +813,15 @@ export type SweepReport = { destroyed: number, kept: number, tables: number }
 -- that a session reuses across builds without displaying them (shared material maps, templates). A sweep
 -- destroyed a session's shared roughness and metalness images, which no part displayed once its parts were
 -- published; later builds used them as 1x1 images. dryRun only counts. checkpoint (e.g. task.wait) runs every
--- 50,000 keys and values. isEditable replaces the engine check, for wrapped objects.
+-- 50,000 keys and values. isEditable replaces the engine check, for wrapped objects. stale counts editables an earlier
+-- sweep already destroyed that value still references: they are neither destroyed nor counted again (a destroyed
+-- EditableImage reads as a 1x1 image and raises nothing, so it cannot be told apart otherwise).
 function R.sweep(value: any, options: SweepOptions?): SweepReport
 	local o: SweepOptions = options or {}
 	local live = o.live or R.liveEditables(o.roots)
 	local detect = o.isEditable or isEditableObject
 	local limit = o.depth or 8
-	local report: SweepReport = { destroyed = 0, kept = 0, tables = 0 }
+	local report: SweepReport = { destroyed = 0, kept = 0, tables = 0, stale = 0 }
 	local spare: { [any]: boolean } = {}
 	if o.keep then
 		local searched = {}
@@ -855,11 +859,14 @@ function R.sweep(value: any, options: SweepOptions?): SweepReport
 			seen[v] = true
 			if live[v] or spare[v] then
 				report.kept += 1
+			elseif sweptEditables[v] then
+				report.stale += 1
 			else
 				if not o.dryRun then
 					pcall(function()
 						v:Destroy()
 					end)
+					sweptEditables[v] = true
 				end
 				report.destroyed += 1
 			end

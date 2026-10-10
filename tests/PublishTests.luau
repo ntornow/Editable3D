@@ -232,6 +232,24 @@ return function()
 		assert(not r.success and string.find(r.error, "Resume source changed") and s.uploads == 1)
 		cleaned(s)
 	end)
+	test("Resume and readback compare with the backend's equivalence when it has no digest", function()
+		local bundle, b, s, _p, mesh = fixture()
+		local calls = 0
+		b.equivalent = function(_kind, a, c)
+			calls += 1
+			return string.lower(tostring(a)) == string.lower(tostring(c))
+		end
+		local ledger = {}
+		s.stageFail = true
+		P.run(bundle, nil, { resume = ledger, attempts = 1 }, b)
+		assert(s.uploads == 1, "the mesh uploaded before staging failed")
+		s.stageFail = false
+		-- equivalent under the backend's rule (case-insensitive): resumes instead of uploading again
+		mesh.data = string.upper(mesh.data)
+		local r = P.run(bundle, nil, { resume = ledger }, b)
+		assert(r.success and r.assets[1].resumed and s.uploads == 2 and calls > 0, tostring(r.error))
+		cleaned(s)
+	end)
 	test("Source edited during readback cannot commit stale geometry", function()
 		local bundle, b, s, p, m = fixture()
 		s.onRead = function()
@@ -430,6 +448,38 @@ return function()
 		end
 		-- 5 meshes + the shared image once
 		assert(s.uploads == 6 and #r.resume == 6, "uploads " .. s.uploads)
+		cleaned(s)
+	end)
+	test("Chunked publish carries every chunk's cleanup errors into its report", function()
+		local bundle, b, s = many(5)
+		local destroy = b.destroy
+		b.destroy = function(o)
+			destroy(o)
+			if o.kind ~= "readback" then
+				error("cleanup failed")
+			end
+		end
+		local r = P.runChunked(bundle, {}, nil, b, 2)
+		local sum = 0
+		for _, chunk in r.chunks do
+			sum += #chunk.cleanupErrors
+		end
+		assert(
+			r.success and #r.chunks == 3 and sum > 0 and #r.cleanupErrors == sum,
+			"cleanup " .. #r.cleanupErrors
+		)
+		cleaned(s)
+	end)
+	test("Chunked publish carries a chunk's rollback errors into its report", function()
+		local bundle, b, s = many(3)
+		s.applyFail = true
+		s.rollbackFail = true
+		local r = P.runChunked(bundle, {}, { attempts = 1 }, b, 2)
+		assert(not r.success and #r.chunks == 1, "stops at the first failing chunk")
+		assert(
+			#r.rollbackErrors == #r.chunks[1].rollbackErrors and #r.rollbackErrors > 0,
+			"rollback errors carried"
+		)
 		cleaned(s)
 	end)
 	test("Chunked publish stops at a failing chunk and keeps the committed ones", function()

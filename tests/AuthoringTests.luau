@@ -1196,6 +1196,37 @@ return function(E)
 		)
 		assert(table.concat(log, ",") == "stale", table.concat(log, ","))
 	end)
+	test(
+		"Roblox.sweep counts editables an earlier sweep destroyed as stale, without destroying them again",
+		function()
+			local R = E.Roblox
+			local calls = 0
+			local function editable()
+				return {
+					editable = true,
+					Destroy = function()
+						calls += 1
+					end,
+				}
+			end
+			local function isEditable(v)
+				return type(v) == "table" and v.editable == true
+			end
+			local session: any = { a = editable(), b = { editable(), editable() } }
+			local first = R.sweep(session, { live = {}, isEditable = isEditable })
+			assert(first.destroyed == 3 and first.stale == 0 and calls == 3, "first sweep destroys three")
+			local second = R.sweep(session, { live = {}, isEditable = isEditable })
+			assert(
+				second.destroyed == 0 and second.stale == 3 and calls == 3,
+				"second sweep finds them stale"
+			)
+			local dry = R.sweep({ fresh = editable() }, { live = {}, isEditable = isEditable, dryRun = true })
+			assert(
+				dry.destroyed == 1 and dry.stale == 0 and calls == 3,
+				"a dry run destroys nothing and marks nothing"
+			)
+		end
+	)
 	test("Roblox.sweep destroys unreferenced editables in nested tables and keeps live ones", function()
 		local R = E.Roblox
 		local log = {}
@@ -1228,8 +1259,9 @@ return function(E)
 		table.sort(log)
 		assert(table.concat(log, ",") == "keyed,stale", table.concat(log, ","))
 		local full = R.sweep(session, { live = live, isEditable = isEditable })
-		assert(full.destroyed == 3 and full.kept == 1, "each object counted once")
-		assert(#log == 5 and table.find(log, "deep") and not table.find(log, "shown"), "live editable kept")
+		-- the shallow sweep already destroyed "keyed" and "stale": they count as stale, destroyed once
+		assert(full.destroyed == 1 and full.stale == 2 and full.kept == 1, "each object counted once")
+		assert(#log == 3 and table.find(log, "deep") and not table.find(log, "shown"), "live editable kept")
 		local calls = 0
 		local big = table.create(120000, 0)
 		R.sweep(big, {
@@ -2098,6 +2130,100 @@ return function(E)
 				near(v.Z, 0, 0.5)
 			end
 		end
+	end)
+	test("Deform.segmentMap rejects zero-length segments and invalid scales", function()
+		rejects(function()
+			E.Deform.segmentMap(Vector3.zero, Vector3.zero, Vector3.zero, Vector3.xAxis)
+		end, "nonzero length")
+		rejects(function()
+			E.Deform.segmentMap(Vector3.zero, Vector3.xAxis, Vector3.zero, Vector3.zero)
+		end, "nonzero length")
+		local bad = E.Deform.segmentMap(Vector3.zero, Vector3.xAxis, Vector3.zero, Vector3.xAxis, function()
+			return 0 / 0
+		end)
+		rejects(function()
+			bad(Vector3.new(0.5, 1, 0))
+		end, "invalid scale")
+	end)
+	test(
+		"Deform.mapComponents reports each piece's bounds and count, keeps topology and skips pieces without area",
+		function()
+			local rod = E.Deform.transform(
+				E.Primitives.cylinder(0.25, 4, 8),
+				CFrame.new(3, 0, 0),
+				nil,
+				{ normals = "transform" }
+			)
+			local flat = E.Mesh.new()
+			local a = flat:addVertex(Vector3.new(-3, 0, 0))
+			local b = flat:addVertex(Vector3.new(-2, 0, 0))
+			local c = flat:addVertex(Vector3.new(-1, 0, 0)) -- collinear: no area
+			flat:addFace({ a, b, c })
+			local joined = E.Topology.join({ rod, flat })
+			local nv, nf = 0, 0
+			for _ in joined.vertices do
+				nv += 1
+			end
+			for _ in joined.faces do
+				nf += 1
+			end
+			local pieces, indices = {}, {}
+			local out = E.Deform.mapComponents(joined, function(piece)
+				table.insert(pieces, piece)
+				indices[piece.index] = true
+				return function(v)
+					return v + Vector3.new(0, 1, 0)
+				end
+			end)
+			assert(#pieces == 1, "the piece without area is skipped, got " .. #pieces)
+			local piece = pieces[1]
+			local rodCount = 0
+			for _ in rod.vertices do
+				rodCount += 1
+			end
+			assert(piece.count == rodCount, "count " .. tostring(piece.count) .. " vs " .. rodCount)
+			near(piece.min.X, 2.75, 1e-3)
+			near(piece.max.X, 3.25, 1e-3)
+			near(piece.min.Y, -2, 1e-3)
+			near(piece.max.Y, 2, 1e-3)
+			local ov, of = 0, 0
+			for id, v in out.vertices do
+				ov += 1
+				local before = joined.vertices[id]
+				if before.X > 2 then
+					near((v - before).Magnitude, 1, 1e-9)
+				else
+					near((v - before).Magnitude, 0, 1e-12)
+				end
+			end
+			for fid, f in out.faces do
+				of += 1
+				assert(
+					table.concat(f.vertices, ",") == table.concat(joined.faces[fid].vertices, ","),
+					"face order kept"
+				)
+			end
+			assert(ov == nv and of == nf, "same vertices and faces")
+		end
+	)
+	test("Deform.taperComponents keeps each face's corner data (UVs)", function()
+		-- an elongated box (the box primitive carries per-corner UVs) standing on the anchor's side
+		local spike =
+			E.Deform.transform(E.Primitives.box(Vector3.new(0.6, 4, 0.6)), CFrame.new(0, 3, 0), nil, {
+				normals = "transform",
+			})
+		local out = E.Deform.taperComponents(spike, Vector3.zero, 2, 1)
+		local checked = 0
+		for fid, f in spike.faces do
+			local g = out.faces[fid]
+			for i, corner in f.corners do
+				if corner.uv then
+					checked += 1
+					near((g.corners[i].uv - corner.uv).Magnitude, 0, 1e-12)
+				end
+			end
+		end
+		assert(checked > 0, "the primitive carries UVs")
 	end)
 	test("Topology.componentLabels welds a triangle soup into its solid pieces", function()
 		local m = E.Mesh.new()
