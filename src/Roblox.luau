@@ -795,6 +795,7 @@ end
 export type SweepOptions = {
 	roots: { Instance }?,
 	live: { [any]: boolean }?,
+	keep: { any }?,
 	depth: number?,
 	dryRun: boolean?,
 	checkpoint: (() -> ())?,
@@ -806,14 +807,39 @@ export type SweepReport = { destroyed: number, kept: number, tables: number }
 -- set given). Long sessions keep build results (bundles, preview images) in tables; dropping a table
 -- leaves its editables allocated until they are collected, and they count against the engine's
 -- editable memory budget, past which new textures render white. Displayed editables (unpublished
--- previews) are kept. dryRun only counts. checkpoint (e.g. task.wait) runs every 50,000 keys and values.
--- isEditable replaces the engine check, for wrapped objects.
+-- previews) are kept, and so is everything in keep: editables, or tables holding them (searched like value),
+-- that a session reuses across builds without displaying them (shared material maps, templates). A sweep
+-- destroyed a session's shared roughness and metalness images, which no part displayed once its parts were
+-- published; later builds used them as 1x1 images. dryRun only counts. checkpoint (e.g. task.wait) runs every
+-- 50,000 keys and values. isEditable replaces the engine check, for wrapped objects.
 function R.sweep(value: any, options: SweepOptions?): SweepReport
 	local o: SweepOptions = options or {}
 	local live = o.live or R.liveEditables(o.roots)
 	local detect = o.isEditable or isEditableObject
 	local limit = o.depth or 8
 	local report: SweepReport = { destroyed = 0, kept = 0, tables = 0 }
+	local spare: { [any]: boolean } = {}
+	if o.keep then
+		local searched = {}
+		local function collect(v: any, depth: number)
+			local kind = type(v)
+			if (kind ~= "table" and kind ~= "userdata") or searched[v] then
+				return
+			end
+			searched[v] = true
+			if detect(v) then
+				spare[v] = true
+			elseif kind == "table" and depth <= limit then
+				for key, item in next, v do
+					collect(key, depth + 1)
+					collect(item, depth + 1)
+				end
+			end
+		end
+		for _, item in o.keep do
+			collect(item, 1)
+		end
+	end
 	local seen = {}
 	local visits = 0
 	local function visit(v: any, depth: number)
@@ -827,7 +853,7 @@ function R.sweep(value: any, options: SweepOptions?): SweepReport
 		end
 		if detect(v) then
 			seen[v] = true
-			if live[v] then
+			if live[v] or spare[v] then
 				report.kept += 1
 			else
 				if not o.dryRun then

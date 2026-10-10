@@ -1,5 +1,10 @@
 # Editable3D changes
 
+## 0.122.0
+
+- `Roblox.sweep(value, {keep = {...}})`: editables listed in `keep`, or held in tables listed there (searched like `value`), are never destroyed. A session reuses some editables across builds without displaying them, such as a shared roughness and metalness pair attached to every new part. Once their parts were published nothing displayed them, a sweep destroyed them, and later builds attached and uploaded them as 1x1 images.
+- Publishing: "Resume source changed" now says what happened. An object published earlier with the same resume ledger has changed since (edited, or destroyed, which reads as a 1x1 image). Publish a new object, or use a fresh ledger for new content.
+
 ## 0.121.0
 
 - `Deform.mapComponents(mesh, fn, weld?)`: a separate point map for every connected piece of a mesh (welded within `weld` like `Topology.componentLabels`). `fn(piece)` gets the piece's index, vertex count, centre, principal axis, its extreme points on the axis (`lo`, `hi`), length and bounds, and returns a map for that piece's vertices or nil. Rays round a crown, fingers or petals each get their own transform.

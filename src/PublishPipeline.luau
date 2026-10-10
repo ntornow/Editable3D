@@ -105,7 +105,17 @@ function P.run(bundle: Bundle, metadata: unknown, options: Options?, backend: Ba
 					local unchanged = if entry.digested
 						then digest ~= nil and entry.fingerprint == stamp
 						else same(kind, entry.fingerprint, fingerprint)
-					assert(entry.kind == kind and unchanged, "Resume source changed")
+					if not (entry.kind == kind and unchanged) then
+						-- the same object was uploaded earlier with this ledger and has changed since: edited,
+						-- or destroyed (a destroyed EditableImage reads as 1x1), e.g. by a sweep of the session
+						error(
+							"Resume source changed: this "
+								.. kind
+								.. " was published earlier with this ledger and has changed since (edited or destroyed);"
+								.. " publish a new object, or use a fresh resume ledger for new content",
+							0
+						)
+					end
 					id = entry.id
 					break
 				end

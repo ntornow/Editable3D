@@ -1167,6 +1167,35 @@ return function(E)
 			E.Bake.skyVisibility({})
 		end, "needs occluders")
 	end)
+	test("Roblox.sweep keeps the editables listed in keep, directly or inside tables", function()
+		local R = E.Roblox
+		local log = {}
+		local function editable(name)
+			return {
+				editable = true,
+				Destroy = function()
+					table.insert(log, name)
+				end,
+			}
+		end
+		local function isEditable(v)
+			return type(v) == "table" and v.editable == true
+		end
+		local rough, metal, template, stale =
+			editable("rough"), editable("metal"), editable("template"), editable("stale")
+		local session: any = {
+			images = { roughness = rough, metalness = metal },
+			templates = { template },
+			builds = { { images = { stale, rough } } },
+		}
+		local report =
+			R.sweep(session, { live = {}, keep = { session.images, template }, isEditable = isEditable })
+		assert(
+			report.destroyed == 1 and report.kept == 3,
+			"destroyed " .. report.destroyed .. ", kept " .. report.kept
+		)
+		assert(table.concat(log, ",") == "stale", table.concat(log, ","))
+	end)
 	test("Roblox.sweep destroys unreferenced editables in nested tables and keeps live ones", function()
 		local R = E.Roblox
 		local log = {}
