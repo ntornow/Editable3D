@@ -1849,6 +1849,31 @@ return function(E)
 			E.Deform.moveTable({ { 1, 2, 3 } })
 		end, "moveTable entries are { x, y, z, dx, dy, dz }")
 	end)
+	test("Deform.cylindricalMap squeezes a sector toward the axis and leaves the rest", function()
+		local frame = CFrame.new(10, 0, -5)
+		-- halve the radius beyond 1 over phi -45..45 (toward the frame's +X), keep everything else
+		local map = E.Deform.cylindricalMap(frame, function(r, phi)
+			if math.abs(phi) <= 45 and r > 1 then
+				return 1 + (r - 1) * 0.5
+			end
+			return nil
+		end)
+		local function at(r, phiDeg, h)
+			local a = math.rad(phiDeg)
+			return frame:PointToWorldSpace(Vector3.new(r * math.cos(a), h, -r * math.sin(a)))
+		end
+		near((map(at(3, 0, 2)) - at(2, 0, 2)).Magnitude, 0, 1e-6)
+		near((map(at(3, 30, -1)) - at(2, 30, -1)).Magnitude, 0, 1e-6)
+		near((map(at(3, 90, 0)) - at(3, 90, 0)).Magnitude, 0, 1e-6)
+		near((map(at(0.5, 0, 0)) - at(0.5, 0, 0)).Magnitude, 0, 1e-6)
+		-- phi = 90 is the frame's -Z, the axis point stays, and a twist turns points round the axis
+		near((at(1, 90, 0) - frame:PointToWorldSpace(Vector3.new(0, 0, -1))).Magnitude, 0, 1e-6)
+		local twist = E.Deform.cylindricalMap(frame, function(r, phi, h)
+			return r, phi + 90, h
+		end)
+		near((twist(at(2, 0, 4)) - at(2, 90, 4)).Magnitude, 0, 1e-6)
+		near((twist(frame.Position) - frame.Position).Magnitude, 0, 1e-6)
+	end)
 	test("Deform.moveTable takes a flat list and matches across cell boundaries", function()
 		-- entries sit just below cell boundaries on every axis; queries land just above them
 		local field, stats = E.Deform.moveTable({ 0.0099, 0.0199, -0.0001, 1, 0, 0, 5, 5, 5, 0, 0, 2 })

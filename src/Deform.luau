@@ -867,6 +867,26 @@ function D.sectionScaleMap(
 		return frame:PointToWorldSpace(Vector3.new(q.X, q.Y, c + (q.Z - c) * scale))
 	end
 end
+-- A point map in cylindrical coordinates about a frame's local Y axis, for Roblox.reshape or Deform.map: each point's
+-- radius r from the axis, angle phi round it (degrees, 0 toward the frame's +X, 90 toward its -Z, in (-180, 180]) and
+-- height h along it go through fn(r, phi, h) -> (r', phi', h') (nil for any keeps it). Squeezing pieces toward a
+-- handle over an angular sector, swelling a sleeve toward one side, lifting a band of cloth round a waist or twisting
+-- a column are each a few lines. Points on the axis (r < 1e-9) keep their angle at 0.
+function D.cylindricalMap(
+	frame: CFrame,
+	fn: (number, number, number) -> (number?, number?, number?)
+): (Vector3) -> Vector3
+	return function(p: Vector3): Vector3
+		local q = frame:PointToObjectSpace(p)
+		local r = math.sqrt(q.X * q.X + q.Z * q.Z)
+		local phi = if r < 1e-9 then 0 else math.deg(math.atan2(-q.Z, q.X))
+		local r2, phi2, h2 = fn(r, phi, q.Y)
+		r2, phi2, h2 = r2 or r, phi2 or phi, h2 or q.Y
+		assert(U.finite(r2) and U.finite(phi2) and U.finite(h2), "cylindricalMap returned invalid values")
+		local a = math.rad(phi2)
+		return frame:PointToWorldSpace(Vector3.new(r2 * math.cos(a), h2, -r2 * math.sin(a)))
+	end
+end
 export type SmoothDisplacementOptions = {
 	sigma: number?,
 	reach: number?,

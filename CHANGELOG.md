@@ -1,5 +1,9 @@
 # Editable3D changes
 
+## 0.120.0
+
+- `Deform.cylindricalMap(frame, fn)`: a point map in cylindrical coordinates about a frame's Y axis for `Roblox.reshape` or `Deform.map`. `fn(r, phi, h)` returns the new radius, angle (degrees, 0 toward +X, 90 toward -Z) and height, nil to keep one. Pieces squeezed toward a handle over an angular sector, a sleeve swelled toward one side and a band lifted round a waist each take a few lines.
+
 ## 0.119.0
 
 - `Roblox.fillColor(parts, weight, {cell, reach, ...modulate options})`: inpaints a region of colour maps from its surroundings, in world space. weight(position, normal) is 0 outside the region, 1 inside and soft at its edge. Texels outside the region are averaged into world cells (bucketed by normal axis); the fill at each region cell is the inverse-distance-squared mean of the outside cells within `reach`, interpolated between cell centres, and each region texel becomes lerp(colour, fill, weight). Removes a painted feature (an outline, a decal, an old eye) before new shading goes on.
